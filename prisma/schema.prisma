@@ -1,0 +1,141 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                  String          @id @default(uuid())
+  studentId           String?         @unique
+  name                String
+  email               String          @unique
+  passwordHash        String
+  role                String          // "STUDENT" | "DRIVER" | "ADMIN"
+  creditScore         Int             @default(100)
+  isBookingRestricted Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  driverTrips         Trip[]          @relation("DriverTrips")
+  bookings            Booking[]
+  penalties           Penalty[]
+  appeals             PenaltyAppeal[]
+  reviewedAppeals     PenaltyAppeal[] @relation("AdminReviewedAppeals")
+  notifications       Notification[]
+}
+
+model Bus {
+  id          String   @id @default(uuid())
+  plateNumber String   @unique
+  capacity    Int
+  status      String   @default("ACTIVE") // "ACTIVE" | "MAINTENANCE" | "RETIRED"
+  trips       Trip[]
+}
+
+model Route {
+  id    String @id @default(uuid())
+  name  String
+  stops String // JSON string array: e.g. ["Main Gate", "Block A", "Block D"]
+  trips Trip[]
+}
+
+model Trip {
+  id                   String   @id @default(uuid())
+  routeId              String
+  route                Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  busId                String
+  bus                  Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  driverId             String?
+  driver               User?    @relation("DriverTrips", fields: [driverId], references: [id], onDelete: SetNull)
+  departureTime        DateTime
+  estimatedArrivalTime DateTime
+  boardingDeadline     DateTime
+  status               String   @default("NOT_STARTED") // "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "DELAYED" | "CANCELLED"
+  delayReason          String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  seats                Seat[]
+  bookings             Booking[]
+}
+
+model Seat {
+  id         String            @id @default(uuid())
+  tripId     String
+  trip       Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  seatNumber Int
+  status     String            @default("AVAILABLE") // "AVAILABLE" | "RESERVED" | "CHECKED_IN" | "NO_SHOW"
+  booking    Booking?
+  deviceLogs DeviceStatusLog[]
+
+  @@unique([tripId, seatNumber])
+}
+
+model Booking {
+  id               String    @id @default(uuid())
+  studentId        String
+  student          User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tripId           String
+  trip             Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  seatId           String?   @unique
+  seat             Seat?     @relation(fields: [seatId], references: [id], onDelete: SetNull)
+  status           String    @default("CONFIRMED") // "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW" | "WAITLISTED"
+  waitlistPosition Int?
+  checkInMethod    String?   // "QR" | "MANUAL"
+  qrTokenIssuedAt  DateTime?
+  checkedInAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  penalties        Penalty[]
+}
+
+model Penalty {
+  id                   String   @id @default(uuid())
+  bookingId            String
+  booking              Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  studentId            String
+  student              User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  creditPointsDeducted Int      @default(15)
+  reason               String   @default("No-show")
+  status               String   @default("ACTIVE") // "ACTIVE" | "APPEALED" | "OVERTURNED" | "UPHELD"
+  createdAt            DateTime @default(now())
+
+  appeals              PenaltyAppeal[]
+}
+
+model PenaltyAppeal {
+  id                String    @id @default(uuid())
+  penaltyId         String    @unique
+  penalty           Penalty   @relation(fields: [penaltyId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reason            String
+  status            String    @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED"
+  reviewedByAdminId String?
+  reviewedByAdmin   User?     @relation("AdminReviewedAppeals", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  adminComment      String?
+  createdAt         DateTime  @default(now())
+  resolvedAt        DateTime?
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // "BOOKING_CONFIRMED" | "DEPARTURE_REMINDER" | "CANCELLED" | "NO_SHOW" | "WAITLIST_PROMOTED" | "PENALTY_ISSUED" | "APPEAL_RESOLVED" | "TRIP_DELAYED"
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model DeviceStatusLog {
+  id              String   @id @default(uuid())
+  seatId          String
+  seat            Seat     @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  simulatedSignal String   @default("OK") // "OK" | "OFFLINE" | "ERROR"
+  recordedAt      DateTime @default(now())
+}
