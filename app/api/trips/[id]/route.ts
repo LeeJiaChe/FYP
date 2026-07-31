@@ -62,6 +62,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       deviceHealth: seat.deviceLogs[0]?.simulatedSignal || "OK",
     }));
 
+    const totalSeats = trip.bus.capacity;
+    const availableSeats = formattedSeats.filter((s) => s.status === "AVAILABLE").length;
+    const reservedSeats = formattedSeats.filter((s) => s.status === "RESERVED").length;
+    const checkedInSeats = formattedSeats.filter((s) => s.status === "CHECKED_IN").length;
+    const noShowSeats = formattedSeats.filter((s) => s.status === "NO_SHOW").length;
+
     return NextResponse.json({
       trip: {
         id: trip.id,
@@ -80,6 +86,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         delayReason: trip.delayReason,
         seats: formattedSeats,
         waitlist: trip.bookings,
+        stats: {
+          totalSeats,
+          availableSeats,
+          reservedSeats,
+          checkedInSeats,
+          noShowSeats,
+        },
       },
     });
   } catch (err: any) {
@@ -101,6 +114,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const trip = await prisma.trip.findUnique({
       where: { id },
       include: {
+        route: true,
         bookings: {
           where: { status: { in: ["CONFIRMED", "WAITLISTED"] } },
           select: { studentId: true },
@@ -117,30 +131,63 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "You can only update trips assigned to you" }, { status: 403 });
     }
 
-    const updatedTrip = await prisma.trip.update({
-      where: { id },
-      data: {
-        status: validated.status,
-        delayReason: validated.delayReason !== undefined ? validated.delayReason : trip.delayReason,
-      },
+    const updatedTrip = await prisma.$transaction(async (tx) => {
+      const updated = await tx.trip.update({
+        where: { id },
+        data: {
+          status: validated.status,
+          delayReason: validated.delayReason !== undefined ? validated.delayReason : trip.delayReason,
+        },
+      });
+
+      // Cascading logic for CANCELLED trip
+      if (validated.status === "CANCELLED") {
+        // Cancel all confirmed & waitlisted bookings
+        await tx.booking.updateMany({
+          where: { tripId: id, status: { in: ["CONFIRMED", "WAITLISTED"] } },
+          data: {
+            status: "CANCELLED",
+            seatId: null,
+            waitlistPosition: null,
+          },
+        });
+
+        // Reset all seats to AVAILABLE
+        await tx.seat.updateMany({
+          where: { tripId: id },
+          data: { status: "AVAILABLE" },
+        });
+
+        // Notify affected students
+        const studentIds = Array.from(new Set(trip.bookings.map((b) => b.studentId)));
+        if (studentIds.length > 0) {
+          const cancelMsg = `Trip for ${trip.route.name} departing at ${new Date(trip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} was CANCELLED. ${validated.delayReason ? `Reason: ${validated.delayReason}` : ""}`;
+          await tx.notification.createMany({
+            data: studentIds.map((userId) => ({
+              userId,
+              type: "CANCELLED",
+              message: cancelMsg,
+            })),
+          });
+        }
+      } else if (validated.status === "DELAYED") {
+        const studentIds = Array.from(new Set(trip.bookings.map((b) => b.studentId)));
+        if (studentIds.length > 0) {
+          const delayMsg = `Trip for ${trip.route.name} is DELAYED. ${validated.delayReason ? `Reason: ${validated.delayReason}` : ""}`;
+          await tx.notification.createMany({
+            data: studentIds.map((userId) => ({
+              userId,
+              type: "TRIP_DELAYED",
+              message: delayMsg,
+            })),
+          });
+        }
+      }
+
+      return updated;
     });
 
-    // Batch-notify students if trip is DELAYED or CANCELLED (single DB write, not N queries)
-    if (validated.status === "DELAYED" || validated.status === "CANCELLED") {
-      const studentIds = Array.from(new Set(trip.bookings.map((b) => b.studentId)));
-      if (studentIds.length > 0) {
-        const notifMessage = `Trip status updated to ${validated.status}. ${validated.delayReason ? `Reason: ${validated.delayReason}` : ""}`;
-        await prisma.notification.createMany({
-          data: studentIds.map((userId) => ({
-            userId,
-            type: "TRIP_DELAYED",
-            message: notifMessage,
-          })),
-        });
-      }
-    }
-
-    // Emit realtime event — fire-and-forget, don't block response
+    // Emit realtime event — fire-and-forget
     notifyRealtime(`trip:${id}`, "trip-update", {
       tripId: id,
       status: updatedTrip.status,

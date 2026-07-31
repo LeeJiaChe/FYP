@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Bus, ShieldCheck, QrCode, Activity, ArrowRight, UserCheck } from "lucide-react";
+import { Bus, ShieldCheck, QrCode, Activity, ArrowRight } from "lucide-react";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
@@ -17,14 +17,14 @@ export default async function HomePage() {
       {/* Top Bar */}
       <header className="glass-panel border-b border-slate-800 py-4 px-6">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center space-x-3">
+          <Link href="/" className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
               <Bus className="w-5 h-5 text-white" />
             </div>
             <span className="font-bold text-xl text-white tracking-tight">
               TAR UMT <span className="text-blue-400">Shuttle</span>
             </span>
-          </div>
+          </Link>
           <div className="flex items-center space-x-3">
             <Link
               href="/login"

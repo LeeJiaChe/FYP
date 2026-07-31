@@ -5,6 +5,11 @@ import { createRouteSchema } from "@/lib/validations";
 
 export async function GET() {
   try {
+    const user = await getUserFromToken();
+    if (!user || user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Unauthorized. Admin role required." }, { status: 403 });
+    }
+
     const routes = await prisma.route.findMany({
       orderBy: { name: "asc" },
       include: { _count: { select: { trips: true } } },
@@ -99,6 +104,17 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "Route ID required" }, { status: 400 });
+
+    const activeTripsCount = await prisma.trip.count({
+      where: { routeId: id, status: { in: ["NOT_STARTED", "BOARDING", "DEPARTED"] } },
+    });
+
+    if (activeTripsCount > 0) {
+      return NextResponse.json(
+        { error: `Cannot delete route with ${activeTripsCount} active or scheduled trip(s). Reassign or cancel trips first.` },
+        { status: 400 }
+      );
+    }
 
     await prisma.route.delete({ where: { id } });
     return NextResponse.json({ success: true });

@@ -57,8 +57,13 @@ export async function POST(req: Request) {
             },
           });
 
-          // Deduct credit score & enforce restriction threshold (< 40)
-          const newCreditScore = Math.max(0, booking.student.creditScore - penaltyDeduction);
+          // Fetch latest user record inside transaction to prevent stale credit score snapshot bugs
+          const currentStudent = await tx.user.findUnique({
+            where: { id: booking.studentId },
+          });
+
+          const currentScore = currentStudent?.creditScore ?? 100;
+          const newCreditScore = Math.max(0, currentScore - penaltyDeduction);
           const isRestricted = newCreditScore < 40;
 
           await tx.user.update({

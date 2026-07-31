@@ -124,7 +124,10 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
     <header className="sticky top-0 z-50 nav-glass">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Brand */}
-        <Link href="/" className="flex items-center space-x-3 group shrink-0">
+        <Link
+          href={user ? (user.role === "ADMIN" ? "/admin" : user.role === "DRIVER" ? "/driver" : "/student") : "/"}
+          className="flex items-center space-x-3 group shrink-0"
+        >
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-3"
             style={{

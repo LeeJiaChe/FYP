@@ -30,24 +30,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Trip not found" }, { status: 404 });
     }
 
-    // Check if student already has a confirmed or waitlisted booking on this trip
-    const existing = await prisma.booking.findFirst({
-      where: {
-        studentId: user.id,
-        tripId,
-        status: { in: ["CONFIRMED", "WAITLISTED"] },
-      },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        { error: `You already have a ${existing.status} booking for this trip` },
-        { status: 400 }
-      );
-    }
-
     // Execute booking logic inside transaction
     const bookingResult = await prisma.$transaction(async (tx) => {
+      // Check if student already has a confirmed or waitlisted booking on this trip inside transaction
+      const existing = await tx.booking.findFirst({
+        where: {
+          studentId: user.id,
+          tripId,
+          status: { in: ["CONFIRMED", "WAITLISTED"] },
+        },
+      });
+
+      if (existing) {
+        throw new Error(`You already have a ${existing.status} booking for this trip`);
+      }
+
       let targetSeat = null;
 
       if (seatId) {

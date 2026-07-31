@@ -78,10 +78,12 @@ export default function SeatGrid({
           <span className="w-3.5 h-3.5 rounded-md bg-slate-700 inline-block"></span>
           <span className="text-slate-300">No-Show (Grey)</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-          <span className="text-amber-300">IoT Offline/Error</span>
-        </div>
+        {mode !== "student" && (
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-amber-300">IoT Offline/Error</span>
+          </div>
+        )}
       </div>
 
       {/* Bus Seat Layout Diagram */}
@@ -89,7 +91,8 @@ export default function SeatGrid({
         {/* Steering Wheel / Driver Front indicator */}
         <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-800 text-xs font-medium text-slate-500">
           <span className="flex items-center gap-2 text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-blue-500 live-dot"></span> Bus Front / Entrance
+            <span className="w-2 h-2 rounded-full bg-blue-500 live-dot"></span>{" "}
+            Bus Front / Entrance
           </span>
           <span className="bg-slate-900 px-3 py-1 rounded-full border border-slate-800 text-[11px] text-slate-400">
             Driver Cabin 🚌
@@ -97,7 +100,7 @@ export default function SeatGrid({
         </div>
 
         {/* Seats Grid: 4 seats per row (2 on left, aisle, 2 on right) */}
-        <div className="grid grid-cols-5 gap-3 max-h-[420px] overflow-y-auto pr-2">
+        <div className="grid grid-cols-5 gap-3 max-h-[420px] overflow-y-auto pr-2 pt-2 pl-2">
           {seats.map((seat, index) => {
             const isAisle = (index + 1) % 4 === 2 && (index + 1) % 4 !== 0;
 
@@ -108,28 +111,34 @@ export default function SeatGrid({
                   onMouseLeave={() => setHoveredSeat(null)}
                   onClick={() => {
                     if (!interactive) return;
-                    if (mode === "student" && seat.status === "AVAILABLE" && onSelectSeat) {
+                    if (
+                      mode === "student" &&
+                      seat.status === "AVAILABLE" &&
+                      onSelectSeat
+                    ) {
                       onSelectSeat(seat.id);
                     } else if (mode === "driver" && onManualCheckIn) {
                       onManualCheckIn(seat);
                     }
                   }}
                   className={`relative aspect-square rounded-2xl font-bold text-sm flex flex-col items-center justify-center transition-all duration-200 cursor-pointer select-none ${getSeatStyle(
-                    seat
+                    seat,
                   )} ${!interactive || (mode === "student" && seat.status !== "AVAILABLE") ? "cursor-default" : ""}`}
                 >
                   <Armchair className="w-4 h-4 mb-0.5 opacity-80" />
                   <span>{seat.seatNumber}</span>
 
-                  {/* IoT Device Warning Flag */}
-                  {seat.deviceHealth && seat.deviceHealth !== "OK" && (
-                    <span
-                      title={`IoT Sensor Status: ${seat.deviceHealth}`}
-                      className="absolute -top-1.5 -right-1.5 p-0.5 bg-amber-500 text-slate-950 rounded-full shadow-md animate-bounce"
-                    >
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                    </span>
-                  )}
+                  {/* IoT Device Warning Flag (Admin & Driver only) */}
+                  {mode !== "student" &&
+                    seat.deviceHealth &&
+                    seat.deviceHealth !== "OK" && (
+                      <span
+                        title={`IoT Sensor Status: ${seat.deviceHealth}`}
+                        className="absolute -top-1.5 -right-1.5 p-0.5 bg-amber-500 text-slate-950 rounded-full shadow-md animate-bounce"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                      </span>
+                    )}
 
                   {/* Driver manual override indicator */}
                   {mode === "driver" && seat.status === "RESERVED" && (
@@ -149,32 +158,6 @@ export default function SeatGrid({
             );
           })}
         </div>
-
-        {/* Hover Info Tooltip */}
-        {hoveredSeat && (
-          <div className="mt-4 p-3 bg-slate-900 rounded-xl border border-slate-700 text-xs flex items-center justify-between">
-            <div>
-              <span className="font-bold text-white">Seat #{hoveredSeat.seatNumber}</span>
-              <span className="ml-2 text-slate-400">({hoveredSeat.status.replace("_", " ")})</span>
-              {hoveredSeat.booking?.studentName && (
-                <div className="text-blue-300 font-medium mt-0.5">
-                  Student: {hoveredSeat.booking.studentName} ({hoveredSeat.booking.studentId})
-                </div>
-              )}
-            </div>
-            {hoveredSeat.deviceHealth && (
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  hoveredSeat.deviceHealth === "OK"
-                    ? "bg-emerald-500/20 text-emerald-300"
-                    : "bg-amber-500/20 text-amber-300"
-                }`}
-              >
-                IoT: {hoveredSeat.deviceHealth}
-              </span>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

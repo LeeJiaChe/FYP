@@ -1,6 +1,13 @@
+/**
+ * Server-side only utility to emit events to the standalone Socket.io realtime service.
+ * This file must NEVER be imported in client components.
+ * Uses REALTIME_URL (private, server-only) — not NEXT_PUBLIC_REALTIME_URL.
+ */
 export async function notifyRealtime(room: string, event: string, data: any) {
   try {
-    const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL || "http://localhost:4000";
+    // Use a server-only env var (no NEXT_PUBLIC_ prefix) so the realtime URL is
+    // never leaked into the client bundle. Falls back to localhost for local dev.
+    const realtimeUrl = process.env.REALTIME_URL || "http://localhost:4000";
     const secret = process.env.REALTIME_SERVICE_SECRET || "fyp-realtime-secret-key";
 
     await fetch(`${realtimeUrl}/emit`, {
@@ -16,6 +23,7 @@ export async function notifyRealtime(room: string, event: string, data: any) {
       }),
     });
   } catch (error) {
+    // Fire-and-forget — realtime failure must never block the primary API response
     console.error("[Realtime Emit Error]", error);
   }
 }

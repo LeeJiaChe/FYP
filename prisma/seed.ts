@@ -116,180 +116,244 @@ async function main() {
     },
   });
 
-  console.log("Seeding routes...");
-  const route1 = await prisma.route.create({
+  const bus4 = await prisma.bus.create({
     data: {
-      name: "Route 1: Main Campus <-> LRT Wangsa Maju",
+      plateNumber: "TAR-1004",
+      capacity: 20,
+      status: "ACTIVE",
+    },
+  });
+
+  console.log("Seeding directional routes (with -> arrows)...");
+  const route1Out = await prisma.route.create({
+    data: {
+      name: "Main Campus -> LRT Wangsa Maju",
       stops: JSON.stringify(["Main Gate", "Block A", "Block D", "LRT Wangsa Maju"]),
     },
   });
-
-  const route2 = await prisma.route.create({
+  const route1In = await prisma.route.create({
     data: {
-      name: "Route 2: Main Campus <-> Setapak Jaya",
+      name: "LRT Wangsa Maju -> Main Campus",
+      stops: JSON.stringify(["LRT Wangsa Maju", "Block D", "Block A", "Main Gate"]),
+    },
+  });
+
+  const route2Out = await prisma.route.create({
+    data: {
+      name: "Main Campus -> Setapak Jaya",
       stops: JSON.stringify(["Main Gate", "Sports Complex", "Setapak Jaya Bus Stop"]),
     },
   });
-
-  const route3 = await prisma.route.create({
+  const route2In = await prisma.route.create({
     data: {
-      name: "Route 3: Campus Express <-> Cyberjaya",
+      name: "Setapak Jaya -> Main Campus",
+      stops: JSON.stringify(["Setapak Jaya Bus Stop", "Sports Complex", "Main Gate"]),
+    },
+  });
+
+  const route3Out = await prisma.route.create({
+    data: {
+      name: "Campus Express -> Cyberjaya",
       stops: JSON.stringify(["Campus Terminal", "Cyberjaya Central"]),
     },
   });
+  const route3In = await prisma.route.create({
+    data: {
+      name: "Cyberjaya -> Campus Express",
+      stops: JSON.stringify(["Cyberjaya Central", "Campus Terminal"]),
+    },
+  });
 
-  console.log("Seeding trips...");
+  const route4Out = await prisma.route.create({
+    data: {
+      name: "Main Campus -> Danau Kota",
+      stops: JSON.stringify(["Main Gate", "Block 3", "Block 6", "Danau Kota Suite"]),
+    },
+  });
+  const route4In = await prisma.route.create({
+    data: {
+      name: "Danau Kota -> Main Campus",
+      stops: JSON.stringify(["Danau Kota Suite", "Block 6", "Block 3", "Main Gate"]),
+    },
+  });
+
+  const route5Out = await prisma.route.create({
+    data: {
+      name: "Main Campus -> LRT Taman Melati",
+      stops: JSON.stringify(["Main Terminal", "Library Stop", "LRT Taman Melati"]),
+    },
+  });
+  const route5In = await prisma.route.create({
+    data: {
+      name: "LRT Taman Melati -> Main Campus",
+      stops: JSON.stringify(["LRT Taman Melati", "Library Stop", "Main Terminal"]),
+    },
+  });
+
+  const route6 = await prisma.route.create({
+    data: {
+      name: "Internal Ring Shuttle (Clockwise)",
+      stops: JSON.stringify(["Main Gate", "Block 3", "Block 4", "Block 5", "Block 6 Terminal"]),
+    },
+  });
+
+  const route7 = await prisma.route.create({
+    data: {
+      name: "Internal Ring Shuttle (Anti-Clockwise)",
+      stops: JSON.stringify(["Block 6 Terminal", "Block 5", "Block 4", "Block 3", "Main Gate"]),
+    },
+  });
+
+  const route8Out = await prisma.route.create({
+    data: {
+      name: "Main Campus -> Sri Rampai",
+      stops: JSON.stringify(["Main Gate", "Block C", "Sri Rampai LRT Station"]),
+    },
+  });
+  const route8In = await prisma.route.create({
+    data: {
+      name: "Sri Rampai -> Main Campus",
+      stops: JSON.stringify(["Sri Rampai LRT Station", "Block C", "Main Gate"]),
+    },
+  });
+
+  const route9Out = await prisma.route.create({
+    data: {
+      name: "Main Campus -> Genting Klang Feeder",
+      stops: JSON.stringify(["Main Gate", "PV12 Condominium", "Columbia Hospital", "Genting Klang Terminal"]),
+    },
+  });
+  const route9In = await prisma.route.create({
+    data: {
+      name: "Genting Klang Feeder -> Main Campus",
+      stops: JSON.stringify(["Genting Klang Terminal", "Columbia Hospital", "PV12 Condominium", "Main Gate"]),
+    },
+  });
+
+  const allRoutes = [
+    route1Out, route1In,
+    route2Out, route2In,
+    route3Out, route3In,
+    route4Out, route4In,
+    route5Out, route5In,
+    route6, route7,
+    route8Out, route8In,
+    route9Out, route9In,
+  ];
+
+  console.log("Seeding trips across all 9 routes...");
   const now = new Date();
-  
-  // Trip 1: Boarding soon (in 10 minutes)
-  const trip1Departure = new Date(now.getTime() + 10 * 60 * 1000);
-  const trip1Arrival = new Date(trip1Departure.getTime() + 25 * 60 * 1000);
-  const trip1BoardingDeadline = new Date(trip1Departure.getTime() - 5 * 60 * 1000);
 
-  const trip1 = await prisma.trip.create({
-    data: {
-      routeId: route1.id,
-      busId: bus1.id,
-      driverId: driver1.id,
-      departureTime: trip1Departure,
-      estimatedArrivalTime: trip1Arrival,
-      boardingDeadline: trip1BoardingDeadline,
-      status: "BOARDING",
-    },
-  });
+  // Seed trips for each route (multiple times per route today & tomorrow)
+  for (let rIdx = 0; rIdx < allRoutes.length; rIdx++) {
+    const route = allRoutes[rIdx];
+    const assignedBus = rIdx % 2 === 0 ? bus1 : bus2;
+    const assignedDriver = rIdx % 2 === 0 ? driver1 : driver2;
 
-  // Create 20 seats for Trip 1
-  const trip1Seats = [];
-  for (let i = 1; i <= bus1.capacity; i++) {
-    const seat = await prisma.seat.create({
-      data: {
-        tripId: trip1.id,
-        seatNumber: i,
-        status: i <= 3 ? "RESERVED" : "AVAILABLE",
-      },
-    });
-    trip1Seats.push(seat);
+    // Time offsets for today and tomorrow
+    const timeOffsets = [
+      { hours: 1, durationMins: 30, status: rIdx === 0 ? "BOARDING" : "NOT_STARTED" },
+      { hours: 3, durationMins: 30, status: "NOT_STARTED" },
+      { hours: 5, durationMins: 30, status: "NOT_STARTED" },
+      { hours: 24, durationMins: 30, status: "NOT_STARTED" }, // Tomorrow
+    ];
 
-    // Add device health log
-    await prisma.deviceStatusLog.create({
-      data: {
-        seatId: seat.id,
-        simulatedSignal: i === 7 ? "OFFLINE" : "OK",
-      },
-    });
+    for (let tIdx = 0; tIdx < timeOffsets.length; tIdx++) {
+      const offset = timeOffsets[tIdx];
+      const departure = new Date(now.getTime() + offset.hours * 60 * 60 * 1000 + tIdx * 15 * 60 * 1000);
+      const arrival = new Date(departure.getTime() + offset.durationMins * 60 * 1000);
+      const deadline = new Date(departure.getTime() - 5 * 60 * 1000);
+
+      const trip = await prisma.trip.create({
+        data: {
+          routeId: route.id,
+          busId: assignedBus.id,
+          driverId: assignedDriver.id,
+          departureTime: departure,
+          estimatedArrivalTime: arrival,
+          boardingDeadline: deadline,
+          status: offset.status,
+        },
+      });
+
+      // Create seats for each trip
+      for (let i = 1; i <= assignedBus.capacity; i++) {
+        const isReserved = rIdx === 2 && tIdx === 0; // Route 3 first trip is fully reserved to demonstrate waitlist
+        const seat = await prisma.seat.create({
+          data: {
+            tripId: trip.id,
+            seatNumber: i,
+            status: isReserved ? "RESERVED" : (rIdx === 0 && i <= 3 ? "RESERVED" : "AVAILABLE"),
+          },
+        });
+
+        // Add device health log
+        await prisma.deviceStatusLog.create({
+          data: {
+            seatId: seat.id,
+            simulatedSignal: i === 7 ? "OFFLINE" : "OK",
+          },
+        });
+
+        if (rIdx === 0 && i <= 3) {
+          // Booking for Route 1 first trip
+          const student = i === 1 ? student1 : i === 2 ? student2 : student4;
+          await prisma.booking.create({
+            data: {
+              studentId: student.id,
+              tripId: trip.id,
+              seatId: seat.id,
+              status: "CONFIRMED",
+            },
+          });
+        }
+      }
+    }
   }
 
-  // Create confirmed bookings for Trip 1
-  await prisma.booking.create({
-    data: {
-      studentId: student1.id,
-      tripId: trip1.id,
-      seatId: trip1Seats[0].id,
-      status: "CONFIRMED",
-    },
-  });
-
-  await prisma.booking.create({
-    data: {
-      studentId: student2.id,
-      tripId: trip1.id,
-      seatId: trip1Seats[1].id,
-      status: "CONFIRMED",
-    },
-  });
-
-  await prisma.booking.create({
-    data: {
-      studentId: student4.id,
-      tripId: trip1.id,
-      seatId: trip1Seats[2].id,
-      status: "CONFIRMED",
-    },
-  });
-
-  // Trip 2: Scheduled in 2 hours
-  const trip2Departure = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-  const trip2Arrival = new Date(trip2Departure.getTime() + 30 * 60 * 1000);
-  const trip2BoardingDeadline = new Date(trip2Departure.getTime() - 5 * 60 * 1000);
-
-  const trip2 = await prisma.trip.create({
-    data: {
-      routeId: route2.id,
-      busId: bus2.id,
-      driverId: driver2.id,
-      departureTime: trip2Departure,
-      estimatedArrivalTime: trip2Arrival,
-      boardingDeadline: trip2BoardingDeadline,
-      status: "NOT_STARTED",
-    },
-  });
-
-  for (let i = 1; i <= bus2.capacity; i++) {
-    const seat = await prisma.seat.create({
-      data: {
-        tripId: trip2.id,
-        seatNumber: i,
-        status: "AVAILABLE",
-      },
-    });
-    await prisma.deviceStatusLog.create({
-      data: {
-        seatId: seat.id,
-        simulatedSignal: "OK",
-      },
-    });
-  }
-
-  // Trip 3: Fully Booked + Waitlist demo (2 seats bus simulation or filled seats)
-  const trip3Departure = new Date(now.getTime() + 40 * 60 * 1000);
-  const trip3Arrival = new Date(trip3Departure.getTime() + 45 * 60 * 1000);
-  const trip3BoardingDeadline = new Date(trip3Departure.getTime() - 5 * 60 * 1000);
-
-  const trip3 = await prisma.trip.create({
-    data: {
-      routeId: route3.id,
-      busId: bus1.id,
-      driverId: driver1.id,
-      departureTime: trip3Departure,
-      estimatedArrivalTime: trip3Arrival,
-      boardingDeadline: trip3BoardingDeadline,
-      status: "NOT_STARTED",
-    },
-  });
-
-  // Reserve all 20 seats for trip3 to trigger waitlist logic easily
-  for (let i = 1; i <= 20; i++) {
-    const seat = await prisma.seat.create({
-      data: {
-        tripId: trip3.id,
-        seatNumber: i,
-        status: "RESERVED",
-      },
-    });
+  // Add a waitlisted booking for Route 3 first trip
+  const route3Trip1 = await prisma.trip.findFirst({ where: { routeId: route3Out.id } });
+  if (route3Trip1) {
     await prisma.booking.create({
       data: {
-        studentId: i % 2 === 0 ? student1.id : student2.id,
-        tripId: trip3.id,
-        seatId: seat.id,
-        status: "CONFIRMED",
+        studentId: student4.id,
+        tripId: route3Trip1.id,
+        status: "WAITLISTED",
+        waitlistPosition: 1,
       },
     });
   }
 
-  // Add a waitlisted student for Trip 3
-  await prisma.booking.create({
-    data: {
-      studentId: student4.id,
-      tripId: trip3.id,
-      status: "WAITLISTED",
-      waitlistPosition: 1,
-    },
-  });
-
   console.log("Seeding penalties & appeals...");
+
+  // Create a NO_SHOW booking for student3 to attach the penalty to
+  const route1Trip1 = await prisma.trip.findFirst({ where: { routeId: route1Out.id } });
+  let penaltyBookingId: string;
+
+  if (route1Trip1) {
+    // Find an available seat for student3's historical no-show booking
+    const availableSeat = await prisma.seat.findFirst({
+      where: { tripId: route1Trip1.id, status: "AVAILABLE" },
+    });
+
+    const noShowBooking = await prisma.booking.create({
+      data: {
+        studentId: student3.id,
+        tripId: route1Trip1.id,
+        seatId: availableSeat?.id || null,
+        status: "NO_SHOW",
+      },
+    });
+    penaltyBookingId = noShowBooking.id;
+  } else {
+    // Fallback: use student3's first booking if trip not found
+    const fallbackBooking = await prisma.booking.findFirst({ where: { studentId: student3.id } });
+    penaltyBookingId = fallbackBooking!.id;
+  }
+
   const penalty = await prisma.penalty.create({
     data: {
-      bookingId: (await prisma.booking.findFirst({ where: { studentId: student1.id } }))!.id,
+      bookingId: penaltyBookingId,
       studentId: student3.id,
       creditPointsDeducted: 15,
       reason: "No-show on Trip TAR-1001 (Departure 08:00 AM)",
@@ -323,7 +387,7 @@ async function main() {
     },
   });
 
-  console.log("Database seeded successfully!");
+  console.log("Database seeded successfully with 9 total routes!");
 }
 
 main()
