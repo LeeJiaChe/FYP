@@ -3,11 +3,17 @@ const { Server } = require("socket.io");
 const cron = require("node-cron");
 
 const PORT = process.env.REALTIME_PORT || 4000;
-const REALTIME_SECRET = process.env.REALTIME_SERVICE_SECRET || "fyp-realtime-secret-key";
+const REALTIME_SECRET = process.env.REALTIME_SERVICE_SECRET;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:3000";
+
+if (!REALTIME_SECRET) {
+  console.error("FATAL: REALTIME_SERVICE_SECRET is not set");
+  process.exit(1);
+}
 
 const server = http.createServer((req, res) => {
   // CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
@@ -35,7 +41,7 @@ const server = http.createServer((req, res) => {
         const payload = JSON.parse(body || "{}");
         const { room, event, data, secret } = payload;
 
-        if (secret !== REALTIME_SECRET && process.env.NODE_ENV === "production") {
+        if (secret !== REALTIME_SECRET) {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
           return;
@@ -64,7 +70,7 @@ const server = http.createServer((req, res) => {
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: CORS_ORIGIN.split(","),
     methods: ["GET", "POST"],
   },
 });

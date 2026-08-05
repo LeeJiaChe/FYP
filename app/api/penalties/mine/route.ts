@@ -45,6 +45,7 @@ export async function GET() {
       isBookingRestricted: user.isBookingRestricted,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch penalties" }, { status: 500 });
+    console.error("[penalties/mine] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

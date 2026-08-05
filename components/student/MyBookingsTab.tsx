@@ -70,7 +70,9 @@ export default function MyBookingsTab({
         </div>
       ) : (
         <div className="space-y-4">
-          {myBookings.map((b, idx) => (
+          {myBookings.map((b, idx) => {
+            const isTooLate = new Date(b.trip.departureTime).getTime() - Date.now() < 30 * 60 * 1000;
+            return (
             <div
               key={b.id}
               className="rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center gap-5 transition-all duration-200 animate-slide-up"
@@ -199,13 +201,14 @@ export default function MyBookingsTab({
                     </button>
                     <button
                       onClick={() => onCancelBooking(b.id)}
-                      className="btn-ghost text-xs"
+                      disabled={isTooLate}
+                      className="btn-ghost text-xs disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
                       style={{
                         color: "#f87171",
                         borderColor: "rgba(239,68,68,0.3)",
                       }}
                     >
-                      Cancel
+                      {isTooLate ? "Too late to cancel" : "Cancel"}
                     </button>
                   </>
                 )}
@@ -220,7 +223,8 @@ export default function MyBookingsTab({
                 )}
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>

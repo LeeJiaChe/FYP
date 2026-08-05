@@ -55,6 +55,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || "Failed to submit appeal" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to submit appeal" }, { status: 500 });
   }
 }

@@ -17,13 +17,14 @@ async function main() {
   await prisma.user.deleteMany();
 
   console.log("Seeding users...");
+  const adminPasswordHash = await bcrypt.hash("admin1", 10);
   const defaultPasswordHash = await bcrypt.hash("password123", 10);
 
   const admin = await prisma.user.create({
     data: {
-      name: "Transport Admin",
-      email: "admin@tarumt.edu.my",
-      passwordHash: defaultPasswordHash,
+      name: "System Admin",
+      email: "admin1@admin.tarc.edu.my",
+      passwordHash: adminPasswordHash,
       role: "ADMIN",
     },
   });
@@ -272,7 +273,7 @@ async function main() {
           departureTime: departure,
           estimatedArrivalTime: arrival,
           boardingDeadline: deadline,
-          status: offset.status,
+          status: offset.status as any,
         },
       });
 

@@ -53,6 +53,7 @@ export async function GET() {
       recommendation,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to compute utilization analytics" }, { status: 500 });
+    console.error("[analytics/utilization] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

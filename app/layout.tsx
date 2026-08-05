@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/theme";
+import { Toaster } from "react-hot-toast";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -41,6 +42,16 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans min-h-full flex flex-col antialiased`}>
         <ThemeProvider>
           {children}
+          <Toaster 
+            position="bottom-center" 
+            toastOptions={{ 
+              style: { 
+                background: 'var(--bg-card)', 
+                color: 'var(--text-primary)', 
+                border: '1px solid var(--border)' 
+              } 
+            }} 
+          />
         </ThemeProvider>
       </body>
     </html>

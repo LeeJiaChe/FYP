@@ -4,6 +4,11 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import SeatGrid, { SeatItem } from "@/components/SeatGrid";
 import QRScannerModal from "@/components/QRScannerModal";
+import ConfirmModal from "@/components/ConfirmModal";
+import Modal from "@/components/Modal";
+import { useAuth } from "@/hooks/useAuth";
+import { useTrips } from "@/hooks/useTrips";
+import toast from "react-hot-toast";
 import {
   Bus,
   Clock,
@@ -17,11 +22,11 @@ import {
 } from "lucide-react";
 
 export default function DriverDashboard() {
-  const [user, setUser] = useState<any>(null);
-  const [myTrips, setMyTrips] = useState<any[]>([]);
+  const { user, loading: userLoading } = useAuth();
+  const { trips: myTrips, loadingTrips, fetchTrips } = useTrips(undefined, user?.id);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [selectedTripDetails, setSelectedTripDetails] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const loading = userLoading || loadingTrips;
 
   // Modals state
   const [showScanner, setShowScanner] = useState(false);
@@ -29,10 +34,13 @@ export default function DriverDashboard() {
   const [delayStatus, setDelayStatus] = useState<"DELAYED" | "CANCELLED">("DELAYED");
   const [delayReason, setDelayReason] = useState("");
   const [updatingDelay, setUpdatingDelay] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{title: string, message: string, onConfirm: () => void, isDestructive?: boolean} | null>(null);
 
   useEffect(() => {
-    fetchUserAndTrips();
-  }, []);
+    if (myTrips.length > 0 && !selectedTripId) {
+      setSelectedTripId(myTrips[0].id);
+    }
+  }, [myTrips, selectedTripId]);
 
   useEffect(() => {
     if (selectedTripId) {
@@ -42,29 +50,7 @@ export default function DriverDashboard() {
     }
   }, [selectedTripId]);
 
-  async function fetchUserAndTrips() {
-    setLoading(true);
-    try {
-      const userRes = await fetch("/api/auth/me");
-      if (userRes.ok) {
-        const userData = await userRes.json();
-        setUser(userData.user);
 
-        const tripsRes = await fetch(`/api/trips?driverId=${userData.user.id}`);
-        if (tripsRes.ok) {
-          const tripsData = await tripsRes.json();
-          setMyTrips(tripsData.trips || []);
-          if (tripsData.trips?.length > 0) {
-            setSelectedTripId(tripsData.trips[0].id);
-          }
-        }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function fetchTripDetails(tripId: string) {
     try {
@@ -73,8 +59,8 @@ export default function DriverDashboard() {
         const data = await res.json();
         setSelectedTripDetails(data.trip);
       }
-    } catch {
-      // ignore
+    } catch (err: any) {
+      toast.error(err.message || "Failed to fetch trip details");
     }
   }
 
@@ -90,10 +76,38 @@ export default function DriverDashboard() {
       });
 
       if (res.ok) {
+        toast.success(`Checked in ${seat.booking.studentName}`);
         fetchTripDetails(selectedTripId!);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to check in");
       }
-    } catch {
-      // ignore
+    } catch (err: any) {
+      toast.error(err.message || "Network error");
+    }
+  }
+
+  async function handleUpdateTripStatus(newStatus: string) {
+    if (!selectedTripId) return;
+    
+
+    try {
+      const res = await fetch(`/api/trips/${selectedTripId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (res.ok) {
+        toast.success(`Trip status updated to ${newStatus}`);
+        fetchTripDetails(selectedTripId);
+        fetchTrips();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update trip status");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Network error");
     }
   }
 
@@ -113,12 +127,16 @@ export default function DriverDashboard() {
       });
 
       if (res.ok) {
+        toast.success(`Status broadcasted: ${delayStatus}`);
         setShowDelayModal(false);
         fetchTripDetails(selectedTripId);
-        fetchUserAndTrips();
+        fetchTrips();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to broadcast update");
       }
-    } catch {
-      // ignore
+    } catch (err: any) {
+      toast.error(err.message || "Network error");
     } finally {
       setUpdatingDelay(false);
     }
@@ -192,6 +210,21 @@ export default function DriverDashboard() {
                     >
                       <AlertTriangle className="w-4 h-4" /> Report Delay
                     </button>
+                    {selectedTripDetails.status === "SCHEDULED" || selectedTripDetails.status === "BOARDING" || selectedTripDetails.status === "DELAYED" ? (
+                      <button
+                        onClick={() => setConfirmAction({ title: "Start Trip", message: "Are you sure you want to mark this trip as DEPARTED?", onConfirm: () => handleUpdateTripStatus("DEPARTED") })}
+                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
+                      >
+                        Start Trip (Depart)
+                      </button>
+                    ) : selectedTripDetails.status === "DEPARTED" ? (
+                      <button
+                        onClick={() => setConfirmAction({ title: "End Trip", message: "Are you sure you want to mark this trip as ARRIVED?", onConfirm: () => handleUpdateTripStatus("ARRIVED") })}
+                        className="px-4 py-2.5 bg-green-600 hover:bg-green-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
+                      >
+                        End Trip (Arrived)
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -322,6 +355,15 @@ export default function DriverDashboard() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={() => { if (confirmAction) confirmAction.onConfirm(); }}
+        title={confirmAction?.title || ""}
+        message={confirmAction?.message || ""}
+        confirmText="Confirm"
+        isDestructive={confirmAction?.isDestructive}
+      />
     </div>
   );
 }

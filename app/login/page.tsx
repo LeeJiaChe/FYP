@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import toast from "react-hot-toast";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Bus, Lock, Mail, ArrowRight, AlertCircle, Info } from "lucide-react";

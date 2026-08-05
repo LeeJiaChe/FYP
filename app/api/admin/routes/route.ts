@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
-import { createRouteSchema } from "@/lib/validations";
+import { createRouteSchema, updateRouteSchema } from "@/lib/validations";
 
 export async function GET() {
   try {
@@ -24,7 +24,7 @@ export async function GET() {
 
     return NextResponse.json({ routes: formatted });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch routes" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch routes" }, { status: 500 });
   }
 }
 
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
       const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || "Failed to create route" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create route" }, { status: 500 });
   }
 }
 
@@ -70,8 +70,7 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
-    const { id, name, stops } = body;
-    if (!id) return NextResponse.json({ error: "Route ID required" }, { status: 400 });
+    const { id, name, stops } = updateRouteSchema.parse(body);
 
     const route = await prisma.route.update({
       where: { id },
@@ -90,7 +89,11 @@ export async function PATCH(req: Request) {
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to update route" }, { status: 500 });
+    if (err.name === "ZodError" || err.issues) {
+      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || "Validation error";
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    return NextResponse.json({ error: "Failed to update route" }, { status: 500 });
   }
 }
 
@@ -119,6 +122,6 @@ export async function DELETE(req: Request) {
     await prisma.route.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to delete route" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to delete route" }, { status: 500 });
   }
 }

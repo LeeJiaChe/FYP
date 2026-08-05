@@ -1,13 +1,14 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Plus, Edit } from "lucide-react";
 
 interface BusesTabProps {
   buses: any[];
   onOpenModal: () => void;
+  onEditBus: (bus: any) => void;
 }
 
-export default function BusesTab({ buses, onOpenModal }: BusesTabProps) {
+export default function BusesTab({ buses, onOpenModal, onEditBus }: BusesTabProps) {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
@@ -41,9 +42,14 @@ export default function BusesTab({ buses, onOpenModal }: BusesTabProps) {
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               Capacity: <span className="font-bold" style={{ color: "var(--text-primary)" }}>{b.capacity} Seats</span>
             </p>
-            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Trips Scheduled: {b._count?.trips || 0}</p>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{ width: `${Math.min(100, (b._count?.trips || 0) * 10)}%` }} />
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Trips Scheduled: {b._count?.trips || 0}</p>
+              <button 
+                onClick={() => onEditBus(b)} 
+                className="btn-ghost flex items-center gap-1 text-[11px] px-2 py-1"
+              >
+                <Edit className="w-3 h-3" /> Edit
+              </button>
             </div>
           </div>
         ))}

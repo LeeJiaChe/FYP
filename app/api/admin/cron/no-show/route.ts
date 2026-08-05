@@ -5,9 +5,9 @@ import { notifyRealtime } from "@/lib/realtime-client";
 export async function POST(req: Request) {
   try {
     const cronSecret = req.headers.get("x-cron-secret");
-    const expectedSecret = process.env.REALTIME_SERVICE_SECRET || "fyp-realtime-secret-key";
+    const expectedSecret = process.env.REALTIME_SERVICE_SECRET;
 
-    if (cronSecret !== expectedSecret && process.env.NODE_ENV === "production") {
+    if (!expectedSecret || cronSecret !== expectedSecret) {
       return NextResponse.json({ error: "Unauthorized cron call" }, { status: 401 });
     }
 
@@ -106,6 +106,6 @@ export async function POST(req: Request) {
       totalNoShowsProcessed,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Cron no-show processing failed" }, { status: 500 });
+    return NextResponse.json({ error: "Cron no-show processing failed" }, { status: 500 });
   }
 }

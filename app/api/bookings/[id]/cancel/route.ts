@@ -29,11 +29,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: `Cannot cancel booking with status ${booking.status}` }, { status: 400 });
     }
 
+    if (user.role !== "ADMIN") {
+      const cutoffTime = new Date(booking.trip.departureTime);
+      cutoffTime.setMinutes(cutoffTime.getMinutes() - 30);
+      if (new Date() > cutoffTime) {
+        return NextResponse.json(
+          { error: "Cannot cancel booking less than 30 minutes before departure" },
+          { status: 400 }
+        );
+      }
+    }
+
     const tripId = booking.tripId;
     const freedSeatId = booking.seatId;
 
     // Execute cancellation & waitlist promotion in transaction
     const result = await prisma.$transaction(async (tx) => {
+      // Add row-level lock on the Trip to serialize concurrent cancellation/booking requests
+      await tx.$executeRaw`SELECT id FROM "Trip" WHERE id = ${tripId} FOR UPDATE`;
+
       // 1. Cancel target booking
       await tx.booking.update({
         where: { id: bookingId },
@@ -118,6 +132,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       wasWaitlistPromoted: !!result.promotedStudentId,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to cancel booking" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to cancel booking" }, { status: 500 });
   }
 }

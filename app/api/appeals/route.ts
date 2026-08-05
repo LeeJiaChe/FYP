@@ -48,6 +48,6 @@ export async function GET() {
 
     return NextResponse.json({ appeals: formatted });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch appeals" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch appeals" }, { status: 500 });
   }
 }

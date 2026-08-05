@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
-import { createBusSchema } from "@/lib/validations";
+import { createBusSchema, updateBusSchema } from "@/lib/validations";
 
 export async function GET() {
   try {
@@ -18,7 +18,8 @@ export async function GET() {
     });
     return NextResponse.json({ buses });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch buses" }, { status: 500 });
+    console.error("[admin/buses GET] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -39,10 +40,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, bus });
   } catch (err: any) {
     if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
+      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || "Failed to create bus" }, { status: 500 });
+    console.error("[admin/buses POST] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -54,9 +56,22 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
-    const { id, plateNumber, capacity, status } = body;
+    const { id, plateNumber, capacity, status } = updateBusSchema.parse(body);
 
-    if (!id) return NextResponse.json({ error: "Bus ID required" }, { status: 400 });
+    if (capacity !== undefined) {
+      const busCurrent = await prisma.bus.findUnique({ where: { id } });
+      if (busCurrent && capacity < busCurrent.capacity) {
+        const activeTripsCount = await prisma.trip.count({
+          where: { busId: id, status: { in: ["NOT_STARTED", "BOARDING"] } },
+        });
+        if (activeTripsCount > 0) {
+          return NextResponse.json(
+            { error: `Cannot decrease capacity. Bus has ${activeTripsCount} active or upcoming trip(s).` },
+            { status: 400 }
+          );
+        }
+      }
+    }
 
     const updatedBus = await prisma.$transaction(async (tx) => {
       const bus = await tx.bus.update({
@@ -124,7 +139,12 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({ success: true, bus: updatedBus });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to update bus" }, { status: 500 });
+    if (err.name === "ZodError" || err.issues) {
+      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || "Validation error";
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    console.error("[admin/buses PATCH] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -150,9 +170,11 @@ export async function DELETE(req: Request) {
       );
     }
 
-    await prisma.bus.delete({ where: { id } });
+    // Soft delete per Q-006 to preserve historical references
+    await prisma.bus.update({ where: { id }, data: { deletedAt: new Date(), status: "RETIRED" } });
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to delete bus" }, { status: 500 });
+    console.error("[admin/buses DELETE] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

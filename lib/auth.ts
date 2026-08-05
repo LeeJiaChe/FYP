@@ -3,7 +3,10 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
-const JWT_SECRET = process.env.JWT_SECRET || "tarumt-bus-booking-secret-key-2026-fyp";
+const JWT_SECRET = process.env.JWT_SECRET as string;
+if (!JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET environment variable is not set.");
+}
 export const COOKIE_NAME = "fyp_session";
 
 export interface JWTPayload {
@@ -11,6 +14,7 @@ export interface JWTPayload {
   role: "STUDENT" | "DRIVER" | "ADMIN";
   email: string;
   name: string;
+  sessionVersion: number;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -25,7 +29,7 @@ export function signToken(payload: JWTPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }
 
-export function verifyToken(token: string): JWTPayload | null {
+function verifyToken(token: string): JWTPayload | null {
   try {
     return jwt.verify(token, JWT_SECRET) as JWTPayload;
   } catch {
@@ -41,7 +45,20 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifyToken(token);
+  const payload = verifyToken(token);
+  if (!payload) return null;
+
+  // DB lookup to verify sessionVersion
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { sessionVersion: true }
+  });
+
+  if (!user || user.sessionVersion !== payload.sessionVersion) {
+    return null;
+  }
+
+  return payload;
 }
 
 /**
@@ -61,6 +78,8 @@ export async function getCurrentUser() {
   });
 
   if (!user) return null;
+  if (user.sessionVersion !== payload.sessionVersion) return null;
+  
   return user;
 }
 

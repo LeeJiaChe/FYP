@@ -47,14 +47,10 @@ export default function Route36HighlightCard({
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <span
-              className="live-dot w-2.5 h-2.5 rounded-full"
-              style={{ background: "#4ade80", display: "inline-block" }}
-            />
-            <span
               className="text-xs font-bold tracking-widest uppercase"
-              style={{ color: "#4ade80" }}
+              style={{ color: "var(--accent-primary)" }}
             >
-              Live Route
+              Featured Route
             </span>
           </div>
           <h2

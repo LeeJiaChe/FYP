@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Bus, MapPin, Clock, Navigation, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { Bus, MapPin, Clock, Navigation, RefreshCw, AlertCircle } from "lucide-react";
 
 interface BusLocationProps {
   tripId: string;
@@ -35,7 +35,6 @@ export default function BusLocationTracker({
   status,
 }: BusLocationProps) {
   const [progress, setProgress] = useState(0);
-  const [isConnected, setIsConnected] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [eta, setEta] = useState("");
   const animFrameRef = useRef<number | null>(null);
@@ -44,9 +43,8 @@ export default function BusLocationTracker({
   useEffect(() => {
     function tick() {
       const p = simulateBusProgress(departureTime, estimatedArrivalTime);
-      // Add small oscillation for realism
-      const jitter = (Math.random() - 0.5) * 0.8;
-      const smoothed = Math.max(0, Math.min(100, p + jitter));
+      // Small smoothing value instead of jitter to keep animation smooth
+      const smoothed = Math.max(0, Math.min(100, p));
       setProgress(smoothed);
       progressRef.current = smoothed;
 
@@ -62,9 +60,6 @@ export default function BusLocationTracker({
       }
 
       setLastUpdate(new Date());
-
-      // Simulate occasional connection drops
-      setIsConnected(Math.random() > 0.05);
     }
 
     tick();
@@ -103,10 +98,15 @@ export default function BusLocationTracker({
               <Navigation className="w-4 h-4 text-white" />
             </div>
             <h3 className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>
-              Live Bus Location
+              Estimated Bus Location
             </h3>
           </div>
-          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{routeName}</p>
+          <div className="flex items-center gap-1.5 mt-1">
+            <AlertCircle className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+            <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              Simulated tracking — based on schedule, not live GPS.
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-col items-end gap-1.5">
@@ -116,16 +116,6 @@ export default function BusLocationTracker({
           >
             {status.replace(/_/g, " ")}
           </span>
-          <div className="flex items-center gap-1.5">
-            {isConnected ? (
-              <Wifi className="w-3 h-3" style={{ color: "#4ade80" }} />
-            ) : (
-              <WifiOff className="w-3 h-3" style={{ color: "#f87171" }} />
-            )}
-            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-              {isConnected ? "Live" : "Reconnecting..."}
-            </span>
-          </div>
         </div>
       </div>
 
@@ -228,11 +218,13 @@ export default function BusLocationTracker({
       </div>
 
       {/* Updated at */}
-      <div className="flex items-center gap-1.5">
-        <div className="w-1.5 h-1.5 rounded-full live-dot" style={{ background: isConnected ? "#4ade80" : "#f87171" }} />
-        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-          Updated {lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-        </span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Clock className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+            Calculated at {lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          </span>
+        </div>
       </div>
     </div>
   );

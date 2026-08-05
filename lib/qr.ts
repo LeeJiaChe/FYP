@@ -1,7 +1,10 @@
 import jwt from "jsonwebtoken";
 import QRCode from "qrcode";
 
-const QR_SECRET = process.env.JWT_SECRET || "tarumt-bus-booking-secret-key-2026-fyp";
+const QR_SECRET = (process.env.QR_SECRET || process.env.JWT_SECRET) as string;
+if (!QR_SECRET) {
+  throw new Error("FATAL: QR_SECRET or JWT_SECRET environment variable is not set.");
+}
 
 export interface QRTokenPayload {
   bookingId: string;

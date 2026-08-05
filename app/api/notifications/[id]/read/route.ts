@@ -18,6 +18,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to update notification" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update notification" }, { status: 500 });
   }
 }

@@ -2,9 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, signToken, COOKIE_NAME } from "@/lib/auth";
 import { registerSchema } from "@/lib/validations";
+import { registerRateLimiter } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   try {
+    const ip = req.headers.get("x-forwarded-for") || "unknown";
+    if (!registerRateLimiter.check(ip)) {
+      return NextResponse.json({ error: "Too many registration attempts, please try again later" }, { status: 429 });
+    }
+
     const body = await req.json();
     const validated = registerSchema.parse(body);
 
@@ -30,9 +36,9 @@ export async function POST(req: Request) {
       data: {
         name: validated.name,
         email: validated.email,
-        studentId: validated.role === "STUDENT" ? validated.studentId || `STU${Date.now().toString().slice(-6)}` : null,
+        studentId: validated.studentId || `STU${Date.now().toString().slice(-6)}`,
         passwordHash,
-        role: validated.role,
+        role: "STUDENT",
         creditScore: 100,
         isBookingRestricted: false,
       },
@@ -43,6 +49,7 @@ export async function POST(req: Request) {
       role: user.role as any,
       email: user.email,
       name: user.name,
+      sessionVersion: user.sessionVersion,
     });
 
     const res = NextResponse.json({
@@ -71,6 +78,6 @@ export async function POST(req: Request) {
       const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

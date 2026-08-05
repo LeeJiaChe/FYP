@@ -6,6 +6,11 @@ import { notifyRealtime } from "@/lib/realtime-client";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getUserFromToken();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { id } = await params;
     const trip = await prisma.trip.findUnique({
       where: { id },
@@ -21,7 +26,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             booking: {
               include: {
                 student: {
-                  select: { id: true, name: true, studentId: true, email: true },
+                  select: { id: true, name: true, studentId: true },
                 },
               },
             },
@@ -53,8 +58,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         ? {
             id: seat.booking.id,
             status: seat.booking.status,
-            studentName: seat.booking.student.name,
-            studentId: seat.booking.student.studentId,
+            studentName:
+              user.role === "ADMIN" || user.role === "DRIVER" || seat.booking.student.id === user.userId
+                ? seat.booking.student.name
+                : "Student",
+            studentId:
+              user.role === "ADMIN" || user.role === "DRIVER" || seat.booking.student.id === user.userId
+                ? seat.booking.student.studentId
+                : "***",
             checkedInAt: seat.booking.checkedInAt,
             checkInMethod: seat.booking.checkInMethod,
           }
@@ -85,7 +96,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         status: trip.status,
         delayReason: trip.delayReason,
         seats: formattedSeats,
-        waitlist: trip.bookings,
+        waitlist:
+          user.role === "ADMIN" || user.role === "DRIVER"
+            ? trip.bookings
+            : trip.bookings.filter((b) => b.studentId === user.userId),
         stats: {
           totalSeats,
           availableSeats,
@@ -96,7 +110,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch trip" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch trip" }, { status: 500 });
   }
 }
 
@@ -200,6 +214,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || "Failed to update trip" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update trip" }, { status: 500 });
   }
 }

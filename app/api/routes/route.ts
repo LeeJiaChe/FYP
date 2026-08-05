@@ -26,6 +26,6 @@ export async function GET() {
 
     return NextResponse.json({ routes: formatted });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch routes" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch routes" }, { status: 500 });
   }
 }

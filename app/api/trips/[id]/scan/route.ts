@@ -12,6 +12,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const { id: tripId } = await params;
+
+    if (currentUser.role === "DRIVER") {
+      const trip = await prisma.trip.findUnique({
+        where: { id: tripId },
+        select: { driverId: true },
+      });
+      if (!trip) {
+        return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+      }
+      if (trip.driverId !== currentUser.userId) {
+        return NextResponse.json(
+          { error: "You can only scan QR codes for trips assigned to you" },
+          { status: 403 }
+        );
+      }
+    }
+
     const body = await req.json();
     const { token } = body;
 
@@ -88,6 +105,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to process scan" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process scan" }, { status: 500 });
   }
 }

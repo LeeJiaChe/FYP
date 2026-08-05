@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import toast from "react-hot-toast";
 import io from "socket.io-client";
 import Navbar from "@/components/Navbar";
+import { useAuth } from "@/hooks/useAuth";
+import { useTrips } from "@/hooks/useTrips";
 import LiveMonitoringTab from "@/components/admin/LiveMonitoringTab";
 import BusesTab from "@/components/admin/BusesTab";
 import RoutesTab from "@/components/admin/RoutesTab";
@@ -20,13 +23,13 @@ import {
 } from "lucide-react";
 
 export default function AdminDashboard() {
-  const [user, setUser] = useState<any>(null);
+  const { user } = useAuth();
+  const { trips, fetchTrips } = useTrips();
   const [activeTab, setActiveTab] = useState<
     "live" | "buses" | "routes" | "trips" | "appeals" | "analytics"
   >("live");
 
   // Realtime Live Seat Monitoring state
-  const [trips, setTrips] = useState<any[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [liveTripDetails, setLiveTripDetails] = useState<any>(null);
 
@@ -41,6 +44,8 @@ export default function AdminDashboard() {
 
   // Modals / Forms state
   const [showBusModal, setShowBusModal] = useState(false);
+  const [editingBusId, setEditingBusId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [newBus, setNewBus] = useState({
     plateNumber: "",
     capacity: 20,
@@ -63,8 +68,6 @@ export default function AdminDashboard() {
   const [adminComment, setAdminComment] = useState("");
 
   useEffect(() => {
-    fetchUser();
-    fetchTrips();
     fetchBuses();
     fetchRoutes();
     fetchDrivers();
@@ -77,6 +80,12 @@ export default function AdminDashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  useEffect(() => {
+    if (trips.length > 0 && !selectedTripId) {
+      setSelectedTripId(trips[0].id);
+    }
+  }, [trips, selectedTripId]);
 
   useEffect(() => {
     if (!selectedTripId) return;
@@ -103,29 +112,6 @@ export default function AdminDashboard() {
     };
   }, [selectedTripId]);
 
-  async function fetchUser() {
-    try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      }
-    } catch {}
-  }
-
-  async function fetchTrips() {
-    try {
-      const res = await fetch("/api/trips");
-      if (res.ok) {
-        const data = await res.json();
-        setTrips(data.trips || []);
-        if (data.trips?.length > 0 && !selectedTripId) {
-          setSelectedTripId(data.trips[0].id);
-        }
-      }
-    } catch {}
-  }
-
   async function fetchTripDetails(tripId: string) {
     try {
       const res = await fetch(`/api/trips/${tripId}`);
@@ -133,7 +119,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         setLiveTripDetails(data.trip);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function fetchBuses() {
@@ -143,7 +129,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         setBuses(data.buses || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function fetchRoutes() {
@@ -153,7 +139,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         setRoutes(data.routes || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function fetchDrivers() {
@@ -163,7 +149,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         setDrivers(data.drivers || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function fetchAppeals() {
@@ -173,7 +159,7 @@ export default function AdminDashboard() {
         const data = await res.json();
         setAppeals(data.appeals || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function fetchAnalytics() {
@@ -190,28 +176,35 @@ export default function AdminDashboard() {
         const noShowDataRes = await noShowRes.json();
         setNoShowData(noShowDataRes.data || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
-  async function handleCreateBus(e: React.FormEvent) {
+    async function handleCreateBus(e: React.FormEvent) {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       const res = await fetch("/api/admin/buses", {
-        method: "POST",
+        method: editingBusId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newBus),
+        body: JSON.stringify(editingBusId ? { id: editingBusId, ...newBus } : newBus),
       });
 
       if (res.ok) {
+        toast.success(editingBusId ? "Bus updated successfully" : "Bus created successfully");
         setShowBusModal(false);
+        setEditingBusId(null);
         setNewBus({ plateNumber: "", capacity: 20, status: "ACTIVE" });
         fetchBuses();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to save bus");
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
   }
 
-  async function handleCreateRoute(e: React.FormEvent) {
+    async function handleCreateRoute(e: React.FormEvent) {
     e.preventDefault();
+    setIsSubmitting(true);
     const stops = newRoute.stopsInput
       .split(",")
       .map((s) => s.trim())
@@ -224,15 +217,20 @@ export default function AdminDashboard() {
       });
 
       if (res.ok) {
+        toast.success("Route created successfully");
         setShowRouteModal(false);
         setNewRoute({ name: "", stopsInput: "" });
         fetchRoutes();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to create route");
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
   }
 
-  async function handleCreateTrip(e: React.FormEvent) {
+    async function handleCreateTrip(e: React.FormEvent) {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       const payload = {
         ...newTrip,
@@ -252,6 +250,7 @@ export default function AdminDashboard() {
       });
 
       if (res.ok) {
+        toast.success("Trip scheduled successfully");
         setShowTripModal(false);
         setNewTrip({
           routeId: "",
@@ -263,15 +262,17 @@ export default function AdminDashboard() {
         fetchTrips();
       } else {
         const errData = await res.json();
-        alert(`Failed to schedule trip: ${errData.error || res.status}`);
+        toast.error(`Failed to schedule trip: ${errData.error || res.status}`);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
   }
 
-  async function handleReviewAppeal(
+
+    async function handleReviewAppeal(
     appealId: string,
     status: "APPROVED" | "REJECTED"
   ) {
+    setIsSubmitting(true);
     try {
       const res = await fetch(`/api/appeals/${appealId}`, {
         method: "PATCH",
@@ -280,11 +281,15 @@ export default function AdminDashboard() {
       });
 
       if (res.ok) {
+        toast.success(`Appeal ${status.toLowerCase()} successfully`);
         setSelectedAppeal(null);
         setAdminComment("");
         fetchAppeals();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to process appeal");
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
   }
 
   return (
@@ -378,7 +383,7 @@ export default function AdminDashboard() {
 
         {/* TAB 2: BUSES CRUD */}
         {activeTab === "buses" && (
-          <BusesTab buses={buses} onOpenModal={() => setShowBusModal(true)} />
+          <BusesTab buses={buses} onOpenModal={() => { setEditingBusId(null); setNewBus({ plateNumber: "", capacity: 20, status: "ACTIVE" }); setShowBusModal(true); }} onEditBus={(bus) => { setEditingBusId(bus.id); setNewBus({ plateNumber: bus.plateNumber, capacity: bus.capacity, status: bus.status }); setShowBusModal(true); }} />
         )}
 
         {/* TAB 3: ROUTES CRUD */}
@@ -424,7 +429,7 @@ export default function AdminDashboard() {
               className="text-lg font-bold"
               style={{ color: "var(--text-primary)" }}
             >
-              Add New Bus to Fleet
+              {editingBusId ? "Edit Bus" : "Add New Bus to Fleet"}
             </h2>
             <form onSubmit={handleCreateBus} className="space-y-4">
               <div>

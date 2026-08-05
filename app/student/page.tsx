@@ -1,17 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
+import ConfirmModal from "@/components/ConfirmModal";
 import SeatGrid, { SeatItem } from "@/components/SeatGrid";
 import DynamicQRModal from "@/components/DynamicQRModal";
 import PenaltyAppealModal from "@/components/PenaltyAppealModal";
 import RestrictedBanner from "@/components/student/RestrictedBanner";
-import HeroStatsRow from "@/components/student/HeroStatsRow";
+import NextTripBanner from "@/components/student/NextTripBanner";
 import Route36HighlightCard from "@/components/student/Route36HighlightCard";
 import TripsTab from "@/components/student/TripsTab";
 import MyBookingsTab from "@/components/student/MyBookingsTab";
 import TrackBusTab from "@/components/student/TrackBusTab";
 import PenaltiesTab from "@/components/student/PenaltiesTab";
+import { useAuth } from "@/hooks/useAuth";
+import { useTrips } from "@/hooks/useTrips";
 
 import { Bus, Ticket, Navigation, CreditCard, X, AlertCircle } from "lucide-react";
 
@@ -19,13 +23,11 @@ export default function StudentDashboard() {
   const [activeTab, setActiveTab] = useState<
     "trips" | "bookings" | "track" | "penalties"
   >("trips");
-  const [user, setUser] = useState<any>(null);
+  const { user, fetchUser } = useAuth();
 
   // Trips state
-  const [trips, setTrips] = useState<any[]>([]);
   const [routes, setRoutes] = useState<any[]>([]);
-  const [selectedRouteId, setSelectedRouteId] = useState<string>("");
-  const [loadingTrips, setLoadingTrips] = useState(true);
+  const { trips, loadingTrips, fetchTrips } = useTrips();
   const [searchQuery, setSearchQuery] = useState("");
 
   // Seat booking modal state
@@ -33,6 +35,7 @@ export default function StudentDashboard() {
   const [tripSeats, setTripSeats] = useState<SeatItem[]>([]);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
 
   // My Bookings state
@@ -47,26 +50,10 @@ export default function StudentDashboard() {
   const [appealPenalty, setAppealPenalty] = useState<any>(null);
 
   useEffect(() => {
-    fetchUser();
     fetchRoutes();
     fetchBookings();
     fetchPenalties();
   }, []);
-
-  useEffect(() => {
-    fetchTrips();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRouteId]);
-
-  async function fetchUser() {
-    try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      }
-    } catch {}
-  }
 
   async function fetchRoutes() {
     try {
@@ -75,23 +62,7 @@ export default function StudentDashboard() {
         const data = await res.json();
         setRoutes(data.routes || []);
       }
-    } catch {}
-  }
-
-  async function fetchTrips() {
-    setLoadingTrips(true);
-    try {
-      let url = "/api/trips";
-      if (selectedRouteId) url += `?routeId=${selectedRouteId}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setTrips(data.trips || []);
-      }
-    } catch {
-    } finally {
-      setLoadingTrips(false);
-    }
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function fetchBookings() {
@@ -101,7 +72,7 @@ export default function StudentDashboard() {
         const data = await res.json();
         setMyBookings(data.bookings || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function fetchPenalties() {
@@ -111,7 +82,7 @@ export default function StudentDashboard() {
         const data = await res.json();
         setPenalties(data.penalties || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function openSeatBookingModal(tripId: string) {
@@ -124,7 +95,7 @@ export default function StudentDashboard() {
         setSelectedTrip(data.trip);
         setTripSeats(data.trip.seats || []);
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
   async function handleConfirmBooking(isWaitlist: boolean = false) {
@@ -160,17 +131,20 @@ export default function StudentDashboard() {
     }
   }
 
-  async function handleCancelBooking(bookingId: string) {
-    if (!confirm("Are you sure you want to cancel this booking?")) return;
+    async function handleCancelBooking(bookingId: string) {
     try {
       const res = await fetch(`/api/bookings/${bookingId}/cancel`, {
         method: "PATCH",
       });
       if (res.ok) {
+        toast.success("Booking cancelled successfully");
         fetchBookings();
         fetchTrips();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to cancel booking");
       }
-    } catch {}
+    } catch (err: any) { toast.error(err.message || "Network error"); }
   }
 
   // Filter trips by search query
@@ -207,19 +181,16 @@ export default function StudentDashboard() {
           onViewPenalties={() => setActiveTab("penalties")}
         />
 
-        {/* Hero Stats Row */}
-        <HeroStatsRow
-          activeTripsCount={trips.length}
-          availableSeatsCount={availableSeatsCount}
-          activeBookingsCount={activeBookingsCount}
-          creditScore={user?.creditScore ?? 100}
+        {/* Next Trip Banner */}
+        <NextTripBanner
+          myBookings={myBookings}
+          onViewQR={(booking) => setActiveQRBooking(booking)}
         />
 
         {/* Route 3->6 Highlight Card */}
         <Route36HighlightCard
           trips={trips}
           onSelectRoute={() => {
-            setSelectedRouteId("");
             setActiveTab("trips");
           }}
         />
@@ -282,18 +253,6 @@ export default function StudentDashboard() {
               </button>
             ))}
           </div>
-
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border shrink-0"
-            style={{
-              background: "var(--bg-card)",
-              borderColor: "var(--border)",
-              color: (user?.creditScore ?? 100) < 40 ? "#f87171" : "#4ade80",
-            }}
-          >
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>{user?.creditScore ?? 100} / 100 pts</span>
-          </div>
         </div>
 
         {/* TAB 1: BOOK SHUTTLE */}
@@ -323,7 +282,7 @@ export default function StudentDashboard() {
               setTrackedTrip(trip);
               setActiveTab("track");
             }}
-            onCancelBooking={handleCancelBooking}
+            onCancelBooking={(id) => setConfirmCancelId(id)}
           />
         )}
 
@@ -463,6 +422,16 @@ export default function StudentDashboard() {
           }}
         />
       )}
+      <ConfirmModal
+        isOpen={!!confirmCancelId}
+        onClose={() => setConfirmCancelId(null)}
+        onConfirm={() => { if (confirmCancelId) handleCancelBooking(confirmCancelId); }}
+        title="Cancel Booking"
+        message="Are you sure you want to cancel this booking? This action cannot be undone."
+        confirmText="Yes, Cancel Booking"
+        cancelText="Keep Booking"
+        isDestructive={true}
+      />
     </div>
   );
 }

@@ -3,8 +3,12 @@ import { z } from "zod";
 export const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  role: z.enum(["STUDENT", "DRIVER", "ADMIN"]).default("STUDENT"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
   studentId: z.string().optional(),
 });
 
@@ -22,6 +26,14 @@ export const createBusSchema = z.object({
 export const createRouteSchema = z.object({
   name: z.string().min(2, "Route name required"),
   stops: z.array(z.string()).min(2, "At least two stops required"),
+});
+
+export const updateBusSchema = createBusSchema.partial().extend({
+  id: z.string().min(1, "Bus ID required"),
+});
+
+export const updateRouteSchema = createRouteSchema.partial().extend({
+  id: z.string().min(1, "Route ID required"),
 });
 
 const parseableDatetime = z

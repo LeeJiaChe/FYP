@@ -89,6 +89,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || "Failed to process appeal review" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process appeal review" }, { status: 500 });
   }
 }

@@ -47,6 +47,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       expiresInSeconds: 60,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to generate QR token" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to generate QR token" }, { status: 500 });
   }
 }

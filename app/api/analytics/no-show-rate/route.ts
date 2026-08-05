@@ -48,6 +48,6 @@ export async function GET() {
 
     return NextResponse.json({ data: noShowStats });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to compute no-show analytics" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to compute no-show analytics" }, { status: 500 });
   }
 }

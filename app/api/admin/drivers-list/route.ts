@@ -22,6 +22,6 @@ export async function GET() {
 
     return NextResponse.json({ drivers });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch drivers" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch drivers" }, { status: 500 });
   }
 }

@@ -49,6 +49,7 @@ export async function GET() {
 
     return NextResponse.json({ bookings: formatted });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch student bookings" }, { status: 500 });
+    console.error("[bookings/mine] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

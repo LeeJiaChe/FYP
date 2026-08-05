@@ -5,6 +5,10 @@ import { createTripSchema } from "@/lib/validations";
 
 export async function GET(req: Request) {
   try {
+    const user = await getUserFromToken();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const { searchParams } = new URL(req.url);
     const routeId = searchParams.get("routeId");
     const dateStr = searchParams.get("date");
@@ -78,7 +82,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ trips: formattedTrips });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch trips" }, { status: 500 });
+    console.error("[trips GET] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -119,7 +124,7 @@ export async function POST(req: Request) {
       });
 
       // Auto-generate seats for the bus capacity
-      const seatData = [];
+      const seatData: { tripId: string; seatNumber: number; status: "AVAILABLE" }[] = [];
       for (let i = 1; i <= bus.capacity; i++) {
         seatData.push({
           tripId: trip.id,
@@ -138,10 +143,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, trip: result });
   } catch (err: any) {
     if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
+      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    console.error("Failed to create trip:", err);
-    return NextResponse.json({ error: err.message || "Failed to create trip" }, { status: 500 });
+    console.error("[trips POST] Error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

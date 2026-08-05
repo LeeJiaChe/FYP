@@ -21,6 +21,6 @@ export async function GET() {
 
     return NextResponse.json({ notifications, unreadCount });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Failed to fetch notifications" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch notifications" }, { status: 500 });
   }
 }

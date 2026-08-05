@@ -1,6 +1,6 @@
 # Project Assumptions & Design Decisions (NOTES.md)
 
-1. **Database Provider**: Using SQLite with Prisma ORM (`file:./dev.db`) for zero-dependency local execution. The schema adheres 100% to the specification entities and field names.
+1. **Database Provider**: Using PostgreSQL with Prisma ORM. The schema adheres 100% to the specification entities and field names.
 
 2. **Realtime Service**: Standalone Node.js service running in `/realtime` using Express and Socket.io. Next.js API routes trigger realtime broadcasts via HTTP requests to `http://localhost:4000/emit`. Two env vars are intentionally split:
    - `REALTIME_URL` (server-only, no `NEXT_PUBLIC_` prefix) — used by `lib/realtime-client.ts` in API routes. Never exposed to client bundle.
@@ -32,7 +32,7 @@
 
 10. **QR Scanner UI**: The driver's QR scanner currently requires pasting the JWT token string (text input). In a real deployment, this would use a device camera with a barcode scanning library. For demo/FYP purposes, the paste-based scanner is sufficient and is explicitly a simulation.
 
-11. **PWA Delivery**: Full PWA support via `/app/manifest.ts`, mobile viewport meta tags, and standalone app shell behavior. `next-pwa` service worker is NOT configured (it is a stretch goal per spec §12). The PWA manifest and Apple meta tags ARE present.
+11. **Platform Strategy**: Currently targeting web app only. No PWA/mobile app decision has been finalized yet. The existing PWA configuration (manifest and meta tags) is left as-is for now, and a decision on Native vs PWA will be settled after Phase 4. All core application logic has been audited and fixed across Phases 1-3.
 
 12. **Analytics Historical Coverage**: Historical trip data from all buses (including those now RETIRED) is included in analytics aggregations. This is the correct decision for accurate historical demand reporting. Assumption logged here per spec §3 instruction.
 

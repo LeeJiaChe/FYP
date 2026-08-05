@@ -32,6 +32,9 @@ export async function POST(req: Request) {
 
     // Execute booking logic inside transaction
     const bookingResult = await prisma.$transaction(async (tx) => {
+      // Add row-level lock on the Trip to serialize concurrent booking requests
+      await tx.$executeRaw`SELECT id FROM "Trip" WHERE id = ${tripId} FOR UPDATE`;
+
       // Check if student already has a confirmed or waitlisted booking on this trip inside transaction
       const existing = await tx.booking.findFirst({
         where: {
@@ -133,6 +136,6 @@ export async function POST(req: Request) {
       const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
-    return NextResponse.json({ error: err.message || "Failed to process booking" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process booking" }, { status: 500 });
   }
 }
