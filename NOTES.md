@@ -1,6 +1,6 @@
 # Approved Product and Architecture Decisions
 
-Status: Phase 0 decisions aligned on 2026-08-14.
+Status: Phase 0 decisions and pre-Phase-1 owner amendments aligned on 2026-08-14.
 
 `framework/APP_SPECIFICATION.md` is the product source of truth. The target
 technical design is `framework/ARCHITECTURE.md`; migration impact and remaining
@@ -82,10 +82,28 @@ short decision index, not evidence that the current implementation is complete.
     standing flow, schedule-interpolated map, PWA artifacts, and device-health
     feature are prototype behavior—not approved target behavior.
 
-17. **Unresolved policies:** Waitlist fairness, Trip/DELAYED transitions, exact
-    timing/penalty constants, admin overrides, assessed scanner mode, location
-    retention/deployment, identity normalization, account deletion/export, and
-    intermediate-stop schedule input and Walk-in issuance eligibility require
-    owner confirmation as listed in the architecture audit. The owner must also
-    confirm whether any non-demo data needs preservation because current Bookings
-    never stored truthful From/To values. Do not guess during implementation.
+17. **Waitlist order:** Promotion is oldest-compatible-first FIFO. A temporarily
+    incompatible entry may be skipped but keeps its original priority.
+
+18. **Trip state:** Lifecycle is `NOT_STARTED -> BOARDING -> DEPARTED -> ARRIVED`,
+    with irreversible `ARRIVED`/`CANCELLED` terminals. Delay is metadata. A future
+    post-departure emergency cancellation requires a reason and TripStatusHistory.
+
+19. **Central policy:** Defaults are booking 7 days ahead, cancellation 30 minutes
+    before the boarding stop, boarding from 15 minutes before through 5 minutes
+    after that stop unless delayed, QR lifetime 60 seconds, initial credit 100,
+    no-show penalty 15, restriction below 40, GPS interval 5 seconds, and location
+    retention 7 days. One validated configuration module owns these values.
+
+20. **Identity and scanning:** Student email is trim/lowercase and limited to
+    `@student.tarc.edu.my` without an invented local-part regex; student ID is
+    trim/uppercase. Camera QR scanning is required; paste is dev/demo fallback.
+
+21. **Scheduling and scope:** RouteStops store travel duration to the next stop;
+    TripStop times derive from the origin departure and offsets. Account deletion
+    and export are out of scope. Citation verification is a final defence task.
+
+22. **Walk-in and migration:** Walk-in intent may be issued regardless of reserved
+    availability, but is redundant beside the same student's confirmed Booking
+    for the same Trip/journey. No non-demo legacy data must survive; the
+    development database may be reset and reseeded in the approved migration.

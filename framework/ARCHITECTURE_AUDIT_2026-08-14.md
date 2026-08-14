@@ -11,7 +11,7 @@ Target architecture: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 Phase 0 amendment status: **Owner decisions incorporated on 2026-08-14; no
 implementation or Prisma migration performed.** The current-state evidence below
 still describes the prototype, while the decision table, migration phases, and
-unresolved questions have been updated to the approved target product.
+formerly unresolved questions have been replaced by the approved target rules.
 
 ## 1. Executive conclusion
 
@@ -357,31 +357,38 @@ before their dependencies have a target owner.
   ordered migration plan without changing implementation or Prisma.
 - Inventory all obsolete PWA, device-health, schedule-interpolation, discarded-
   segment, and whole-trip availability code for later removal/migration.
-- Keep genuinely unresolved operational policies explicit in §11.
+- Record the approved operating defaults and migration assumptions in §11.
 
 Exit: normative documents agree, migration impact is classified, and no Phase 1
 work has begun. **This documentation task completes that exit condition.**
 
 ### Phase 1 — verification safety net and architecture guardrails
 
-- Add standard `typecheck`, unit-test, integration-test, and E2E scripts.
-- Replace obsolete/source-text checks with behavior tests for the six critical
-  defects in §6, initially allowed to fail as explicit regression targets.
+- Add standard lint, typecheck, unit-test, PostgreSQL integration-test,
+  architecture-test, and build scripts. Defer a browser runner until migrated
+  browser workflows exist; do not add a framework merely for script symmetry.
+- Retire obsolete/source-text checks as verification gates. Preserve their
+  findings in this audit and replace them with executable behavior specifications.
 - Establish approved behavioral examples for adjacent/non-overlapping/overlapping
   reserved journeys, journey-aware availability, full standing segments,
   concurrent Walk-in scans, distinct pass types, and simulated location input.
-- Add deterministic factories and isolated database cleanup.
-- Add import-boundary lint rules and CI for lint, typecheck, tests, and build.
+- Add deterministic pure fixtures plus a fail-closed dedicated PostgreSQL test-
+  database boundary. Do not pretend the legacy schema can integration-test target
+  models that do not exist yet.
+- Add import-boundary checks and PostgreSQL-backed CI for lint, typecheck, unit,
+  integration, architecture tests, and build.
 - Make the build independent of external font availability by self-hosting or
   bundling the approved font.
 
 Exit: the repository has trustworthy red/green evidence and a reproducible
-baseline. **This is the next implementation phase.**
+baseline. **Phase 1 is now authorized; it must stop before Phase 2.**
 
 ### Phase 2 — shared server foundation
 
 - Add validated server environment, common errors/HTTP adapter, Prisma boundary,
   clock, ID schemas, `server-only`, origin checks, and security headers.
+- Add the one validated operating-policy configuration defined in Architecture
+  §14; domain code receives resolved policy values and contains no magic numbers.
 - Centralize session/cookie/password policy and reduce session DTO data.
 - Keep Proxy optimistic; add secure actor/role/resource helpers for use cases.
 
@@ -389,8 +396,9 @@ Exit: new feature code can be built without copying handler boilerplate.
 
 ### Phase 3 — directional topology and per-trip inventory
 
-- Add Stop/RouteStop and immutable TripStop/TripSegment models through forward
-  migrations and a verified backfill from Route JSON.
+- Add Stop/RouteStop travel durations and immutable TripStop/TripSegment models
+  through forward migrations. Derive TripStop planned times from the origin
+  departure and snapshotted travel offsets.
 - Add `seatedCapacity`/`standingCapacity` to Bus and capacity snapshots to Trip.
 - Introduce TripSeat inventory and deprecate whole-trip status. A temporary
   compatibility column/relation may remain until Phase 8 removes every device
@@ -404,9 +412,11 @@ TripSeats, and queryable journey segments.
 
 - Add reserved Booking endpoints, ReservedSeatSegment uniqueness, availability,
   cancellation, and journey-aware WaitlistEntry/promotion use cases.
-- Current Bookings have no truthful From/To data. Reset/reseed demo-only data; if
-  non-demo records must survive, archive them or use an owner-approved explicit
-  legacy policy rather than inventing passenger stops.
+- Promote oldest-compatible-first in immutable FIFO order. Temporarily
+  incompatible earlier entries retain priority for later attempts.
+- Current Bookings have no truthful From/To data. The owner confirms that no non-
+  demo data must survive, so reset/reseed the development database rather than
+  inventing passenger stops.
 - Prove simultaneous overlapping claims fail while adjacent journeys can reuse the
   same TripSeat.
 - Migrate the student flow to typed `From -> To -> Date -> Departure -> Seat`
@@ -419,10 +429,17 @@ Exit: reserved journeys and promotions are correct under PostgreSQL concurrency.
 
 - Implement the approved Trip lifecycle/progress matrix and assigned-driver
   authorization.
+- Keep delay as metadata, prohibit terminal reversals, and require a reason plus
+  minimal TripStatusHistory for emergency cancellation after departure.
 - Add explicit Reserved, Walk-in, and Exit pass contracts.
+- Implement real browser-camera scanning; token paste may remain only as a
+  labelled development/demo fallback.
 - Implement reserved boarding and manual fallback over existing allocations.
 - Add WalkInIntent issuance with the non-guarantee disclaimer, plus locked
   first-come admission and StandingSegmentClaims.
+- Permit intent issuance regardless of reserved availability, while preventing a
+  redundant active intent beside the student's confirmed Booking for the same
+  Trip/journey.
 - Add QR/manual/automatic alighting without making exit confirmation a capacity
   dependency.
 - Prove simultaneous last-place scans cannot exceed standing capacity.
@@ -456,6 +473,8 @@ capacity snapshots.
 
 - Add the GPS simulator adapter, authenticated location ingestion, PostgreSQL
   samples, authorized latest-location query, and `location.changed` invalidation.
+- Emit simulator samples every five seconds through the shared ingestion boundary
+  and remove samples older than seven days with a retry-safe job.
 - Replace schedule interpolation with a map consuming the source-neutral DTO and
   clearly label simulator/prototype telemetry.
 - Split/authenticate the realtime service and type occupancy/trip/location events.
@@ -473,6 +492,8 @@ explainable in the viva; no seat-device feature remains.
   portal pages into server shells plus small client islands.
 - Remove fake settings and PWA manifest/install metadata/icons/generators; keep
   only ordinary responsive website assets.
+- Remove non-functional account deletion and data-export settings; those
+  workflows are outside FYP scope.
 - Fix keyboard/focus/zoom/reduced-motion/color-only issues.
 - Validate Reserved versus Walk-in wording, standing non-guarantee, From/To flow,
   mobile-browser usability, and location-source disclosure.
@@ -486,6 +507,8 @@ removed-scope UI or metadata remains.
   architecture decisions to match the final code.
 - Seed deterministic near-future demo scenarios without invalid states.
 - Record test, concurrency, security, Lighthouse, and failure-recovery evidence.
+- Verify proposal citations and claims for final documentation/defence; this does
+  not block implementation phases.
 
 Exit: a fresh clone can be set up and the scripted multi-role demo can be
 repeated without manual database repair.
@@ -549,26 +572,29 @@ No fare, price, refund, or payment-gateway implementation was found. Walk-in
 intent/admission, standing-capacity, per-trip location telemetry, and actual
 alighting models do not yet exist and are additions, not removals.
 
-## 11. Remaining product/operational decisions
+## 11. Resolved product/operational decisions
 
-The owner amendments resolve the former PWA, segment persistence, RouteStop,
-seat-reuse, standing, GPS-scope, device-retention, and payment questions. These
-remaining inputs are genuinely required before the affected feature phase:
+The owner resolved every Phase 0 question before Phase 1. These decisions are
+normative and supersede the former uncertainty table:
 
-| ID | Decision/uncertainty | Why it matters | Required by phase |
-|---|---|---|---:|
-| Q1 | Journey-aware waitlist fairness: strict global FIFO, or may an entry whose full journey does not fit be skipped for a later compatible entry? | Different journey lengths compete for different segment sets; the choice affects fairness and utilization. | 4 |
-| Q2 | Exact Trip lifecycle/disruption matrix, especially entering/leaving `DELAYED` and intermediate-stop progress | Boarding at later TripStops and auto-alighting require an explicit state/progress policy. | 5 |
-| Q3 | Exact values for booking window, cancellation cutoff, per-stop boarding buffer, reserved/walk-in/exit QR expiry, penalty points, and restriction threshold | Existing “e.g.” values must become approved configuration, not guesses. | 4–6 |
-| Q4 | Can admins override terminal states or cancel after departure, and what audit record is required? | Defines exceptional authorization and historical integrity. | 5/7 |
-| Q5 | Is camera scanning required for assessment, or is token paste an accepted demo fallback? | Browser permission work and E2E scope differ materially. | 5 |
-| Q6 | Location sample retention, simulator frequency, and deployment topology for Next.js/realtime/simulator/jobs | Determines table growth, recency UX, process supervision, URLs, and rate limiting. | 2/8 |
-| Q7 | Valid TAR UMT student-ID/email formats and case-normalization policy | PostgreSQL uniqueness and login identity correctness depend on it. | 2 |
-| Q8 | Is self-service account deletion/data export approved scope? | Current partial account code duplicates cancellation/promotion logic and settings include non-functional controls. | 4/9 |
-| Q9 | How are intermediate TripStop planned times produced: explicit admin input or Route travel-time offsets? | Search departure time, per-stop QR window, and no-show deadline require a reproducible schedule. | 3/7 |
-| Q10 | Are proposal citations and claims verified with the supervisor? | Defence evidence should not rely on unverified precise claims. | 10 |
-| Q11 | May a student request a Walk-in Pass whenever they lack an overlapping confirmed Booking, or only when no reserved seat is currently available for that journey? | Determines issuance UX and whether an availability race should block a non-capacity-bearing intent. | 5 |
-| Q12 | Does any non-demo database data need to survive migration? | Existing Bookings never stored selected From/To, so a truthful journey cannot be reconstructed. Demo data can be reset/reseeded; real records need an archive or approved legacy policy. | 3/4 |
+| ID | Approved decision | Implementation phase |
+|---|---|---:|
+| Q1 | Waitlist promotion is oldest-compatible-first FIFO; a skipped incompatible entry retains original priority. | 4 |
+| Q2 | Trip lifecycle is `NOT_STARTED -> BOARDING -> DEPARTED -> ARRIVED`, with terminal `CANCELLED`; delay is metadata. | 5 |
+| Q3 | Central defaults: booking 7 days, cancellation 30 minutes before stop, boarding opens 15 minutes before/closes 5 minutes after unless delayed, QR 60 seconds, credit 100, penalty 15, restrict below 40. | 2/4–6 |
+| Q4 | Terminal states do not reverse; emergency cancellation after departure requires a reason and minimal TripStatusHistory. | 5/7 |
+| Q5 | Real camera scanning is required; paste-token is dev/demo fallback only. | 5 |
+| Q6 | GPS simulator targets 5 seconds, samples are retained 7 days, and every source uses the same ingestion boundary. | 8 |
+| Q7 | Student email is trim/lowercase and `@student.tarc.edu.my`; no unverified local-part regex. Student ID is trim/uppercase. | 2 |
+| Q8 | Account deletion/export are out of scope; remove their non-functional settings. | 9 |
+| Q9 | Route topology stores travel durations; TripStop times derive from origin plus offsets. | 3/7 |
+| Q10 | Citation verification is final documentation/defence work and does not block implementation. | 10 |
+| Q11 | Walk-in intent is allowed regardless of reserved availability, but not redundantly beside the same student's confirmed same-Trip/journey Booking. | 5 |
+| Q12 | No non-demo data must survive; reset and reseed development data during Architecture v2 migration. | 3/4 |
+
+The long-running-process deployment target may be selected during deployment
+design, provided it preserves the runtime boundaries already specified. It does
+not change product behavior and does not block Phase 1.
 
 ## 12. Verification performed
 
@@ -596,15 +622,24 @@ documentation-only change.
 Verification did not mutate application data. No production-grade, race-free, or
 complete-coverage guarantee is made from the current evidence.
 
+### Phase 1 verification addendum
+
+Phase 1 replaced the obsolete test scripts with executable target-policy
+specifications, a fail-closed PostgreSQL boundary, and dependency-rule tests. The
+current command results and exact isolation contract are maintained in
+`framework/PHASE_1_VERIFICATION.md`. The fast `npm run verify` gate passes. The
+full legacy lint diagnostic still fails with 155 errors and 54 warnings. Real
+PostgreSQL execution is locally blocked because no server is listening; CI now
+provisions PostgreSQL 16. The default Turbopack build is blocked by the sandbox's
+port restriction after removing the external font fetch, while the webpack
+production build completes. No schema or product migration occurred.
+
 ## 13. Recommended next action
 
-Start **Phase 1 — verification safety net and architecture guardrails** after the
-Phase 0 owner decisions in this amendment are recorded. The first implementation
-review should add trustworthy behavior tests, a dedicated PostgreSQL test
-database, CI/scripts, and dependency guardrails around current critical behavior
-and the approved segment/standing/pass examples. It must not migrate the schema,
-move all source files, or begin feature implementation.
+Phase 1 is complete within the environment limits recorded above. The next task
+is **Phase 2 — shared server foundation**: validated server environment, common
+errors/HTTP adapter, Prisma boundary, clock/ID contracts, `server-only`, origin
+checks, security headers, and the centralized operating-policy configuration.
 
-Once the safety net is credible, Phase 2 establishes shared server foundations;
-Phase 3 then migrates directional topology and per-trip inventory before any
-reserved or walk-in feature depends on them.
+Do not combine Phase 2 with Phase 3 schema/topology migration. Phase 2 has not
+started in this change.

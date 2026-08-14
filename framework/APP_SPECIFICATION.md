@@ -5,9 +5,9 @@ Status: **Approved source of truth**
 Owner amendments incorporated: 2026-08-14
 
 This document defines the approved Final Year Project product. Architecture and
-implementation must follow it. Where a value or operational policy remains
-explicitly unresolved, record the decision before implementing the affected
-workflow rather than silently inventing behavior.
+implementation must follow it. Approved operational defaults belong in one
+validated server-side configuration module; feature code must not duplicate
+them as magic numbers.
 
 ## 1. Product summary
 
@@ -95,7 +95,7 @@ an internal capacity concept and is not a required user-facing wizard step.
 ## 5. Normative logical data model
 
 `framework/ARCHITECTURE.md` contains the migration-oriented physical proposal.
-The actual Prisma schema remains unchanged during Phase 0.
+The actual Prisma schema remains unchanged through Phase 1.
 
 ### 5.1 Identity and fleet
 
@@ -103,6 +103,11 @@ The actual Prisma schema remains unchanged during Phase 0.
 
 - UUID primary key, optional unique student ID, unique email, name, password
   hash, role, credit score, booking restriction, session version, timestamps.
+- Student email input is trimmed, normalized to lowercase, and must use the
+  `@student.tarc.edu.my` domain. Do not impose a stricter local-part or student-
+  number pattern until TAR UMT provides an authoritative format.
+- Student ID input is trimmed and normalized to uppercase before persistence and
+  uniqueness checks.
 
 #### `Bus`
 
@@ -122,6 +127,8 @@ The actual Prisma schema remains unchanged during Phase 0.
 - `Route` owns its name and active/deleted state.
 - `RouteStop` links one Stop to one Route at a zero- or one-based `position` used
   consistently throughout the application.
+- Each non-terminal RouteStop stores the estimated travel duration to the next
+  stop. The terminal RouteStop has no next-stop duration.
 - `(routeId, position)` and `(routeId, stopId)` are unique. Repeated stops are
   therefore disallowed and a route must contain approximately two to five stops.
 - Reverse travel is another Route, never an implicit reversal.
@@ -132,6 +139,10 @@ The actual Prisma schema remains unchanged during Phase 0.
 
 - Route, bus, optional driver, origin departure time, final estimated arrival,
   lifecycle status, disruption information, and timestamps.
+- Lifecycle is `NOT_STARTED -> BOARDING -> DEPARTED -> ARRIVED`, with
+  `CANCELLED` terminal. `ARRIVED` and `CANCELLED` cannot be reversed. Delay is
+  disruption metadata such as `delayMinutes` and `delayReason`, not a lifecycle
+  state.
 - `seatedCapacity` and `standingCapacity` are copied from the Bus when the Trip is
   created. Later Bus edits must not rewrite scheduled or historical capacity.
 
@@ -139,6 +150,8 @@ The actual Prisma schema remains unchanged during Phase 0.
 
 - Trip, source Stop, position, display-name/coordinate snapshot, planned arrival,
   planned departure, and per-stop boarding deadline.
+- Planned times are derived from the Trip origin departure plus snapshotted Route
+  travel-time offsets. Administrators do not manually enter every stop time.
 - Optional actual arrival/departure/passed timestamps support progress and
   non-mandatory automatic alighting completion.
 - Bookings and walk-in records reference TripStops, not mutable RouteStop rows.
@@ -188,6 +201,10 @@ The actual Prisma schema remains unchanged during Phase 0.
 - Promotion must re-evaluate the entire requested journey and atomically create a
   Booking plus all segment allocations. A seat free on only part of the journey
   is not sufficient.
+- Promotion is oldest-compatible-first FIFO. Evaluate active entries in their
+  original queue order, promote the oldest entry whose complete journey fits,
+  and permit a temporarily incompatible earlier entry to be skipped. A skipped
+  entry retains its original priority for every later promotion attempt.
 
 ### 5.4 Walk-in intent and admitted standing journey
 
@@ -197,6 +214,10 @@ The actual Prisma schema remains unchanged during Phase 0.
   status, and timestamps.
 - It represents intent only. Creating it and issuing its QR consume no standing
   capacity and provide no guarantee of boarding.
+- An eligible student may request it regardless of current reserved-seat
+  availability. Do not create or retain a redundant active intent for the same
+  student, Trip, and journey when that student already holds a confirmed reserved
+  Booking for it.
 - The UI and pass must state clearly: “Boarding is not guaranteed; standing
   capacity is checked when scanned.”
 
@@ -234,8 +255,8 @@ The actual Prisma schema remains unchanged during Phase 0.
 - Trip, latitude, longitude, recorded time, source type, and optional accuracy,
   speed, and heading.
 - Source type distinguishes `SIMULATOR` from a future real `GPS` adapter.
-- `(tripId, recordedAt)` is indexed; retention is bounded by an approved
-  operational policy.
+- `(tripId, recordedAt)` is indexed. Samples are retained for seven days and then
+  removed by a retry-safe retention job.
 - Authorized APIs expose a source-neutral latest-location DTO. Student UI must
   label simulated prototype telemetry honestly.
 
@@ -272,9 +293,10 @@ WaitlistEntry for that exact boarding/drop-off pair. Waitlisting does not reserv
 partial segments. Cancellation or another approved release trigger re-runs
 journey-aware promotion under the same locking/uniqueness rules as booking.
 
-Waitlist queue fairness when multiple differently sized journeys compete remains
-an explicit owner policy listed in the architecture audit; do not invent an
-optimization algorithm.
+Promotion uses oldest-compatible-first FIFO: inspect entries in original queue
+order and promote the first whose complete requested journey fits. An earlier
+entry that cannot currently fit may be skipped but keeps its original priority;
+never reorder it behind later entries.
 
 ### 6.4 Reserved pass
 
@@ -297,6 +319,10 @@ optimization algorithm.
 5. The UI states that admission is first-come-first-served at scanning and is not
    guaranteed.
 
+Issuance is allowed regardless of current reserved-seat availability. It is
+rejected as redundant when the same student already has a confirmed reserved
+Booking for the same Trip and journey.
+
 ### 6.6 Cancellation, history, no-show, and penalties
 
 - A reserved Booking may be cancelled before the approved cutoff relative to its
@@ -310,6 +336,14 @@ optimization algorithm.
   and notifications must be retry-safe and transactionally consistent.
 - Students may appeal penalties; administrators approve or reject with an
   optional comment. Credit restoration uses the current locked student record.
+
+Default policy values are centralized and configurable: booking opens seven days
+before Trip departure; reserved cancellation closes 30 minutes before the
+passenger's boarding-stop planned departure; boarding opens 15 minutes before and
+normally closes five minutes after that planned departure; an operational delay
+may extend the closing window; dynamic QR tokens live for 60 seconds; initial
+credit is 100; a no-show costs 15 points; and booking is restricted below 40
+credit. These values are defaults, not constants to copy into handlers or UI.
 
 ## 7. Boarding and alighting
 
@@ -328,6 +362,9 @@ Every QR or manual boarding path validates:
 
 Reserved and walk-in scans may share transport and authorization helpers, but
 their domain transitions remain separate.
+
+The final web product must scan QR codes through a real browser camera. Paste-
+token input may exist only as an explicitly labelled development/demo fallback.
 
 ### 7.2 Reserved boarding
 
@@ -382,6 +419,9 @@ contract. Ingestion validates Trip, lifecycle, timestamp freshness, coordinate
 ranges, source authorization, and reasonable payload bounds. The UI consumes a
 source-neutral DTO, displays recency, and identifies simulated/prototype data.
 Replacing the source must not require rewriting the student map or Trip domain.
+The simulator target interval is five seconds. Simulator samples pass through
+the same ingestion use case as a future real adapter, and stored samples expire
+after seven days.
 
 Do not introduce a general IoT platform, message broker, or seat hardware for
 this pipeline.
@@ -483,36 +523,29 @@ typed errors, and the owning application use case.
 - Physical GPS hardware. A GPS simulator and replaceable telemetry pipeline are
   in scope.
 - Real TAR UMT SSO.
+- Self-service account deletion and personal-data export. Existing non-functional
+  settings for these are removed during frontend scope cleanup.
 - SMS, email, and push-notification infrastructure.
 - Microservices, event sourcing, a general IoT platform, Kafka/Redis, or other
   enterprise infrastructure without a separately approved concrete need.
 
-## 14. Decisions still requiring owner confirmation
+## 14. Approved operating and migration decisions
 
-The approved amendments resolve product form, directional routes, segment-aware
-reserved/standing capacity, pass separation, alighting intent, GPS scope, sensor
-removal, and payment scope. The following operational policies still require a
-recorded answer before their affected implementation phase:
+- Terminal Trip states are irreversible. A future admin emergency cancellation
+  after departure requires a reason and a minimal append-only
+  `TripStatusHistory` audit record; Phase 1 does not implement it.
+- Camera scanning is required in the final web product; token paste is only a
+  development/demo fallback.
+- Route travel-time offsets derive TripStop planned times.
+- Proposal citation verification belongs to final documentation and defence work
+  and does not block implementation.
+- No existing non-demo data must survive Architecture v2. Because legacy
+  Bookings have no truthful boarding/drop-off data, the development database may
+  be reset and deterministically reseeded during the approved migration phase.
+- The deployment shape for the long-running realtime, scheduler, and simulator
+  processes remains an implementation/deployment decision, not an unresolved
+  product rule.
 
-1. Journey-aware waitlist fairness when differently sized journeys compete and
-   whether an ineligible head entry may be skipped.
-2. Exact Trip lifecycle/disruption transition matrix, including `DELAYED`.
-3. Exact booking, cancellation, QR, boarding-deadline, pass-expiry, penalty, and
-   restriction configuration values.
-4. Admin terminal-state override rules and required audit logging.
-5. Whether camera scanning is required for the assessed demo or token paste is an
-   accepted fallback demonstration.
-6. Location sample retention, simulator update interval, and deployment topology.
-7. Identity normalization/valid TAR UMT student ID and email formats.
-8. Whether self-service account deletion/data export remains approved scope.
-9. Whether intermediate TripStop planned times are entered explicitly for every
-   Trip or derived from maintained Route travel-time offsets.
-10. Whether Walk-in Pass issuance is allowed whenever a student has no confirmed
-   overlapping Booking, or only when no reserved seat is currently available for
-   the requested journey.
-11. Whether any non-demo database records must survive the journey-model
-    migration; existing records do not contain truthful boarding/drop-off data.
-
-These questions do not authorize speculative behavior. Phase 1 may establish the
-test harness and architecture guardrails while the feature-specific answers are
-recorded before their implementation phases.
+All product decisions required to begin Phase 1 have now been recorded. Later
+implementation discoveries may still require an ADR, but must not silently alter
+these rules.

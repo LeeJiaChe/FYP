@@ -17,7 +17,7 @@
 - **Segment-Aware Reserved Seating** — A specific seat is guaranteed only over the passenger's planned boarding-to-drop-off journey and may be reused on non-overlapping segments
 - **Reserved Pass** — Short-lived signed QR backed by a guaranteed Booking
 - **Walk-in Pass** — Records intent but clearly does not guarantee standing admission; capacity is claimed only when scanned
-- **Journey-Aware Waitlist** — Promotion requires one seat to fit the passenger's complete requested journey
+- **Journey-Aware Waitlist** — Oldest-compatible-first FIFO; skipped incompatible entries retain priority
 - **Live Bus Location** — GPS simulator coordinates displayed honestly as prototype telemetry, not schedule interpolation
 - **Booking History** — View all past and upcoming bookings
 - **Credit Score** — Tracks reliability; drops on no-shows, triggers booking restrictions
@@ -28,13 +28,13 @@
 - **Active Trip Dashboard** — View assigned trips and current trip status
 - **Boarding Operations** — Validate Reserved and Walk-in passes, with authorized manual fallback
 - **Alighting Confirmation** — Exit QR where practical, driver manual fallback, and optional automatic completion after the planned stop is passed
-- **Trip Status Control** — Update trip status (Boarding → Departed → Arrived)
+- **Trip Status Control** — `Not Started → Boarding → Departed → Arrived`, with terminal cancellation and separate delay metadata
 - **Live Seat Matrix** — Real-time seat occupancy view for the assigned trip
 
 ### 🛡️ Admin Portal
 - **Fleet Management** — Buses have configurable seated and standing capacities
 - **Route Management** — Directional ordered routes of approximately 2–5 reusable stops
-- **Trip Scheduling** — Schedule trips, assign buses and drivers, update status and delay reasons
+- **Trip Scheduling** — Derive per-stop planned times from route travel-duration offsets, assign buses/drivers, and record delay metadata
 - **Driver Management** — Create driver accounts and assign them to trips
 - **Live Operations** — Journey-aware reserved-seat and admitted-standing occupancy without seat-sensor/device-health simulation
 - **Analytics Dashboard** — Historical aggregations for ridership, route demand, and fleet utilisation using Recharts
@@ -179,6 +179,11 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 All accounts use the password: **`password123`**
 
+> These are legacy prototype fixtures and still use the old `@tarumt.edu.my`
+> student addresses. Architecture v2 registration uses normalized
+> `@student.tarc.edu.my`; demo data will be reset and reseeded in the approved
+> schema migration phase, not Phase 1.
+
 | Role | Email | Notes |
 |---|---|---|
 | Admin | `admin@tarumt.edu.my` | Full admin portal access |
@@ -236,7 +241,13 @@ the [data-model proposal](./framework/ARCHITECTURE.md#9-architecture-v2-data-mod
 | `npm run start` | Start production server |
 | `npm run realtime` | Start standalone Socket.io service on port `4000` |
 | `npm run db:seed` | Seed the database with demo data |
-| `npm run lint` | Run ESLint |
+| `npm run lint` | Zero-warning Architecture v2/new-code ESLint gate |
+| `npm run lint:legacy` | Report the inherited full-repository lint baseline |
+| `npm run typecheck` | Run the strict TypeScript check |
+| `npm test` | Run pure unit/specification tests |
+| `npm run test:architecture` | Enforce Architecture v2 dependency boundaries |
+| `npm run test:integration` | Run guarded tests against dedicated PostgreSQL (`*_test`) |
+| `npm run verify` | Run the fast non-database Phase 1 gate |
 
 ---
 
@@ -247,6 +258,7 @@ satisfies the audit:
 
 - **JWT sessions** stored in HTTP-only cookies (`fyp_session`) — inaccessible to JavaScript
 - **QR tokens** have explicit Reserved/Walk-in/Alighting purposes and short expiry; rotation reduces replay risk but does not guarantee screenshot prevention
+- **QR scanning** uses a real browser camera in the final product; token paste is only a development/demo fallback
 - **Internal jobs and realtime publication** authenticate bounded, validated requests in every environment
 - **Reserved concurrency** is enforced by unique seat/TripSegment claims in PostgreSQL transactions
 - **Walk-in concurrency** locks every requested TripSegment before capacity check and claim

@@ -1,0 +1,74 @@
+name: Verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - architecture-v2
+
+concurrency:
+  group: verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fyp_bus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fyp_bus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fyp_bus_dev?schema=public
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fyp_bus_test?schema=public
+      TEST_DATABASE_CONFIRM: FYP_BUS_INTEGRATION
+      JWT_SECRET: ci-session-secret-at-least-32-characters
+      QR_SECRET: ci-qr-secret-distinct-at-least-32-characters
+      REALTIME_SERVICE_SECRET: ci-realtime-secret-at-least-32-characters
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint Architecture v2 scope
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit specifications
+        run: npm run test:unit
+
+      - name: Architecture dependency tests
+        run: npm run test:architecture
+
+      - name: PostgreSQL integration tests
+        run: npm run test:integration
+
+      - name: Production build
+        run: npm run build

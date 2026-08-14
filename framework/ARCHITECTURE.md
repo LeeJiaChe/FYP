@@ -4,15 +4,15 @@ Status: **Proposed; not yet implemented**
 
 Decision date: 2026-08-14
 
-Phase 0 owner amendments aligned: 2026-08-14
+Phase 0 owner amendments and pre-Phase-1 operating decisions aligned: 2026-08-14
 
 Companion audit: [`ARCHITECTURE_AUDIT_2026-08-14.md`](./ARCHITECTURE_AUDIT_2026-08-14.md)
 
 This document is the normative architecture proposal for the TAR UMT Campus
 Shuttle Management System. `APP_SPECIFICATION.md` remains the product source of
 truth. Where that specification is ambiguous or internally inconsistent, the
-questions in the companion audit must be resolved before the affected rule is
-implemented.
+recorded decisions in the companion audit apply; new ambiguity must be resolved
+before silently inventing behavior.
 
 ## 1. Architecture decision
 
@@ -104,8 +104,7 @@ FYPBusSystem/
 ├── package-lock.json
 ├── next.config.ts
 ├── tsconfig.json
-├── vitest.config.ts
-├── playwright.config.ts
+├── playwright.config.ts                # add with migrated browser E2E flows
 ├── eslint.config.mjs
 ├── postcss.config.mjs
 ├── prisma.config.ts
@@ -460,18 +459,20 @@ locked, current user record. A booking may produce at most one no-show penalty.
 
 ### Trip
 
-The exact handling of `DELAYED` must be confirmed because the current enum mixes
-lifecycle and disruption state. Until the source-of-truth decision is recorded,
-the minimum enforceable lifecycle is:
+The lifecycle is:
 
 ```text
 NOT_STARTED -> BOARDING -> DEPARTED -> ARRIVED
-NOT_STARTED | BOARDING -> CANCELLED
+NOT_STARTED | BOARDING | DEPARTED -> CANCELLED
 ```
 
-`DELAYED` may not be allowed to bypass or reverse terminal states. The final
-transition matrix belongs in `features/trips/domain/trip-status.ts` and its unit
-tests, not in UI button conditions.
+`ARRIVED` and `CANCELLED` are terminal and cannot be reversed. Delay is separate
+disruption metadata (`delayMinutes`, `delayReason`, and audit timestamps), never a
+lifecycle value. Admin emergency cancellation after departure must require a
+reason and append a minimal `TripStatusHistory` record when that feature is
+implemented. The transition matrix belongs in
+`features/trips/domain/trip-status.ts` and its unit tests, not UI button
+conditions.
 
 ## 9. Architecture v2 data model proposal
 
@@ -498,8 +499,9 @@ Stop <- RouteStop -> Route -> Trip -> TripStop -> TripSegment
 |---|---|---|
 | `Stop` | code/name, latitude/longitude, active/deleted state | Reusable physical boarding/alighting location. |
 | `Route` | name, active/deleted state | One directional route only. Reverse direction is another row. |
-| `RouteStop` | route, stop, position; unique route+position and route+stop | Ordered two-to-five-stop template; repeated/circular stops prohibited. |
-| `Trip` | route/bus/driver, lifecycle, origin/final times, seated/standing capacity snapshots | One execution whose history is not altered by later Bus edits. |
+| `RouteStop` | route, stop, position, estimated duration to next stop; unique route+position and route+stop | Ordered two-to-five-stop template; repeated/circular stops prohibited; supplies schedule offsets. |
+| `Trip` | route/bus/driver, lifecycle, delay metadata, origin/final times, seated/standing capacity snapshots | One execution whose history is not altered by later Bus edits. |
+| `TripStatusHistory` | trip, from/to status, actor, reason, occurredAt | Minimal append-only evidence for audited exceptional transitions, including post-departure emergency cancellation. |
 | `TripStop` | trip, stop snapshot, position, planned times, boarding deadline, optional actual/passed times | Immutable schedule/progress reference for passenger journeys. |
 | `TripSegment` | trip, sequence, adjacent from/to TripStops | Shared unit for reserved overlap and standing-capacity checks. |
 | `TripSeat` | trip, seat number; unique together | Physical per-trip seat inventory without a misleading global status. |
@@ -514,7 +516,9 @@ Stop <- RouteStop -> Route -> Trip -> TripStop -> TripSegment
 RouteStop data is snapshotted because an administrator may edit a Route after a
 Trip is scheduled. Booking and walk-in records therefore reference TripStops.
 Each TripStop has planned timing so search, QR windows, and no-show deadlines work
-for passengers boarding at intermediate stops.
+for passengers boarding at intermediate stops. Scheduling derives these times
+from the Trip origin departure plus snapshotted RouteStop travel-duration offsets;
+admins do not manually enter each stop time.
 
 ### Concurrency and constraint strategy
 
@@ -527,6 +531,9 @@ for passengers boarding at intermediate stops.
 - Walk-in QR issuance inserts no capacity row. Admission locks requested
   TripSegments in increasing order, counts StandingSegmentClaims, validates every
   count against `Trip.standingCapacity`, then inserts the journey and claims.
+- Waitlist promotion reads active entries by immutable queue time/order and selects
+  the oldest entry whose entire journey currently fits. Incompatible earlier
+  entries may be skipped without changing their priority.
 - Add database checks for ordered positions, positive seated capacity,
   non-negative standing capacity, valid credit range, and one Penalty per Booking.
   Same-Trip and boarding-before-drop-off rules are also enforced in the owning
@@ -559,8 +566,9 @@ for passengers boarding at intermediate stops.
 | `ReservedSeatSegment`, `WaitlistEntry` | NEW | Journey-aware guaranteed allocation and non-guaranteed queue. |
 | `WalkInIntent`, `WalkInJourney`, `StandingSegmentClaim` | NEW | Non-guaranteed pass separated from concurrency-safe admission. |
 | `TripLocationSample` | NEW | Simulator-first, replaceable GPS telemetry history/latest state. |
+| `TripStatusHistory` | NEW | Minimal append-only audit evidence for exceptional Trip lifecycle changes. |
 
-No schema change is performed in Phase 0.
+No schema change is performed in Phase 0 or Phase 1.
 
 ## 10. Authentication and security
 
@@ -579,6 +587,9 @@ No schema change is performed in Phase 0.
   the passenger's boarding TripStop. Scans revalidate actor assignment, current
   Trip/stop, ordered journey, duplicate state, and reserved allocation or
   standing capacity inside the owning transaction.
+- Student identity normalization is server-owned: trim/lowercase email, accept
+  only `@student.tarc.edu.my` for students without inventing a stricter local-part
+  regex, and trim/uppercase student ID before uniqueness checks.
 - Location ingestion authenticates a source credential independent of user
   sessions and rejects invalid coordinates, stale/future timestamps, inactive
   Trips, and oversized payloads.
@@ -610,6 +621,9 @@ same validated ingestion contract a future real source would use; it does not
 write Prisma or publish directly to browsers. Deployment documentation must state
 that the scheduler/simulator are long-running processes and cannot be assumed to
 run inside a request-only/serverless deployment.
+The simulator targets one sample every five seconds and always calls the shared
+ingestion boundary. A retry-safe job removes location samples older than seven
+days.
 
 ## 12. Frontend and state management
 
@@ -628,10 +642,14 @@ run inside a request-only/serverless deployment.
   to the selected journey.
 - Reserved Pass and Walk-in Pass screens use distinct language and visual state.
   Walk-in must state that it does not guarantee boarding.
+- The final scanner uses the browser camera. Paste-token entry is retained, if at
+  all, only as an explicitly labelled development/demo fallback.
 - Keep the responsive design and useful visual language. Replace schedule-
   interpolated fake tracking with a map consuming source-neutral telemetry and
   label simulator data. Remove seat-sensor/device-health UI and unrelated fake
   controls in their scheduled migration phases.
+- Remove the non-functional account deletion and data-export settings in the
+  frontend cleanup phase; neither workflow is in FYP scope.
 - This is a responsive website, not a PWA. Do not add manifest, installability,
   service-worker, offline-cache, or PWA-icon work.
 
@@ -649,12 +667,39 @@ run inside a request-only/serverless deployment.
   boarding/alighting, and simulated-location workflows using isolated fixtures.
 - **Architecture:** forbidden import/dependency rules and `server-only` boundaries.
 
-Tests must assert behavior, not source-code substrings. `npm test`,
-`npm run test:integration`, and `npm run test:e2e` must be explicit scripts and CI
-must run lint, typecheck, unit tests, and a production build. Database tests use a
-dedicated PostgreSQL database and never mutate a developer's normal database.
+Tests must assert behavior, not source-code substrings. Phase 1 uses Node 20's
+built-in test runner with the existing TypeScript loader for unit, integration,
+and architecture suites. `npm test`, `npm run test:integration`, and
+`npm run test:architecture` are explicit scripts; CI runs lint, typecheck, unit,
+architecture, PostgreSQL integration tests, and a production build. Add
+`test:e2e` with the browser runner when migrated workflows exist rather than for
+script symmetry. Database tests use a dedicated PostgreSQL database and never
+mutate a developer's normal database.
 
-## 14. Architecture guardrails for future changes
+## 14. Centralized operating-policy configuration
+
+The future `src/shared/config/policies.ts` (or an equivalently single validated
+server-side module) owns these configurable defaults:
+
+| Policy | Default |
+|---|---:|
+| Booking opens | 7 days before Trip departure |
+| Reserved cancellation cutoff | 30 minutes before boarding-stop planned departure |
+| Boarding opens | 15 minutes before boarding-stop planned departure |
+| Normal boarding closes | 5 minutes after boarding-stop planned departure |
+| Dynamic QR token lifetime | 60 seconds |
+| Initial student credit | 100 |
+| No-show penalty | 15 points |
+| Booking restriction threshold | credit below 40 |
+| GPS simulator interval | 5 seconds |
+| Location sample retention | 7 days |
+
+Operational delay metadata may extend the normal boarding-close window through
+one documented policy calculation. Domain policies receive the resolved values;
+they do not read environment variables, and Route Handlers/UI must not repeat the
+numbers.
+
+## 15. Architecture guardrails for future changes
 
 Before merging a feature change:
 
