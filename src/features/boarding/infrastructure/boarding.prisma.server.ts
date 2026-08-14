@@ -263,20 +263,24 @@ export async function admitWalkInRecord(
       };
     }
 
+    const journeyData: Prisma.WalkInJourneyUncheckedCreateInput = {
+      walkInIntentId: intent.id,
+      studentId: intent.studentId,
+      tripId,
+      boardingTripStopId: intent.boardingTripStopId,
+      dropOffTripStopId: intent.dropOffTripStopId,
+      boardedAt: now,
+      boardingMethod: method,
+    };
     const journey = await transaction.walkInJourney.create({
-      data: {
-        walkInIntentId: intent.id,
-        studentId: intent.studentId,
+      data: journeyData,
+    });
+    await transaction.standingSegmentClaim.createMany({
+      data: ids.map((tripSegmentId) => ({
+        walkInJourneyId: journey.id,
         tripId,
-        boardingTripStopId: intent.boardingTripStopId,
-        dropOffTripStopId: intent.dropOffTripStopId,
-        boardedAt: now,
-        boardingMethod: method,
-        standingClaims: {
-          create: ids.map((tripSegmentId) => ({ tripId, tripSegmentId })),
-        },
-      },
-      include: { standingClaims: true },
+        tripSegmentId,
+      })),
     });
     await transaction.walkInIntent.update({
       where: { id: intent.id },
@@ -289,7 +293,7 @@ export async function admitWalkInRecord(
       walkInJourneyId: journey.id,
       passengerName: intent.student.name,
       studentId: intent.student.studentId,
-      claimsCreated: journey.standingClaims.length,
+      claimsCreated: ids.length,
     };
   });
 }
