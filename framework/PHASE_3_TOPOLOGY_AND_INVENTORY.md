@@ -1,6 +1,6 @@
 # Phase 3 — Directional Topology and Per-Trip Inventory
 
-Status: **Implemented on `architecture-v2`; Phase 4 not started**
+Status: **Implemented and verified on `architecture-v2`; Phase 4 not started**
 
 Date: 2026-08-15
 
@@ -152,10 +152,16 @@ Observed before the Phase 3 candidate push:
 | `npm run test:integration` locally | **BLOCKED BY ENVIRONMENT** | The fail-closed runner accepts only the confirmed `_test` target, then PostgreSQL is unreachable because this managed sandbox prohibits server sockets. No database pass is claimed locally. |
 | `npm run build` | **BLOCKED BY ENVIRONMENT** | Default Turbopack fails only when its CSS worker tries to bind a prohibited port. The documented `next build --webpack` fallback **PASSES**, including compilation, TypeScript, and all 33 pages. |
 | `git diff --check` | **PASS** | No whitespace defects. |
-| PostgreSQL 16 CI | **PENDING AT CANDIDATE COMMIT** | The workflow provisions PostgreSQL 16 and runs the guarded migration/integration command on pushes to `architecture-v2`. Its observed result belongs in the final handoff. |
+| PostgreSQL 16 CI | **PASS** | [Verification run #5](https://github.com/jclee-wm25/FYP/actions/runs/31830303481) completed clean install, lint, typecheck, 33 unit/specification assertions, architecture rules, both forward migrations, migration status, all 10 PostgreSQL integration assertions, and the default Turbopack production build. |
 
-The local socket limitation must not be reported as a database test pass. Phase
-3 is fully verified only when the pushed PostgreSQL 16 job succeeds.
+The local socket limitation is not reported as a database pass. The pushed
+PostgreSQL 16 job supplies the required real database evidence.
+
+## Dependency added
+
+`server-only@0.0.1` is the sole new dependency. It is the zero-dependency marker
+used by Next.js server modules and is declared directly so clean Node integration
+test processes resolve the same boundary that Next.js resolves during builds.
 
 ## Phase boundary and next task
 
