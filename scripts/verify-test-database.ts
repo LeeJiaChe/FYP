@@ -1,4 +1,4 @@
-const CONFIRMATION = "FYP_BUS_INTEGRATION";
+export const TEST_DATABASE_CONFIRMATION = "FYP_BUS_INTEGRATION";
 const TEST_DATABASE_SUFFIX = /(?:^|_)test$/;
 
 export interface VerifiedTestDatabase {
@@ -60,9 +60,9 @@ export function verifyTestDatabaseEnvironment(
     }
   }
 
-  if (environment.TEST_DATABASE_CONFIRM !== CONFIRMATION) {
+  if (environment.TEST_DATABASE_CONFIRM !== TEST_DATABASE_CONFIRMATION) {
     throw new Error(
-      `Set TEST_DATABASE_CONFIRM=${CONFIRMATION} to acknowledge the isolated test target`,
+      `Set TEST_DATABASE_CONFIRM=${TEST_DATABASE_CONFIRMATION} to acknowledge the isolated test target`,
     );
   }
 

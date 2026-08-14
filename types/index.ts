@@ -11,7 +11,8 @@ export interface User {
 export interface Bus {
   id: string;
   plateNumber: string;
-  capacity: number;
+  seatedCapacity: number;
+  standingCapacity: number;
   status: "ACTIVE" | "MAINTENANCE" | "RETIRED";
   createdAt: string;
 }

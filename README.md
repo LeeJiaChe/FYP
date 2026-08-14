@@ -179,20 +179,17 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 All accounts use the password: **`password123`**
 
-> These are legacy prototype fixtures and still use the old `@tarumt.edu.my`
-> student addresses. Architecture v2 registration uses normalized
-> `@student.tarc.edu.my`; demo data will be reset and reseeded in the approved
-> schema migration phase, not Phase 1.
+> Phase 3 reseeds students with normalized `@student.tarc.edu.my` addresses.
+> Admin and driver accounts use role-specific demo addresses.
 
 | Role | Email | Notes |
 |---|---|---|
-| Admin | `admin@tarumt.edu.my` | Full admin portal access |
+| Admin | `admin1@admin.tarc.edu.my` | Full admin portal access |
 | Driver | `driver1@tarumt.edu.my` | Assigned to even-numbered routes |
 | Driver | `driver2@tarumt.edu.my` | Assigned to odd-numbered routes |
-| Student | `student1@tarumt.edu.my` | Credit score: 100 |
-| Student | `student2@tarumt.edu.my` | Credit score: 85 |
-| Student | `student3@tarumt.edu.my` | Credit score: 35 — **booking restricted**, has a pending penalty appeal |
-| Student | `student4@tarumt.edu.my` | Credit score: 100 — waitlisted on Route 3 |
+| Student | `student1@student.tarc.edu.my` | Credit score: 100 |
+| Student | `student2@student.tarc.edu.my` | Credit score: 85 |
+| Student | `student3@student.tarc.edu.my` | Credit score: 35 — booking restricted |
 
 ---
 
@@ -211,11 +208,13 @@ All accounts use the password: **`password123`**
 
 ## 🗄️ Database Schema Status
 
-The current prototype schema is a migration source, not the Architecture v2
-target:
+Phase 3 implements the Architecture v2 topology/inventory slice:
 
 ```
-User ──┬── Booking ──── Seat ──── Trip ──── Route
+Stop ── RouteStop ── Route ── Trip ── TripStop ── TripSegment
+                              └──── TripSeat
+
+User ──┬── Booking ──── Seat (temporary compatibility mirror)
        │        └───── Penalty ── PenaltyAppeal
        ├── Notification
        └── Trip (as driver)
@@ -223,12 +222,11 @@ User ──┬── Booking ──── Seat ──── Trip ──── Ro
 Trip ──── Seat ──── DeviceStatusLog
 ```
 
-Architecture v2 keeps compatible identity/fleet/penalty concepts but introduces
-`Stop`, ordered `RouteStop`, `TripStop`, `TripSegment`, `TripSeat`,
-`ReservedSeatSegment`, `WaitlistEntry`, `WalkInIntent`, `WalkInJourney`,
-`StandingSegmentClaim`, and `TripLocationSample`. `Seat.status`, device models,
-and combined Booking/waitlist state are scheduled for replacement/removal. See
-the [data-model proposal](./framework/ARCHITECTURE.md#9-architecture-v2-data-model-proposal).
+`Stop`, ordered `RouteStop`, `TripStop`, `TripSegment`, and `TripSeat` are now
+implemented. `ReservedSeatSegment`, `WaitlistEntry`, `WalkInIntent`,
+`WalkInJourney`, `StandingSegmentClaim`, and `TripLocationSample` remain later
+phases. `Seat.status`, device models, and combined Booking/waitlist state are
+temporary legacy compatibility. See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md).
 
 ---
 

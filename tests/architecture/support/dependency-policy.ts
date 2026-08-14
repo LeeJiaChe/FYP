@@ -159,6 +159,7 @@ export function inspectDependencyPolicy(
       if (
         isPrismaBoundaryImport(specifier) ||
         specifier === "server-only" ||
+        specifier.includes("/application/") ||
         specifier.includes("/infrastructure/") ||
         specifier.endsWith("/server") ||
         specifier.includes("/server/") ||

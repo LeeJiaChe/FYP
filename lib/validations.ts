@@ -24,34 +24,15 @@ export const loginSchema = z.object({
 
 export const createBusSchema = z.object({
   plateNumber: z.string().min(2, "Plate number required"),
-  capacity: z.number().int().positive("Capacity must be positive"),
+  seatedCapacity: z.number().int().positive("Seated capacity must be positive"),
+  standingCapacity: z.number().int().nonnegative("Standing capacity cannot be negative"),
   status: z.enum(["ACTIVE", "MAINTENANCE", "RETIRED"]).default("ACTIVE"),
-});
-
-export const createRouteSchema = z.object({
-  name: z.string().min(2, "Route name required"),
-  stops: z.array(z.string()).min(2, "At least two stops required"),
 });
 
 export const updateBusSchema = createBusSchema.partial().extend({
   id: z.string().min(1, "Bus ID required"),
 });
 
-export const updateRouteSchema = createRouteSchema.partial().extend({
-  id: z.string().min(1, "Route ID required"),
-});
-
-const parseableDatetime = z
-  .string()
-  .refine((v) => !isNaN(new Date(v).getTime()), { message: "Invalid date/time value" });
-
-export const createTripSchema = z.object({
-  routeId: z.string().uuid("Route selection is required"),
-  busId: z.string().uuid("Bus selection is required"),
-  driverId: z.string().uuid("Invalid driver ID").optional().nullable().or(z.literal("")).transform((v) => (v === "" ? undefined : v)),
-  departureTime: parseableDatetime,
-  estimatedArrivalTime: parseableDatetime,
-});
 
 export const updateTripStatusSchema = z.object({
   status: z.enum(["NOT_STARTED", "BOARDING", "DEPARTED", "ARRIVED", "DELAYED", "CANCELLED"]),

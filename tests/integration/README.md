@@ -12,8 +12,12 @@ TEST_DATABASE_CONFIRM="FYP_BUS_INTEGRATION" \
 npm run test:integration
 ```
 
-If `DATABASE_URL` is set, it must point somewhere different. The Phase 1 smoke
-test is read-only because the Architecture v2 schema does not exist yet. Future
-schema integration fixtures may reset only the verified `_test` database, must
-reuse `verifyTestDatabaseEnvironment`, and must never run destructive setup from
-an unverified `DATABASE_URL`.
+If `DATABASE_URL` is set, it must point somewhere different. The runner refuses
+an unconfirmed/non-`_test` URL, resets only the verified database, applies every
+Prisma migration, reports migration status, and then executes the integration
+suite. Fixtures must reuse `verifyTestDatabaseEnvironment` and must never run
+destructive setup from an unverified `DATABASE_URL`.
+
+Phase 3 is the first phase with real schema integration coverage. PostgreSQL 16
+CI is the authoritative fallback when a local execution environment does not
+permit PostgreSQL sockets; SQLite is not supported.

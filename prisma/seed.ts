@@ -1,400 +1,328 @@
+import { randomUUID } from "node:crypto";
+
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+import { buildTripSnapshot } from "../src/features/trips/domain/build-trip-snapshot";
+import { productPolicy } from "../src/shared/config/policies";
+
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log("Cleaning old database records...");
+async function resetDemoData() {
   await prisma.deviceStatusLog.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.penaltyAppeal.deleteMany();
   await prisma.penalty.deleteMany();
   await prisma.booking.deleteMany();
   await prisma.seat.deleteMany();
+  await prisma.tripSeat.deleteMany();
+  await prisma.tripSegment.deleteMany();
+  await prisma.tripStop.deleteMany();
   await prisma.trip.deleteMany();
+  await prisma.routeStop.deleteMany();
   await prisma.route.deleteMany();
+  await prisma.stop.deleteMany();
   await prisma.bus.deleteMany();
   await prisma.user.deleteMany();
+}
 
-  console.log("Seeding users...");
+async function createDemoTrip(input: {
+  routeId: string;
+  busId: string;
+  driverId: string;
+  departureTime: Date;
+}) {
+  return prisma.$transaction(async (transaction) => {
+    const route = await transaction.route.findUniqueOrThrow({
+      where: { id: input.routeId },
+      include: {
+        routeStops: {
+          orderBy: { position: "asc" },
+          include: { stop: true },
+        },
+      },
+    });
+    const bus = await transaction.bus.findUniqueOrThrow({
+      where: { id: input.busId },
+    });
+    const snapshot = buildTripSnapshot({
+      originDeparture: input.departureTime,
+      boardingCloseGraceMs: productPolicy.normalBoardingCloseGraceMs,
+      seatedCapacity: bus.seatedCapacity,
+      standingCapacity: bus.standingCapacity,
+      routeStops: route.routeStops.map((routeStop) => ({
+        stopId: routeStop.stopId,
+        position: routeStop.position,
+        stopCode: routeStop.stop.code,
+        stopName: routeStop.stop.name,
+        latitude: routeStop.stop.latitude.toNumber(),
+        longitude: routeStop.stop.longitude.toNumber(),
+        travelDurationToNextMinutes:
+          routeStop.travelDurationToNextMinutes,
+      })),
+    });
+
+    const trip = await transaction.trip.create({
+      data: {
+        routeId: input.routeId,
+        busId: input.busId,
+        driverId: input.driverId,
+        departureTime: input.departureTime,
+        estimatedArrivalTime: snapshot.estimatedArrivalTime,
+        boardingDeadline: snapshot.stops[0]!.boardingDeadline,
+        seatedCapacity: snapshot.seatedCapacity,
+        standingCapacity: snapshot.standingCapacity,
+      },
+    });
+
+    const tripStops = snapshot.stops.map((stop) => ({
+      id: randomUUID(),
+      tripId: trip.id,
+      stopId: stop.stopId,
+      position: stop.position,
+      stopCode: stop.stopCode,
+      stopName: stop.stopName,
+      latitude: stop.latitude,
+      longitude: stop.longitude,
+      plannedArrival: stop.plannedArrival,
+      plannedDeparture: stop.plannedDeparture,
+      boardingDeadline: stop.boardingDeadline,
+    }));
+    await transaction.tripStop.createMany({ data: tripStops });
+    await transaction.tripSegment.createMany({
+      data: snapshot.segmentPositions.map((position) => ({
+        id: randomUUID(),
+        tripId: trip.id,
+        position,
+        fromTripStopId: tripStops[position]!.id,
+        toTripStopId: tripStops[position + 1]!.id,
+      })),
+    });
+
+    const tripSeats = snapshot.seatNumbers.map((seatNumber) => ({
+      id: randomUUID(),
+      tripId: trip.id,
+      seatNumber,
+    }));
+    await transaction.tripSeat.createMany({ data: tripSeats });
+    await transaction.seat.createMany({
+      data: tripSeats.map((seat) => ({
+        tripId: trip.id,
+        tripSeatId: seat.id,
+        seatNumber: seat.seatNumber,
+      })),
+    });
+
+    return trip;
+  });
+}
+
+async function main() {
+  console.log("Resetting demo data for Architecture v2 Phase 3...");
+  await resetDemoData();
+
   const adminPasswordHash = await bcrypt.hash("admin1", 10);
   const defaultPasswordHash = await bcrypt.hash("password123", 10);
 
-  const admin = await prisma.user.create({
-    data: {
-      name: "System Admin",
-      email: "admin1@admin.tarc.edu.my",
-      passwordHash: adminPasswordHash,
-      role: "ADMIN",
-    },
+  const [, driver1, driver2] = await Promise.all([
+    prisma.user.create({
+      data: {
+        name: "System Admin",
+        email: "admin1@admin.tarc.edu.my",
+        passwordHash: adminPasswordHash,
+        role: "ADMIN",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Ahmad Driver",
+        email: "driver1@tarumt.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "DRIVER",
+      },
+    }),
+    prisma.user.create({
+      data: {
+        name: "Tan Boon Driver",
+        email: "driver2@tarumt.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "DRIVER",
+      },
+    }),
+  ]);
+
+  await prisma.user.createMany({
+    data: [
+      {
+        studentId: "24WAB01234",
+        name: "John Student",
+        email: "student1@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+      },
+      {
+        studentId: "24WAB01235",
+        name: "Alice Wong",
+        email: "student2@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+        creditScore: 85,
+      },
+      {
+        studentId: "24WAB01236",
+        name: "Bob Lee",
+        email: "student3@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+        creditScore: 35,
+        isBookingRestricted: true,
+      },
+    ],
   });
 
-  const driver1 = await prisma.user.create({
-    data: {
-      name: "Ahmad Driver",
-      email: "driver1@tarumt.edu.my",
-      passwordHash: defaultPasswordHash,
-      role: "DRIVER",
-    },
-  });
+  const [bus1, bus2, bus3] = await Promise.all([
+    prisma.bus.create({
+      data: {
+        plateNumber: "TAR-1001",
+        seatedCapacity: 20,
+        standingCapacity: 8,
+        status: "ACTIVE",
+      },
+    }),
+    prisma.bus.create({
+      data: {
+        plateNumber: "TAR-1002",
+        seatedCapacity: 28,
+        standingCapacity: 12,
+        status: "ACTIVE",
+      },
+    }),
+    prisma.bus.create({
+      data: {
+        plateNumber: "TAR-1003",
+        seatedCapacity: 16,
+        standingCapacity: 4,
+        status: "MAINTENANCE",
+      },
+    }),
+  ]);
+  void bus3;
 
-  const driver2 = await prisma.user.create({
-    data: {
-      name: "Tan Boon Driver",
-      email: "driver2@tarumt.edu.my",
-      passwordHash: defaultPasswordHash,
-      role: "DRIVER",
-    },
-  });
+  const stopRecords = await Promise.all([
+    prisma.stop.create({
+      data: {
+        code: "TAR_MAIN",
+        name: "TAR UMT Main Gate",
+        latitude: 3.215006,
+        longitude: 101.726176,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "WANGSA_LRT",
+        name: "Wangsa Maju LRT",
+        latitude: 3.205721,
+        longitude: 101.731796,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "SETAPAK_CENTRAL",
+        name: "Setapak Central",
+        latitude: 3.200453,
+        longitude: 101.717476,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "TAMAN_MELATI_LRT",
+        name: "Taman Melati LRT",
+        latitude: 3.219505,
+        longitude: 101.721043,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "DANAU_KOTA",
+        name: "Danau Kota",
+        latitude: 3.204933,
+        longitude: 101.714558,
+      },
+    }),
+  ]);
+  const [tarMain, wangsaLrt, setapakCentral, tamanMelatiLrt, danauKota] =
+    stopRecords;
 
-  const student1 = await prisma.user.create({
-    data: {
-      studentId: "2201991",
-      name: "John Student",
-      email: "student1@tarumt.edu.my",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      creditScore: 100,
-    },
-  });
-
-  const student2 = await prisma.user.create({
-    data: {
-      studentId: "2201992",
-      name: "Alice Wong",
-      email: "student2@tarumt.edu.my",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      creditScore: 85,
-    },
-  });
-
-  const student3 = await prisma.user.create({
-    data: {
-      studentId: "2201993",
-      name: "Bob Lee",
-      email: "student3@tarumt.edu.my",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      creditScore: 35,
-      isBookingRestricted: true,
-    },
-  });
-
-  const student4 = await prisma.user.create({
-    data: {
-      studentId: "2201994",
-      name: "Charlie Tan",
-      email: "student4@tarumt.edu.my",
-      passwordHash: defaultPasswordHash,
-      role: "STUDENT",
-      creditScore: 100,
-    },
-  });
-
-  console.log("Seeding buses...");
-  const bus1 = await prisma.bus.create({
-    data: {
-      plateNumber: "TAR-1001",
-      capacity: 20,
-      status: "ACTIVE",
-    },
-  });
-
-  const bus2 = await prisma.bus.create({
-    data: {
-      plateNumber: "TAR-1002",
-      capacity: 24,
-      status: "ACTIVE",
-    },
-  });
-
-  const bus3 = await prisma.bus.create({
-    data: {
-      plateNumber: "TAR-1003",
-      capacity: 16,
-      status: "MAINTENANCE",
-    },
-  });
-
-  const bus4 = await prisma.bus.create({
-    data: {
-      plateNumber: "TAR-1004",
-      capacity: 20,
-      status: "ACTIVE",
-    },
-  });
-
-  console.log("Seeding directional routes (with -> arrows)...");
-  const route1Out = await prisma.route.create({
-    data: {
-      name: "Main Campus -> LRT Wangsa Maju",
-      stops: JSON.stringify(["Main Gate", "Block A", "Block D", "LRT Wangsa Maju"]),
-    },
-  });
-  const route1In = await prisma.route.create({
-    data: {
-      name: "LRT Wangsa Maju -> Main Campus",
-      stops: JSON.stringify(["LRT Wangsa Maju", "Block D", "Block A", "Main Gate"]),
-    },
-  });
-
-  const route2Out = await prisma.route.create({
-    data: {
-      name: "Main Campus -> Setapak Jaya",
-      stops: JSON.stringify(["Main Gate", "Sports Complex", "Setapak Jaya Bus Stop"]),
-    },
-  });
-  const route2In = await prisma.route.create({
-    data: {
-      name: "Setapak Jaya -> Main Campus",
-      stops: JSON.stringify(["Setapak Jaya Bus Stop", "Sports Complex", "Main Gate"]),
-    },
-  });
-
-  const route3Out = await prisma.route.create({
-    data: {
-      name: "Campus Express -> Cyberjaya",
-      stops: JSON.stringify(["Campus Terminal", "Cyberjaya Central"]),
-    },
-  });
-  const route3In = await prisma.route.create({
-    data: {
-      name: "Cyberjaya -> Campus Express",
-      stops: JSON.stringify(["Cyberjaya Central", "Campus Terminal"]),
-    },
-  });
-
-  const route4Out = await prisma.route.create({
-    data: {
-      name: "Main Campus -> Danau Kota",
-      stops: JSON.stringify(["Main Gate", "Block 3", "Block 6", "Danau Kota Suite"]),
-    },
-  });
-  const route4In = await prisma.route.create({
-    data: {
-      name: "Danau Kota -> Main Campus",
-      stops: JSON.stringify(["Danau Kota Suite", "Block 6", "Block 3", "Main Gate"]),
-    },
-  });
-
-  const route5Out = await prisma.route.create({
-    data: {
-      name: "Main Campus -> LRT Taman Melati",
-      stops: JSON.stringify(["Main Terminal", "Library Stop", "LRT Taman Melati"]),
-    },
-  });
-  const route5In = await prisma.route.create({
-    data: {
-      name: "LRT Taman Melati -> Main Campus",
-      stops: JSON.stringify(["LRT Taman Melati", "Library Stop", "Main Terminal"]),
-    },
-  });
-
-  const route6 = await prisma.route.create({
-    data: {
-      name: "Internal Ring Shuttle (Clockwise)",
-      stops: JSON.stringify(["Main Gate", "Block 3", "Block 4", "Block 5", "Block 6 Terminal"]),
-    },
-  });
-
-  const route7 = await prisma.route.create({
-    data: {
-      name: "Internal Ring Shuttle (Anti-Clockwise)",
-      stops: JSON.stringify(["Block 6 Terminal", "Block 5", "Block 4", "Block 3", "Main Gate"]),
-    },
-  });
-
-  const route8Out = await prisma.route.create({
-    data: {
-      name: "Main Campus -> Sri Rampai",
-      stops: JSON.stringify(["Main Gate", "Block C", "Sri Rampai LRT Station"]),
-    },
-  });
-  const route8In = await prisma.route.create({
-    data: {
-      name: "Sri Rampai -> Main Campus",
-      stops: JSON.stringify(["Sri Rampai LRT Station", "Block C", "Main Gate"]),
-    },
-  });
-
-  const route9Out = await prisma.route.create({
-    data: {
-      name: "Main Campus -> Genting Klang Feeder",
-      stops: JSON.stringify(["Main Gate", "PV12 Condominium", "Columbia Hospital", "Genting Klang Terminal"]),
-    },
-  });
-  const route9In = await prisma.route.create({
-    data: {
-      name: "Genting Klang Feeder -> Main Campus",
-      stops: JSON.stringify(["Genting Klang Terminal", "Columbia Hospital", "PV12 Condominium", "Main Gate"]),
-    },
-  });
-
-  const allRoutes = [
-    route1Out, route1In,
-    route2Out, route2In,
-    route3Out, route3In,
-    route4Out, route4In,
-    route5Out, route5In,
-    route6, route7,
-    route8Out, route8In,
-    route9Out, route9In,
-  ];
-
-  console.log("Seeding trips across all 9 routes...");
-  const now = new Date();
-
-  // Seed trips for each route (multiple times per route today & tomorrow)
-  for (let rIdx = 0; rIdx < allRoutes.length; rIdx++) {
-    const route = allRoutes[rIdx];
-    const assignedBus = rIdx % 2 === 0 ? bus1 : bus2;
-    const assignedDriver = rIdx % 2 === 0 ? driver1 : driver2;
-
-    // Time offsets for today and tomorrow
-    const timeOffsets = [
-      { hours: 1, durationMins: 30, status: rIdx === 0 ? "BOARDING" : "NOT_STARTED" },
-      { hours: 3, durationMins: 30, status: "NOT_STARTED" },
-      { hours: 5, durationMins: 30, status: "NOT_STARTED" },
-      { hours: 24, durationMins: 30, status: "NOT_STARTED" }, // Tomorrow
-    ];
-
-    for (let tIdx = 0; tIdx < timeOffsets.length; tIdx++) {
-      const offset = timeOffsets[tIdx];
-      const departure = new Date(now.getTime() + offset.hours * 60 * 60 * 1000 + tIdx * 15 * 60 * 1000);
-      const arrival = new Date(departure.getTime() + offset.durationMins * 60 * 1000);
-      const deadline = new Date(departure.getTime() - 5 * 60 * 1000);
-
-      const trip = await prisma.trip.create({
-        data: {
-          routeId: route.id,
-          busId: assignedBus.id,
-          driverId: assignedDriver.id,
-          departureTime: departure,
-          estimatedArrivalTime: arrival,
-          boardingDeadline: deadline,
-          status: offset.status as any,
+  async function createRoute(
+    name: string,
+    stops: Array<{ id: string; minutesToNext: number | null }>,
+  ) {
+    return prisma.route.create({
+      data: {
+        name,
+        routeStops: {
+          create: stops.map((stop, position) => ({
+            stopId: stop.id,
+            position,
+            travelDurationToNextMinutes: stop.minutesToNext,
+          })),
         },
-      });
-
-      // Create seats for each trip
-      for (let i = 1; i <= assignedBus.capacity; i++) {
-        const isReserved = rIdx === 2 && tIdx === 0; // Route 3 first trip is fully reserved to demonstrate waitlist
-        const seat = await prisma.seat.create({
-          data: {
-            tripId: trip.id,
-            seatNumber: i,
-            status: isReserved ? "RESERVED" : (rIdx === 0 && i <= 3 ? "RESERVED" : "AVAILABLE"),
-          },
-        });
-
-        // Add device health log
-        await prisma.deviceStatusLog.create({
-          data: {
-            seatId: seat.id,
-            simulatedSignal: i === 7 ? "OFFLINE" : "OK",
-          },
-        });
-
-        if (rIdx === 0 && i <= 3) {
-          // Booking for Route 1 first trip
-          const student = i === 1 ? student1 : i === 2 ? student2 : student4;
-          await prisma.booking.create({
-            data: {
-              studentId: student.id,
-              tripId: trip.id,
-              seatId: seat.id,
-              status: "CONFIRMED",
-            },
-          });
-        }
-      }
-    }
-  }
-
-  // Add a waitlisted booking for Route 3 first trip
-  const route3Trip1 = await prisma.trip.findFirst({ where: { routeId: route3Out.id } });
-  if (route3Trip1) {
-    await prisma.booking.create({
-      data: {
-        studentId: student4.id,
-        tripId: route3Trip1.id,
-        status: "WAITLISTED",
-        waitlistPosition: 1,
       },
     });
   }
 
-  console.log("Seeding penalties & appeals...");
+  const [setapakOutbound, setapakInbound, danauOutbound, danauInbound] =
+    await Promise.all([
+      createRoute("Demo: TAR UMT → Setapak Central", [
+        { id: tarMain.id, minutesToNext: 8 },
+        { id: wangsaLrt.id, minutesToNext: 10 },
+        { id: setapakCentral.id, minutesToNext: null },
+      ]),
+      createRoute("Demo: Setapak Central → TAR UMT", [
+        { id: setapakCentral.id, minutesToNext: 10 },
+        { id: wangsaLrt.id, minutesToNext: 8 },
+        { id: tarMain.id, minutesToNext: null },
+      ]),
+      createRoute("Demo: TAR UMT → Danau Kota", [
+        { id: tarMain.id, minutesToNext: 7 },
+        { id: tamanMelatiLrt.id, minutesToNext: 9 },
+        { id: danauKota.id, minutesToNext: null },
+      ]),
+      createRoute("Demo: Danau Kota → TAR UMT", [
+        { id: danauKota.id, minutesToNext: 9 },
+        { id: tamanMelatiLrt.id, minutesToNext: 7 },
+        { id: tarMain.id, minutesToNext: null },
+      ]),
+    ]);
 
-  // Create a NO_SHOW booking for student3 to attach the penalty to
-  const route1Trip1 = await prisma.trip.findFirst({ where: { routeId: route1Out.id } });
-  let penaltyBookingId: string;
-
-  if (route1Trip1) {
-    // Find an available seat for student3's historical no-show booking
-    const availableSeat = await prisma.seat.findFirst({
-      where: { tripId: route1Trip1.id, status: "AVAILABLE" },
+  const now = new Date();
+  const tripInputs = [
+    [setapakOutbound.id, bus1.id, driver1.id, 2],
+    [setapakInbound.id, bus2.id, driver2.id, 4],
+    [danauOutbound.id, bus2.id, driver2.id, 26],
+    [danauInbound.id, bus1.id, driver1.id, 29],
+  ] as const;
+  for (const [routeId, busId, driverId, hoursFromNow] of tripInputs) {
+    await createDemoTrip({
+      routeId,
+      busId,
+      driverId,
+      departureTime: new Date(now.getTime() + hoursFromNow * 60 * 60 * 1_000),
     });
-
-    const noShowBooking = await prisma.booking.create({
-      data: {
-        studentId: student3.id,
-        tripId: route1Trip1.id,
-        seatId: availableSeat?.id || null,
-        status: "NO_SHOW",
-      },
-    });
-    penaltyBookingId = noShowBooking.id;
-  } else {
-    // Fallback: use student3's first booking if trip not found
-    const fallbackBooking = await prisma.booking.findFirst({ where: { studentId: student3.id } });
-    penaltyBookingId = fallbackBooking!.id;
   }
 
-  const penalty = await prisma.penalty.create({
-    data: {
-      bookingId: penaltyBookingId,
-      studentId: student3.id,
-      creditPointsDeducted: 15,
-      reason: "No-show on Trip TAR-1001 (Departure 08:00 AM)",
-      status: "APPEALED",
-    },
-  });
-
-  await prisma.penaltyAppeal.create({
-    data: {
-      penaltyId: penalty.id,
-      studentId: student3.id,
-      reason: "I had a sudden medical emergency and was admitted to the clinic. Medical certificate attached.",
-      status: "PENDING",
-    },
-  });
-
-  console.log("Seeding notifications...");
-  await prisma.notification.create({
-    data: {
-      userId: student1.id,
-      type: "BOOKING_CONFIRMED",
-      message: "Your seat booking for Route 1 (TAR-1001) has been confirmed.",
-    },
-  });
-
-  await prisma.notification.create({
-    data: {
-      userId: student3.id,
-      type: "PENALTY_ISSUED",
-      message: "A penalty of 15 credit points was issued due to a no-show. Booking privileges are restricted.",
-    },
-  });
-
-  console.log("Database seeded successfully with 9 total routes!");
+  console.log(
+    "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 4 complete Trip snapshots.",
+  );
+  console.log(
+    "No Phase 4 reserved-segment, waitlist, or walk-in data was created.",
+  );
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();

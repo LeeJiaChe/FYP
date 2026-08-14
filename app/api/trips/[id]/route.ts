@@ -17,6 +17,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       include: {
         route: true,
         bus: true,
+        tripStops: {
+          orderBy: { position: "asc" },
+        },
         driver: {
           select: { id: true, name: true, email: true },
         },
@@ -73,7 +76,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       deviceHealth: seat.deviceLogs[0]?.simulatedSignal || "OK",
     }));
 
-    const totalSeats = trip.bus.capacity;
+    const totalSeats = trip.seatedCapacity;
     const availableSeats = formattedSeats.filter((s) => s.status === "AVAILABLE").length;
     const reservedSeats = formattedSeats.filter((s) => s.status === "RESERVED").length;
     const checkedInSeats = formattedSeats.filter((s) => s.status === "CHECKED_IN").length;
@@ -84,10 +87,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         id: trip.id,
         routeId: trip.routeId,
         routeName: trip.route.name,
-        routeStops: JSON.parse(trip.route.stops || "[]"),
+        routeStops: trip.tripStops.map((stop) => stop.stopName),
+        tripStops: trip.tripStops.map((stop) => ({
+          id: stop.id,
+          stopId: stop.stopId,
+          position: stop.position,
+          code: stop.stopCode,
+          name: stop.stopName,
+          latitude: stop.latitude.toNumber(),
+          longitude: stop.longitude.toNumber(),
+          plannedArrival: stop.plannedArrival,
+          plannedDeparture: stop.plannedDeparture,
+          boardingDeadline: stop.boardingDeadline,
+        })),
         busId: trip.busId,
         busPlateNumber: trip.bus.plateNumber,
-        busCapacity: trip.bus.capacity,
+        busCapacity: trip.seatedCapacity,
+        seatedCapacity: trip.seatedCapacity,
+        standingCapacity: trip.standingCapacity,
         driverId: trip.driverId,
         driverName: trip.driver?.name || "Unassigned",
         departureTime: trip.departureTime,

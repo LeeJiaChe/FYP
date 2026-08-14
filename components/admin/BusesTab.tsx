@@ -40,7 +40,7 @@ export default function BusesTab({ buses, onOpenModal, onEditBus }: BusesTabProp
               </span>
             </div>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Capacity: <span className="font-bold" style={{ color: "var(--text-primary)" }}>{b.capacity} Seats</span>
+              Capacity: <span className="font-bold" style={{ color: "var(--text-primary)" }}>{b.seatedCapacity} seated + {b.standingCapacity} standing</span>
             </p>
             <div className="flex items-center justify-between mt-2">
               <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Trips Scheduled: {b._count?.trips || 0}</p>

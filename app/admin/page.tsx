@@ -36,6 +36,7 @@ export default function AdminDashboard() {
   // CRUD Data State
   const [buses, setBuses] = useState<any[]>([]);
   const [routes, setRoutes] = useState<any[]>([]);
+  const [stops, setStops] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [appeals, setAppeals] = useState<any[]>([]);
   const [utilizationData, setUtilizationData] = useState<any[]>([]);
@@ -48,12 +49,19 @@ export default function AdminDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newBus, setNewBus] = useState({
     plateNumber: "",
-    capacity: 20,
+    seatedCapacity: 20,
+    standingCapacity: 8,
     status: "ACTIVE",
   });
 
   const [showRouteModal, setShowRouteModal] = useState(false);
-  const [newRoute, setNewRoute] = useState({ name: "", stopsInput: "" });
+  const [newRoute, setNewRoute] = useState({
+    name: "",
+    routeStops: [
+      { stopId: "", travelDurationToNextMinutes: 10 },
+      { stopId: "", travelDurationToNextMinutes: null as number | null },
+    ],
+  });
 
   const [showTripModal, setShowTripModal] = useState(false);
   const [newTrip, setNewTrip] = useState({
@@ -61,7 +69,6 @@ export default function AdminDashboard() {
     busId: "",
     driverId: "",
     departureTime: "",
-    estimatedArrivalTime: "",
   });
 
   const [selectedAppeal, setSelectedAppeal] = useState<any>(null);
@@ -70,6 +77,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchBuses();
     fetchRoutes();
+    fetchStops();
     fetchDrivers();
     fetchAppeals();
   }, []);
@@ -142,6 +150,16 @@ export default function AdminDashboard() {
     } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
+  async function fetchStops() {
+    try {
+      const res = await fetch("/api/admin/stops");
+      if (res.ok) {
+        const data = await res.json();
+        setStops(data.stops || []);
+      }
+    } catch (err: any) { toast.error(err.message || "An error occurred"); }
+  }
+
   async function fetchDrivers() {
     try {
       const res = await fetch("/api/admin/drivers-list");
@@ -193,7 +211,7 @@ export default function AdminDashboard() {
         toast.success(editingBusId ? "Bus updated successfully" : "Bus created successfully");
         setShowBusModal(false);
         setEditingBusId(null);
-        setNewBus({ plateNumber: "", capacity: 20, status: "ACTIVE" });
+        setNewBus({ plateNumber: "", seatedCapacity: 20, standingCapacity: 8, status: "ACTIVE" });
         fetchBuses();
       } else {
         const data = await res.json();
@@ -205,25 +223,27 @@ export default function AdminDashboard() {
     async function handleCreateRoute(e: React.FormEvent) {
     e.preventDefault();
     setIsSubmitting(true);
-    const stops = newRoute.stopsInput
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
     try {
       const res = await fetch("/api/admin/routes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRoute.name, stops }),
+        body: JSON.stringify({ name: newRoute.name, stops: newRoute.routeStops }),
       });
 
       if (res.ok) {
         toast.success("Route created successfully");
         setShowRouteModal(false);
-        setNewRoute({ name: "", stopsInput: "" });
+        setNewRoute({
+          name: "",
+          routeStops: [
+            { stopId: "", travelDurationToNextMinutes: 10 },
+            { stopId: "", travelDurationToNextMinutes: null },
+          ],
+        });
         fetchRoutes();
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to create route");
+        toast.error(data.error?.message || data.error || "Failed to create route");
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
   }
@@ -237,9 +257,6 @@ export default function AdminDashboard() {
         driverId: newTrip.driverId || undefined,
         departureTime: newTrip.departureTime
           ? new Date(newTrip.departureTime).toISOString()
-          : "",
-        estimatedArrivalTime: newTrip.estimatedArrivalTime
-          ? new Date(newTrip.estimatedArrivalTime).toISOString()
           : "",
       };
 
@@ -257,12 +274,11 @@ export default function AdminDashboard() {
           busId: "",
           driverId: "",
           departureTime: "",
-          estimatedArrivalTime: "",
         });
         fetchTrips();
       } else {
         const errData = await res.json();
-        toast.error(`Failed to schedule trip: ${errData.error || res.status}`);
+        toast.error(`Failed to schedule trip: ${errData.error?.message || errData.error || res.status}`);
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
   }
@@ -383,7 +399,7 @@ export default function AdminDashboard() {
 
         {/* TAB 2: BUSES CRUD */}
         {activeTab === "buses" && (
-          <BusesTab buses={buses} onOpenModal={() => { setEditingBusId(null); setNewBus({ plateNumber: "", capacity: 20, status: "ACTIVE" }); setShowBusModal(true); }} onEditBus={(bus) => { setEditingBusId(bus.id); setNewBus({ plateNumber: bus.plateNumber, capacity: bus.capacity, status: bus.status }); setShowBusModal(true); }} />
+          <BusesTab buses={buses} onOpenModal={() => { setEditingBusId(null); setNewBus({ plateNumber: "", seatedCapacity: 20, standingCapacity: 8, status: "ACTIVE" }); setShowBusModal(true); }} onEditBus={(bus) => { setEditingBusId(bus.id); setNewBus({ plateNumber: bus.plateNumber, seatedCapacity: bus.seatedCapacity, standingCapacity: bus.standingCapacity, status: bus.status }); setShowBusModal(true); }} />
         )}
 
         {/* TAB 3: ROUTES CRUD */}
@@ -455,17 +471,38 @@ export default function AdminDashboard() {
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  Capacity (Seats)
+                  Seated Capacity
                 </label>
                 <input
                   type="number"
                   required
                   min={1}
-                  value={newBus.capacity}
+                  value={newBus.seatedCapacity}
                   onChange={(e) =>
                     setNewBus({
                       ...newBus,
-                      capacity: parseInt(e.target.value) || 20,
+                      seatedCapacity: parseInt(e.target.value) || 20,
+                    })
+                  }
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label
+                  className="block text-xs font-bold mb-1.5"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Standing Capacity
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={0}
+                  value={newBus.standingCapacity}
+                  onChange={(e) =>
+                    setNewBus({
+                      ...newBus,
+                      standingCapacity: Math.max(0, parseInt(e.target.value) || 0),
                     })
                   }
                   className="input-field"
@@ -522,18 +559,88 @@ export default function AdminDashboard() {
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  Stops (Comma Separated)
+                  Ordered Stops and Travel Time to Next Stop
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Main Gate, Block A, Block D, Terminal"
-                  value={newRoute.stopsInput}
-                  onChange={(e) =>
-                    setNewRoute({ ...newRoute, stopsInput: e.target.value })
-                  }
-                  className="input-field"
-                />
+                <div className="space-y-2">
+                  {newRoute.routeStops.map((routeStop, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_8rem] gap-2">
+                      <select
+                        required
+                        value={routeStop.stopId}
+                        onChange={(e) => setNewRoute({
+                          ...newRoute,
+                          routeStops: newRoute.routeStops.map((item, itemIndex) =>
+                            itemIndex === index ? { ...item, stopId: e.target.value } : item
+                          ),
+                        })}
+                        className="input-field"
+                      >
+                        <option value="">Select stop</option>
+                        {stops.map((stop) => (
+                          <option key={stop.id} value={stop.id}>{stop.code} — {stop.name}</option>
+                        ))}
+                      </select>
+                      {index < newRoute.routeStops.length - 1 ? (
+                        <input
+                          type="number"
+                          min={1}
+                          required
+                          aria-label={`Travel minutes from stop ${index + 1}`}
+                          value={routeStop.travelDurationToNextMinutes ?? 1}
+                          onChange={(e) => setNewRoute({
+                            ...newRoute,
+                            routeStops: newRoute.routeStops.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, travelDurationToNextMinutes: Math.max(1, parseInt(e.target.value) || 1) }
+                                : item
+                            ),
+                          })}
+                          className="input-field"
+                          title="Minutes to next stop"
+                        />
+                      ) : (
+                        <div className="input-field text-xs flex items-center">Final stop</div>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={newRoute.routeStops.length >= 5}
+                      onClick={() => setNewRoute({
+                        ...newRoute,
+                        routeStops: [
+                          ...newRoute.routeStops.slice(0, -1).map((item) => ({
+                            ...item,
+                            travelDurationToNextMinutes: item.travelDurationToNextMinutes ?? 10,
+                          })),
+                          {
+                            ...newRoute.routeStops[newRoute.routeStops.length - 1],
+                            travelDurationToNextMinutes: 10,
+                          },
+                          { stopId: "", travelDurationToNextMinutes: null },
+                        ],
+                      })}
+                      className="btn-ghost text-xs"
+                    >
+                      Add Stop
+                    </button>
+                    <button
+                      type="button"
+                      disabled={newRoute.routeStops.length <= 2}
+                      onClick={() => setNewRoute({
+                        ...newRoute,
+                        routeStops: newRoute.routeStops.slice(0, -1).map((item, itemIndex, items) => ({
+                          ...item,
+                          travelDurationToNextMinutes: itemIndex === items.length - 1 ? null : item.travelDurationToNextMinutes,
+                        })),
+                      })}
+                      className="btn-ghost text-xs"
+                    >
+                      Remove Last
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <button
@@ -576,7 +683,7 @@ export default function AdminDashboard() {
                   key: "busId",
                   opts: buses.map((b: any) => ({
                     v: b.id,
-                    l: `${b.plateNumber} (${b.capacity} seats)`,
+                    l: `${b.plateNumber} (${b.seatedCapacity} seated, ${b.standingCapacity} standing)`,
                   })),
                   ph: "Select Bus",
                   req: true,
@@ -635,26 +742,9 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              <div>
-                <label
-                  className="block text-xs font-bold mb-1.5"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  Est. Arrival Time
-                </label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={newTrip.estimatedArrivalTime}
-                  onChange={(e) =>
-                    setNewTrip({
-                      ...newTrip,
-                      estimatedArrivalTime: e.target.value,
-                    })
-                  }
-                  className="input-field"
-                />
-              </div>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Intermediate and final times are derived from the Route travel-time offsets.
+              </p>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button

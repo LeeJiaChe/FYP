@@ -9,8 +9,14 @@ const globalForPrisma = globalThis as typeof globalThis & {
 };
 
 function createPrismaClient(): PrismaClient {
+  const datasourceUrl =
+    serverEnvironment.runtime === "test" &&
+    serverEnvironment.integrationTest.confirmed
+      ? serverEnvironment.integrationTest.databaseUrl
+      : serverEnvironment.database.url;
+
   return new PrismaClient({
-    datasourceUrl: serverEnvironment.database.url,
+    datasourceUrl,
     log:
       serverEnvironment.runtime === "production"
         ? ["error"]

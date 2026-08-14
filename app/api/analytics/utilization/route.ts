@@ -25,7 +25,7 @@ export async function GET() {
       let totalOccupied = 0;
 
       route.trips.forEach((trip) => {
-        totalCapacity += trip.bus.capacity;
+        totalCapacity += trip.seatedCapacity;
         const occupied = trip.seats.filter((s) => s.status === "RESERVED" || s.status === "CHECKED_IN" || s.status === "NO_SHOW").length;
         totalOccupied += occupied;
       });

@@ -77,10 +77,12 @@ short decision index, not evidence that the current implementation is complete.
     publishes authenticated non-PII invalidations for occupancy, Trip state, and
     location. It does not access Prisma.
 
-16. **Current implementation status:** Current JSON stops, discarded From/To
-    selection, whole-trip Seat status, combined Booking/waitlist state, absent
-    standing flow, schedule-interpolated map, PWA artifacts, and device-health
-    feature are prototype behavior—not approved target behavior.
+16. **Current implementation status:** Phase 3 has replaced JSON stops and scalar
+    Bus capacity with normalized directional topology and immutable per-Trip
+    inventory. Discarded From/To selection, legacy whole-trip Seat availability,
+    combined Booking/waitlist state, absent standing flow, schedule-interpolated
+    map, PWA artifacts, and device-health feature remain prototype behavior—not
+    approved target behavior.
 
 17. **Waitlist order:** Promotion is oldest-compatible-first FIFO. A temporarily
     incompatible entry may be skipped but keeps its original priority.

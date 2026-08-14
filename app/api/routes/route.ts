@@ -1,31 +1,11 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
+import { listPublicRoutes } from "@/features/fleet/server";
+import { unauthenticated } from "@/shared/application/application-error";
+import { handleRoute } from "@/shared/http/handle-route.server";
 
-/**
- * Public read-only route list — accessible to all authenticated users
- * (students need this to populate route filters in the booking UI).
- * Mutating operations (POST/PATCH/DELETE) remain admin-only under /api/admin/routes.
- */
-export async function GET() {
-  try {
-    const user = await getUserFromToken();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const routes = await prisma.route.findMany({
-      orderBy: { name: "asc" },
-    });
-
-    const formatted = routes.map((r) => ({
-      id: r.id,
-      name: r.name,
-      stops: JSON.parse(r.stops || "[]"),
-    }));
-
-    return NextResponse.json({ routes: formatted });
-  } catch (err: any) {
-    return NextResponse.json({ error: "Failed to fetch routes" }, { status: 500 });
-  }
+export async function GET(request: Request) {
+  return handleRoute(request, async () => {
+    if (!(await getUserFromToken())) throw unauthenticated();
+    return { body: { routes: await listPublicRoutes() } };
+  });
 }

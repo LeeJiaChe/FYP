@@ -1,6 +1,6 @@
 # Architecture v2
 
-Status: **Approved target; Phase 2 shared foundation implemented incrementally**
+Status: **Approved target; Phase 3 topology and inventory implemented incrementally**
 
 Decision date: 2026-08-14
 
@@ -9,6 +9,8 @@ Phase 0 owner amendments and pre-Phase-1 operating decisions aligned: 2026-08-14
 Companion audit: [`ARCHITECTURE_AUDIT_2026-08-14.md`](./ARCHITECTURE_AUDIT_2026-08-14.md)
 
 Phase 2 evidence: [`PHASE_2_SHARED_FOUNDATION.md`](./PHASE_2_SHARED_FOUNDATION.md)
+
+Phase 3 evidence: [`PHASE_3_TOPOLOGY_AND_INVENTORY.md`](./PHASE_3_TOPOLOGY_AND_INVENTORY.md)
 
 This document is the normative architecture proposal for the TAR UMT Campus
 Shuttle Management System. `APP_SPECIFICATION.md` remains the product source of
@@ -573,7 +575,9 @@ admins do not manually enter each stop time.
 | `TripLocationSample` | NEW | Simulator-first, replaceable GPS telemetry history/latest state. |
 | `TripStatusHistory` | NEW | Minimal append-only audit evidence for exceptional Trip lifecycle changes. |
 
-No schema change is performed in Phase 0, Phase 1, or Phase 2.
+No schema change was performed in Phase 0, Phase 1, or Phase 2. Phase 3 now
+implements the topology/inventory subset through a forward PostgreSQL migration;
+the remaining rows in this table are still target decisions until their phases.
 
 ## 10. Authentication and security
 

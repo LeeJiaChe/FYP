@@ -17,6 +17,7 @@ export async function GET() {
             route: true,
             bus: true,
             driver: { select: { name: true } },
+            tripStops: { orderBy: { position: "asc" } },
           },
         },
         seat: true,
@@ -37,7 +38,7 @@ export async function GET() {
       trip: {
         id: b.trip.id,
         routeName: b.trip.route.name,
-        routeStops: JSON.parse(b.trip.route.stops || "[]"),
+        routeStops: b.trip.tripStops.map((stop) => stop.stopName),
         busPlateNumber: b.trip.bus.plateNumber,
         driverName: b.trip.driver?.name || "Unassigned",
         departureTime: b.trip.departureTime,

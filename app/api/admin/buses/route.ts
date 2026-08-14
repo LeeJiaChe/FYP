@@ -11,6 +11,7 @@ export async function GET() {
     }
 
     const buses = await prisma.bus.findMany({
+      where: { deletedAt: null },
       orderBy: { plateNumber: "asc" },
       include: {
         _count: { select: { trips: true } },
@@ -56,29 +57,16 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
-    const { id, plateNumber, capacity, status } = updateBusSchema.parse(body);
-
-    if (capacity !== undefined) {
-      const busCurrent = await prisma.bus.findUnique({ where: { id } });
-      if (busCurrent && capacity < busCurrent.capacity) {
-        const activeTripsCount = await prisma.trip.count({
-          where: { busId: id, status: { in: ["NOT_STARTED", "BOARDING"] } },
-        });
-        if (activeTripsCount > 0) {
-          return NextResponse.json(
-            { error: `Cannot decrease capacity. Bus has ${activeTripsCount} active or upcoming trip(s).` },
-            { status: 400 }
-          );
-        }
-      }
-    }
+    const { id, plateNumber, seatedCapacity, standingCapacity, status } =
+      updateBusSchema.parse(body);
 
     const updatedBus = await prisma.$transaction(async (tx) => {
       const bus = await tx.bus.update({
         where: { id },
         data: {
           ...(plateNumber ? { plateNumber } : {}),
-          ...(capacity ? { capacity } : {}),
+          ...(seatedCapacity === undefined ? {} : { seatedCapacity }),
+          ...(standingCapacity === undefined ? {} : { standingCapacity }),
           ...(status ? { status } : {}),
         },
       });

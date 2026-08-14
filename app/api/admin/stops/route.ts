@@ -1,11 +1,11 @@
 import { getUserFromToken } from "@/lib/auth";
 import {
-  createRoute,
-  createRouteSchema,
-  listRoutes,
-  retireRoute,
-  updateRoute,
-  updateRouteSchema,
+  createStop,
+  createStopSchema,
+  listStops,
+  retireStop,
+  updateStop,
+  updateStopSchema,
 } from "@/features/fleet/server";
 import { unauthenticated } from "@/shared/application/application-error";
 import {
@@ -22,7 +22,7 @@ async function actor() {
 
 export async function GET(request: Request) {
   return handleRoute(request, async () => ({
-    body: { routes: await listRoutes(await actor()) },
+    body: { stops: await listStops(await actor()) },
   }));
 }
 
@@ -30,9 +30,9 @@ export async function POST(request: Request) {
   return handleRoute(request, async () => ({
     body: {
       success: true,
-      route: await createRoute(
+      stop: await createStop(
         await actor(),
-        await parseJsonBody(request, createRouteSchema),
+        await parseJsonBody(request, createStopSchema),
       ),
     },
     status: 201,
@@ -43,9 +43,9 @@ export async function PATCH(request: Request) {
   return handleRoute(request, async () => ({
     body: {
       success: true,
-      route: await updateRoute(
+      stop: await updateStop(
         await actor(),
-        await parseJsonBody(request, updateRouteSchema),
+        await parseJsonBody(request, updateStopSchema),
       ),
     },
   }));
@@ -54,7 +54,7 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   return handleRoute(request, async () => {
     const id = uuidSchema.parse(new URL(request.url).searchParams.get("id"));
-    await retireRoute(await actor(), id);
+    await retireStop(await actor(), id);
     return { body: { success: true } };
   });
 }

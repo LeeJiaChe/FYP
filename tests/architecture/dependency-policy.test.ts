@@ -70,6 +70,13 @@ describe("Architecture v2 dependency policy", () => {
       ),
       ["no-server-import-in-client"],
     );
+    assert.deepEqual(
+      rules(
+        "src/features/trips/ui/ScheduleForm.tsx",
+        `'use client';\nimport { scheduleTrip } from "@/features/trips/application/schedule-trip";`,
+      ),
+      ["no-server-import-in-client"],
+    );
   });
 
   it("allows only shared DB infrastructure to construct PrismaClient", () => {

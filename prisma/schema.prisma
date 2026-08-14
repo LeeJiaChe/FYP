@@ -79,41 +79,70 @@ enum DeviceSignal {
 }
 
 model User {
-  id                  String          @id @default(uuid())
-  studentId           String?         @unique
+  id                  String   @id @default(uuid())
+  studentId           String?  @unique
   name                String
-  email               String          @unique
+  email               String   @unique
   passwordHash        String
   role                UserRole
-  creditScore         Int             @default(100)
-  isBookingRestricted Boolean         @default(false)
-  sessionVersion      Int             @default(1)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  creditScore         Int      @default(100)
+  isBookingRestricted Boolean  @default(false)
+  sessionVersion      Int      @default(1)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  driverTrips         Trip[]          @relation("DriverTrips")
-  bookings            Booking[]
-  penalties           Penalty[]
-  appeals             PenaltyAppeal[]
-  reviewedAppeals     PenaltyAppeal[] @relation("AdminReviewedAppeals")
-  notifications       Notification[]
+  driverTrips     Trip[]          @relation("DriverTrips")
+  bookings        Booking[]
+  penalties       Penalty[]
+  appeals         PenaltyAppeal[]
+  reviewedAppeals PenaltyAppeal[] @relation("AdminReviewedAppeals")
+  notifications   Notification[]
 }
 
 model Bus {
-  id          String    @id @default(uuid())
-  plateNumber String    @unique
-  capacity    Int
-  status      BusStatus @default(ACTIVE)
-  deletedAt   DateTime?
-  trips       Trip[]
+  id               String    @id @default(uuid())
+  plateNumber      String    @unique
+  seatedCapacity   Int
+  standingCapacity Int
+  status           BusStatus @default(ACTIVE)
+  deletedAt        DateTime?
+  trips            Trip[]
 }
 
 model Route {
-  id        String    @id @default(uuid())
-  name      String
-  stops     String    // JSON string array
-  deletedAt DateTime?
-  trips     Trip[]
+  id         String      @id @default(uuid())
+  name       String
+  deletedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  routeStops RouteStop[]
+  trips      Trip[]
+}
+
+model Stop {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique
+  name       String
+  latitude   Decimal     @db.Decimal(9, 6)
+  longitude  Decimal     @db.Decimal(9, 6)
+  deletedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  routeStops RouteStop[]
+  tripStops  TripStop[]
+}
+
+model RouteStop {
+  id                          String @id @default(uuid()) @db.Uuid
+  routeId                     String
+  route                       Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stopId                      String @db.Uuid
+  stop                        Stop   @relation(fields: [stopId], references: [id], onDelete: Restrict)
+  position                    Int
+  travelDurationToNextMinutes Int?
+
+  @@unique([routeId, position])
+  @@unique([routeId, stopId])
 }
 
 model Trip {
@@ -127,25 +156,85 @@ model Trip {
   departureTime        DateTime
   estimatedArrivalTime DateTime
   boardingDeadline     DateTime
+  seatedCapacity       Int
+  standingCapacity     Int
   status               TripStatus @default(NOT_STARTED)
   delayReason          String?
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 
-  seats                Seat[]
-  bookings             Booking[]
+  seats        Seat[]
+  tripSeats    TripSeat[]
+  tripStops    TripStop[]
+  tripSegments TripSegment[]
+  bookings     Booking[]
 
   @@index([routeId])
   @@index([busId])
   @@index([driverId])
   @@index([departureTime])
   @@index([status])
+  @@index([routeId, departureTime])
+  @@index([driverId, departureTime])
+}
+
+model TripStop {
+  id               String    @id @default(uuid()) @db.Uuid
+  tripId           String
+  trip             Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  stopId           String    @db.Uuid
+  stop             Stop      @relation(fields: [stopId], references: [id], onDelete: Restrict)
+  position         Int
+  stopCode         String
+  stopName         String
+  latitude         Decimal   @db.Decimal(9, 6)
+  longitude        Decimal   @db.Decimal(9, 6)
+  plannedArrival   DateTime
+  plannedDeparture DateTime
+  boardingDeadline DateTime
+  actualArrival    DateTime?
+  actualDeparture  DateTime?
+  passedAt         DateTime?
+
+  segmentsFrom TripSegment[] @relation("TripSegmentFrom")
+  segmentsTo   TripSegment[] @relation("TripSegmentTo")
+
+  @@unique([tripId, position])
+  @@unique([tripId, stopId])
+  @@unique([tripId, id])
+  @@index([stopId, plannedDeparture])
+}
+
+model TripSegment {
+  id             String   @id @default(uuid()) @db.Uuid
+  tripId         String
+  trip           Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  position       Int
+  fromTripStopId String   @db.Uuid
+  fromTripStop   TripStop @relation("TripSegmentFrom", fields: [fromTripStopId], references: [id], onDelete: Cascade)
+  toTripStopId   String   @db.Uuid
+  toTripStop     TripStop @relation("TripSegmentTo", fields: [toTripStopId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, position])
+  @@unique([tripId, fromTripStopId, toTripStopId])
+}
+
+model TripSeat {
+  id         String @id @default(uuid()) @db.Uuid
+  tripId     String
+  trip       Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  seatNumber Int
+  legacySeat Seat?  @relation("LegacySeatInventory")
+
+  @@unique([tripId, seatNumber])
 }
 
 model Seat {
   id         String            @id @default(uuid())
   tripId     String
   trip       Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripSeatId String?           @unique @db.Uuid
+  tripSeat   TripSeat?         @relation("LegacySeatInventory", fields: [tripSeatId], references: [id], onDelete: SetNull)
   seatNumber Int
   status     SeatStatus        @default(AVAILABLE)
   booking    Booking?
@@ -171,12 +260,12 @@ model Booking {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  penalties        Penalty[]
+  penalties Penalty[]
 
+  @@unique([tripId, waitlistPosition])
   @@index([studentId])
   @@index([tripId])
   @@index([status])
-  @@unique([tripId, waitlistPosition])
 }
 
 model Penalty {
@@ -190,7 +279,7 @@ model Penalty {
   status               PenaltyStatus @default(ACTIVE)
   createdAt            DateTime      @default(now())
 
-  appeals              PenaltyAppeal[]
+  appeals PenaltyAppeal[]
 
   @@index([bookingId])
   @@index([studentId])

@@ -413,6 +413,10 @@ Exit: new feature code can be built without copying handler boilerplate.
 Exit: every scheduled Trip has valid ordered topology, capacity snapshots,
 TripSeats, and queryable journey segments.
 
+**Phase 3 implements this exit condition; see
+`framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md`. Real PostgreSQL verification is
+recorded there rather than inferred from Prisma validation.**
+
 ### Phase 4 — reserved journeys and journey-aware waitlist
 
 - Add reserved Booking endpoints, ReservedSeatSegment uniqueness, availability,
@@ -647,9 +651,17 @@ in `framework/PHASE_2_SHARED_FOUNDATION.md`. Existing handlers remain legacy
 adapters except for narrow consumption of centralized values; no schema or
 product feature migration occurred.
 
+### Phase 3 verification addendum
+
+Phase 3 adds the first forward Architecture v2 schema migration: normalized
+Stops/RouteStops, Bus seated/standing capacity, immutable Trip capacity and
+topology snapshots, adjacent TripSegments, and status-free TripSeat inventory.
+The old Route JSON and scalar Bus capacity are removed. A one-to-one legacy Seat
+mirror remains only to keep pre-Phase-4 booking/driver screens buildable and is
+not an Architecture v2 availability source.
+
 ## 13. Recommended next action
 
-Phase 2 is complete within the environment limits recorded in its phase report.
-The next task is **Phase 3 — directional topology and per-trip inventory**. It
-must start as a separate change and begin with the PostgreSQL schema/migration
-slice defined in §8; this Phase 2 change deliberately stops before it.
+After Phase 3 PostgreSQL 16 CI is green, the next separate task is **Phase 4 —
+reserved journeys and journey-aware waitlist**. It must use TripStops and
+TripSegments created here and must not preserve whole-Trip Seat locking.

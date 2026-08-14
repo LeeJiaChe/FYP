@@ -29,17 +29,20 @@ export default function RoutesTab({ routes, onOpenModal }: RoutesTabProps) {
           >
             <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>{r.name}</h3>
             <div className="flex flex-wrap gap-2">
-              {r.stops?.map((stop: string, i: number) => (
+              {r.routeStops?.map((routeStop: any, i: number) => (
                 <span
-                  key={i}
+                  key={routeStop.id}
                   className="text-xs px-2.5 py-1 rounded-lg font-medium"
                   style={{ background: "var(--bg-surface)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
                 >
-                  {stop}
+                  {routeStop.stop.code} — {routeStop.stop.name}
+                  {routeStop.travelDurationToNextMinutes === null
+                    ? " (final)"
+                    : ` → ${routeStop.travelDurationToNextMinutes} min`}
                 </span>
               ))}
             </div>
-            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>{r.stops?.length || 0} stops</p>
+            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>{r.routeStops?.length || 0} ordered stops</p>
           </div>
         ))}
       </div>
