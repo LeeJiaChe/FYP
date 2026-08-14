@@ -226,12 +226,15 @@ export async function admitWalkInRecord(
     );
     const ids = traversed.map((segment) => segment.id);
     if (ids.length === 0) throw new BoardingPersistenceError("INVALID_JOURNEY");
+    const lockedSegmentIds = Prisma.join(
+      ids.map((segmentId) => Prisma.sql`${segmentId}::uuid`),
+    );
 
     await transaction.$queryRaw`
       SELECT "id"
       FROM "TripSegment"
       WHERE "tripId" = ${tripId}
-        AND "id" IN (${Prisma.join(ids)})
+        AND "id" IN (${lockedSegmentIds})
       ORDER BY "position" ASC
       FOR UPDATE
     `;
