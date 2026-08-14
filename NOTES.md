@@ -1,47 +1,91 @@
-# Project Assumptions & Design Decisions (NOTES.md)
+# Approved Product and Architecture Decisions
 
-> These notes include historical implementation assumptions. Unresolved items and
-> current recommendations are tracked in
-> [`framework/ARCHITECTURE_AUDIT_2026-08-14.md`](./framework/ARCHITECTURE_AUDIT_2026-08-14.md);
-> approved Architecture v2 rules belong in
-> [`framework/ARCHITECTURE.md`](./framework/ARCHITECTURE.md) or a focused ADR.
+Status: Phase 0 decisions aligned on 2026-08-14.
 
-1. **Database Provider**: PostgreSQL with Prisma ORM is intentional and must be preserved. Architecture v2 may evolve the schema through forward migrations where correctness requires additional constraints or an approved segment model.
+`framework/APP_SPECIFICATION.md` is the product source of truth. The target
+technical design is `framework/ARCHITECTURE.md`; migration impact and remaining
+questions are in `framework/ARCHITECTURE_AUDIT_2026-08-14.md`. These notes are a
+short decision index, not evidence that the current implementation is complete.
 
-2. **Realtime Service**: Standalone Node.js service running in `/realtime` using Express and Socket.io. Next.js API routes trigger realtime broadcasts via HTTP requests to `http://localhost:4000/emit`. Two env vars are intentionally split:
-   - `REALTIME_URL` (server-only, no `NEXT_PUBLIC_` prefix) — used by `lib/realtime-client.ts` in API routes. Never exposed to client bundle.
-   - `NEXT_PUBLIC_REALTIME_URL` — used only by the client-side Socket.io connection in the admin/driver dashboard components.
+1. **Database:** PostgreSQL with Prisma is intentional. Evolve it only through
+   forward migrations; never revert to SQLite or edit the applied initial
+   migration.
 
-3. **Scheduled Cron Jobs**: Handled by `node-cron` running inside the `/realtime` service on a 1-minute interval. It triggers no-show detection and device health simulation routines via internal API endpoints. The cron endpoints are protected by `x-cron-secret` header in production.
+2. **Product form:** The product is a responsive website for mobile and desktop
+   browsers, not a PWA or native application. Installability, manifest behavior,
+   service workers, offline caching, install prompts, and PWA-specific icons are
+   removed from scope. Existing artifacts remain temporarily for later deletion.
 
-4. **Auth & Tokens**: JWT tokens stored in `fyp_session` HTTP-only cookie. Student dynamic QR codes embed a 60-second signed JWT containing `{ bookingId, seatId, tripId }`, auto-refreshed by the frontend every 45 seconds.
+3. **Architecture:** Continue with a feature-oriented modular monolith in the
+   Next.js App Router, a small standalone Socket.io process, and PostgreSQL as the
+   durable source of truth. Realtime never owns durable business state.
 
-5. **IoT Simulation**: Device health logs (`DeviceStatusLog`) are periodically simulated with occasional `OFFLINE` / `ERROR` signals to demonstrate sensor monitoring on the admin seat matrix. These are explicitly a simulation and documented as such in code comments.
+4. **Routes:** A Route is one directional ordered list of approximately two to
+   five distinct Stops. Reverse travel is another Route. Circular routes,
+   transfers, and multi-route journeys are out of scope.
 
-6. **Cross-Module Cascade Safety**:
-   - When a `Trip` is `CANCELLED`, all `CONFIRMED` and `WAITLISTED` bookings are transactionally cancelled, seats released, and students notified with `CANCELLED` notification type.
-   - When a `Bus` status changes to `RETIRED` or `MAINTENANCE`, upcoming unstarted trips are cancelled in the same transaction.
-   - Bus and Route deletion is blocked with a clear 400 error if active/upcoming trips are assigned.
+5. **Student search:** The conceptual flow is
+   `From -> To -> Date -> Departure -> Seat`. The server finds directional Routes
+   where From occurs before To. “Segment” is internal domain terminology, not a
+   required student-facing wizard step.
 
-7. **Race Condition Immunity**:
-   - Duplicate booking checks are enforced *inside* `$transaction` blocks to prevent two concurrent POST requests from double-booking the same seat.
-   - No-show cron re-fetches the student's live credit score inside each per-booking transaction to prevent stale calculation when a student has multiple no-shows in the same cron run.
+6. **Reserved seating:** A Booking persists boarding and drop-off TripStops and
+   guarantees a specific TripSeat over every traversed TripSegment. The same seat
+   may be reused by non-overlapping journeys. A scalar whole-trip `Seat.status`
+   cannot represent target availability.
 
-8. **Directional Routes & Leg-Based Booking Flow**:
-   - Routes are single-directional (`->`). Bidirectional routes from the original spec are split into explicit outbound and inbound routes.
-   - The current booking wizard displays `Route → Date → From/To Segment → Time & Seat`, but the selected segment is not persisted or sent in the booking request. Whether to persist segment metadata, implement segment-aware capacity, or remove the step is an unresolved product decision; the UI must not imply behavior the model does not support.
+7. **Waitlist:** A WaitlistEntry is separate from a guaranteed Booking and stores
+   the exact requested journey. A passenger joins only if no single seat is free
+   across the complete journey. Promotion must re-evaluate and claim all required
+   segments atomically.
 
-9. **Route API Separation**:
-   - `GET /api/routes` — public authenticated endpoint (any logged-in role) for reading routes in the student booking UI.
-   - `GET/POST/PATCH/DELETE /api/admin/routes` — admin-only CRUD for route management.
-   - This separation was NOT in the original spec but is required to avoid giving students access to admin CRUD endpoints.
+8. **Bus capacity:** Every Bus has independently configurable seated and standing
+   capacities. A Trip snapshots both values so later fleet edits do not rewrite
+   scheduled/historical capacity.
 
-10. **QR Scanner UI**: The driver's QR scanner currently requires pasting the JWT token string (text input). In a real deployment, this would use a device camera with a barcode scanning library. For demo/FYP purposes, the paste-based scanner is sufficient and is explicitly a simulation.
+9. **Walk-in standing:** A WalkInIntent/Pass records student, Trip, boarding stop,
+   and drop-off stop but consumes no capacity and guarantees no admission. At
+   scan time, the assigned driver workflow locks every traversed TripSegment and
+   atomically creates the admitted WalkInJourney/standing claims only when all
+   segments have capacity. Admission is first-come-first-served at transaction
+   commit.
 
-11. **Platform Strategy**: The specification requires a responsive installable PWA; a native mobile app is not required. Offline trip-list caching remains stretch scope. The current manifest/meta foundation is incomplete because the declared icons are placeholder pixels and installability has not been verified.
+10. **Pass types:** Reserved Pass, Walk-in Pass, and Exit/alighting purpose are
+    explicit token contracts. Reserved and walk-in boarding share security and
+    transport helpers but do not share a confusing persistence invariant.
 
-12. **Analytics Historical Coverage**: Historical trip data from all buses (including those now RETIRED) is included in analytics aggregations. This is the correct decision for accurate historical demand reporting. Assumption logged here per spec §3 instruction.
+11. **Alighting:** Planned drop-off is always stored. Exit QR and driver manual
+    confirmation are useful evidence; a retry-safe automatic completion may run
+    after the Trip passes the planned stop. Missing an exit scan never blocks
+    capacity because planned segments are authoritative.
 
-13. **Waitlist Auto-Promotion Lead Time**: Currently instant (no time cutoff). The cutoff and the interaction between post-deadline no-show detection and waitlist promotion require an explicit rule. See audit unresolved question Q5.
+12. **Location:** Live bus location remains core. The FYP uses a GPS simulator
+    that submits realistic coordinates through the same authenticated ingestion
+    contract a future physical GPS adapter would use. The UI must label simulator
+    data and must not present schedule interpolation as GPS.
 
-14. **Driver Account Deletion Handling**: `Trip.driverId` uses `onDelete: SetNull`, so a database-level driver deletion would unassign trips. The application does not currently expose the promised driver deletion flow; Architecture v2 must define authorization, future-trip handling, and audit behavior before implementing it.
+13. **Seat devices:** Seat sensors, `DeviceStatusLog`, `DeviceSignal`, device-
+    health simulation, device-health cron, and sensor dashboards are removed from
+    approved scope. Existing schema/code/UI/tests are scheduled for controlled
+    deletion; they are not deleted in Phase 0.
+
+14. **No payment:** The shuttle is free. Do not add fares, prices, payments,
+    refunds, gateways, or paid-ticket concepts.
+
+15. **Jobs and realtime:** Approved scheduled work includes no-shows, reminders,
+    waitlist evaluation, and optional automatic alighting. The realtime process
+    publishes authenticated non-PII invalidations for occupancy, Trip state, and
+    location. It does not access Prisma.
+
+16. **Current implementation status:** Current JSON stops, discarded From/To
+    selection, whole-trip Seat status, combined Booking/waitlist state, absent
+    standing flow, schedule-interpolated map, PWA artifacts, and device-health
+    feature are prototype behavior—not approved target behavior.
+
+17. **Unresolved policies:** Waitlist fairness, Trip/DELAYED transitions, exact
+    timing/penalty constants, admin overrides, assessed scanner mode, location
+    retention/deployment, identity normalization, account deletion/export, and
+    intermediate-stop schedule input and Walk-in issuance eligibility require
+    owner confirmation as listed in the architecture audit. The owner must also
+    confirm whether any non-demo data needs preservation because current Bookings
+    never stored truthful From/To values. Do not guess during implementation.

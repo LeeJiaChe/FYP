@@ -1,15 +1,24 @@
-# 🚌 TAR UMT Shuttle — Campus Bus Booking & Live Seat Monitoring System
+# 🚌 TAR UMT Shuttle — Campus Shuttle Booking & Live Operations System
 
-> **Final Year Project (FYP)** — A full-stack digital campus shuttle management platform for TAR UMT, featuring real-time seat monitoring, anti-fraud QR boarding, automated waitlists, and a credit-based penalty system.
+> **Final Year Project (FYP)** — A responsive web application for directional journey search, segment-aware reserved seating, non-guaranteed walk-in boarding, live simulated-GPS location, and transport operations.
+
+> **Architecture v2 status:** The approved target below is not yet fully
+> implemented. The current prototype still contains whole-trip seat logic, PWA
+> artifacts, schedule-interpolated location, and seat-device simulation that are
+> scheduled for migration/removal. See the linked audit before treating current
+> behavior as product truth.
 
 ---
 
 ## ✨ Features
 
 ### 🎓 Student Portal
-- **Seat Booking Wizard** — Book seats with a guided `Route → Date → Segment → Seat` flow
-- **Dynamic QR Boarding Pass** — Auto-refreshing 60-second JWT QR codes that prevent screenshot fraud
-- **Waitlist Management** — Automatically promoted when a seat becomes available
+- **Journey Search** — Guided `From → To → Date → Departure → Seat` flow over directional routes
+- **Segment-Aware Reserved Seating** — A specific seat is guaranteed only over the passenger's planned boarding-to-drop-off journey and may be reused on non-overlapping segments
+- **Reserved Pass** — Short-lived signed QR backed by a guaranteed Booking
+- **Walk-in Pass** — Records intent but clearly does not guarantee standing admission; capacity is claimed only when scanned
+- **Journey-Aware Waitlist** — Promotion requires one seat to fit the passenger's complete requested journey
+- **Live Bus Location** — GPS simulator coordinates displayed honestly as prototype telemetry, not schedule interpolation
 - **Booking History** — View all past and upcoming bookings
 - **Credit Score** — Tracks reliability; drops on no-shows, triggers booking restrictions
 - **Penalty Appeals** — Submit appeals against no-show penalties with written justification
@@ -17,24 +26,25 @@
 
 ### 🚗 Driver Portal
 - **Active Trip Dashboard** — View assigned trips and current trip status
-- **QR Code Scanner** — Scan (paste) student boarding QR tokens to mark check-ins
+- **Boarding Operations** — Validate Reserved and Walk-in passes, with authorized manual fallback
+- **Alighting Confirmation** — Exit QR where practical, driver manual fallback, and optional automatic completion after the planned stop is passed
 - **Trip Status Control** — Update trip status (Boarding → Departed → Arrived)
 - **Live Seat Matrix** — Real-time seat occupancy view for the assigned trip
 
 ### 🛡️ Admin Portal
-- **Fleet Management** — Full CRUD for buses (`ACTIVE`, `MAINTENANCE`, `RETIRED`) with cascade trip cancellation on status change
-- **Route Management** — Create/edit directional routes with named stops (JSON)
+- **Fleet Management** — Buses have configurable seated and standing capacities
+- **Route Management** — Directional ordered routes of approximately 2–5 reusable stops
 - **Trip Scheduling** — Schedule trips, assign buses and drivers, update status and delay reasons
 - **Driver Management** — Create driver accounts and assign them to trips
-- **Real-Time Seat Matrix** — Live per-trip seat grid showing `AVAILABLE`, `RESERVED`, `CHECKED_IN`, `NO_SHOW`, and simulated IoT sensor health signals
+- **Live Operations** — Journey-aware reserved-seat and admitted-standing occupancy without seat-sensor/device-health simulation
 - **Analytics Dashboard** — Historical aggregations for ridership, route demand, and fleet utilisation using Recharts
 - **Penalty & Appeal Review** — Approve or reject student penalty appeals with admin comments
 
 ### ⚡ Real-Time Infrastructure
 - **Standalone Socket.io Service** — Decoupled from Next.js; runs on port `4000`
 - **Trip Rooms** — Clients subscribe to `trip:<id>` rooms for targeted push events
-- **1-Minute Cron Jobs** — Automated no-show detection and IoT device health simulation
-- **PWA Support** — Web app manifest and Apple meta tags for mobile home-screen installation
+- **Scheduled Jobs** — Retry-safe no-show, reminder, waitlist, and optional automatic-alighting triggers
+- **Responsive Website** — Mobile-browser friendly, without PWA installability, service workers, or offline caching
 
 ---
 
@@ -47,7 +57,7 @@ describes the existing runtime at a high level, not the completed Architecture v
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Browser / PWA                        │
+│                    Responsive Web Browser                   │
 │         Student Portal | Driver Portal | Admin Portal       │
 └──────────────────────────┬──────────────────────────────────┘
                            │  HTTPS
@@ -71,7 +81,7 @@ describes the existing runtime at a high level, not the completed Architecture v
 │                                                             │
 │  POST /emit  →  broadcast to trip:<id> rooms                │
 │  Cron (1 min) → /api/admin/cron/no-show                     │
-│                  /api/admin/cron/device-health              │
+│                  legacy device-health call (remove later)    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -194,7 +204,10 @@ All accounts use the password: **`password123`**
 
 ---
 
-## 🗄️ Database Schema (ERD Summary)
+## 🗄️ Database Schema Status
+
+The current prototype schema is a migration source, not the Architecture v2
+target:
 
 ```
 User ──┬── Booking ──── Seat ──── Trip ──── Route
@@ -205,7 +218,12 @@ User ──┬── Booking ──── Seat ──── Trip ──── Ro
 Trip ──── Seat ──── DeviceStatusLog
 ```
 
-Key models: `User`, `Bus`, `Route`, `Trip`, `Seat`, `Booking`, `Penalty`, `PenaltyAppeal`, `Notification`, `DeviceStatusLog`
+Architecture v2 keeps compatible identity/fleet/penalty concepts but introduces
+`Stop`, ordered `RouteStop`, `TripStop`, `TripSegment`, `TripSeat`,
+`ReservedSeatSegment`, `WaitlistEntry`, `WalkInIntent`, `WalkInJourney`,
+`StandingSegmentClaim`, and `TripLocationSample`. `Seat.status`, device models,
+and combined Booking/waitlist state are scheduled for replacement/removal. See
+the [data-model proposal](./framework/ARCHITECTURE.md#9-architecture-v2-data-model-proposal).
 
 ---
 
@@ -222,13 +240,16 @@ Key models: `User`, `Bus`, `Route`, `Trip`, `Seat`, `Booking`, `Penalty`, `Penal
 
 ---
 
-## 🔒 Security Design Notes
+## 🔒 Security Direction
+
+These are Architecture v2 requirements, not claims that the prototype already
+satisfies the audit:
 
 - **JWT sessions** stored in HTTP-only cookies (`fyp_session`) — inaccessible to JavaScript
-- **QR tokens** embed `{ bookingId, seatId, tripId }` and expire after 60 seconds; auto-refreshed every 45 seconds to prevent screenshot sharing
-- **Cron endpoints** (`/api/admin/cron/*`) are protected by `x-cron-secret` header in production
-- **Realtime `/emit`** endpoint validates `REALTIME_SERVICE_SECRET` in production
-- **Race condition safety** — duplicate booking prevention is enforced inside Prisma `$transaction` blocks
+- **QR tokens** have explicit Reserved/Walk-in/Alighting purposes and short expiry; rotation reduces replay risk but does not guarantee screenshot prevention
+- **Internal jobs and realtime publication** authenticate bounded, validated requests in every environment
+- **Reserved concurrency** is enforced by unique seat/TripSegment claims in PostgreSQL transactions
+- **Walk-in concurrency** locks every requested TripSegment before capacity check and claim
 
 ---
 
@@ -237,9 +258,9 @@ Key models: `User`, `Bus`, `Route`, `Trip`, `Seat`, `Booking`, `Penalty`, `Penal
 See [`NOTES.md`](./NOTES.md) for a full list of assumptions and design decisions, including:
 - Why PostgreSQL is the intentional database platform
 - How the realtime service is architecturally decoupled from Next.js
-- Directional route splitting (bidirectional routes from spec → explicit outbound + inbound)
-- Waitlist auto-promotion and no-show detection logic
-- IoT simulation approach (explicit simulation, not real hardware)
+- Directional ordered Stops and journey-aware reserved/standing capacity
+- Reserved versus non-guaranteed Walk-in passes
+- GPS simulator telemetry and later seat-device/PWA removal
 
 ---
 
@@ -264,12 +285,12 @@ FYPBusSystem/
 │   │   └── analytics/  # Aggregated analytics data
 │   ├── globals.css     # Global styles & Tailwind base
 │   ├── layout.tsx      # Root layout
-│   ├── manifest.ts     # PWA manifest
+│   ├── manifest.ts     # Legacy PWA artifact; scheduled for deletion
 │   └── page.tsx        # Landing page
 ├── components/
 │   ├── admin/          # Admin-specific components
 │   ├── student/        # Student-specific components
-│   ├── BusLocationTracker.tsx
+│   ├── BusLocationTracker.tsx # Schedule interpolation; scheduled for replacement
 │   ├── DynamicQRModal.tsx
 │   ├── Navbar.tsx
 │   ├── PenaltyAppealModal.tsx
@@ -287,7 +308,7 @@ FYPBusSystem/
 │   └── seed.ts         # Demo data seeder
 ├── realtime/
 │   └── server.js       # Standalone Socket.io + cron service
-├── middleware.ts        # JWT auth guard & role-based routing
+├── proxy.ts             # Optimistic JWT role redirects
 └── package.json
 ```
 

@@ -1,307 +1,518 @@
-# School Bus Booking and Management System — Full Technical Specification
+# Campus Shuttle Booking and Management System — Product Specification
 
-This document is a complete build specification for an FYP (Final Year Project) web application. Follow it precisely. Where a decision is not specified, choose the simplest reasonable implementation and note the assumption in a `NOTES.md` file at the project root rather than silently deviating from anything that IS specified here.
+Status: **Approved source of truth**
 
----
+Owner amendments incorporated: 2026-08-14
 
-## 1. Project Summary
+This document defines the approved Final Year Project product. Architecture and
+implementation must follow it. Where a value or operational policy remains
+explicitly unresolved, record the decision before implementing the affected
+workflow rather than silently inventing behavior.
 
-A web application that digitizes campus bus seat booking and gives the transport department real-time visibility into bus occupancy. The system has two integrated modules that share one database:
+## 1. Product summary
 
-1. **Bus Booking System** — student-facing booking, QR boarding validation, no-show/penalty logic.
-2. **Monitoring, Administration & Analytics System** — real-time seat/bus status (via a simulated IoT layer), an admin portal for managing routes/buses/drivers, and demand analytics.
+Build one responsive web application for TAR UMT campus shuttle operations. It
+has three role-specific portals over one PostgreSQL database:
 
-Both modules operate on one shared data model (trip, seat, booking, penalty). Do not build them as two separate apps — they are one system with two functional areas.
+1. Students search directional journeys, reserve a specific seat or request a
+   non-guaranteed walk-in pass, board with QR, view their journeys, and manage
+   penalties and appeals.
+2. Drivers operate assigned trips, scan reserved and walk-in passes, use approved
+   manual boarding/alighting fallbacks, update trip state, and view the manifest.
+3. Transport administrators manage stops, routes, buses, trips, drivers,
+   penalties, and operational analytics.
 
----
+The application also exposes authenticated live trip occupancy and simulated GPS
+location updates through a small standalone Socket.io process. PostgreSQL is the
+durable source of truth; realtime messages are only update signals.
 
-## 2. Tech Stack (use exactly this unless a listed library is unavailable)
+## 2. Product form and technical platform
 
-- **Framework:** Next.js (App Router, TypeScript) — single codebase for frontend + REST API routes.
+- **Delivery:** responsive website usable on phone and desktop browsers.
+- **Not a PWA:** installability, service workers, offline caching, web-app
+  manifests, install prompts, and PWA-specific icons are not requirements.
+- **Not a native application:** do not create React Native, Flutter, App Store, or
+  Play Store projects.
+- **Framework:** Next.js 16 App Router with TypeScript.
 - **Database:** PostgreSQL.
-- **ORM:** Prisma.
-- **Real-time layer:** A small standalone Node.js + Socket.io service (`/realtime` folder, separate process) that broadcasts seat/bus status changes. The Next.js API writes to Postgres, then emits an event to this service (via HTTP call or shared Redis pub/sub — HTTP call is fine, keep it simple) whenever seat/booking/trip status changes. The frontend dashboard connects to this Socket.io service directly for live updates.
-- **Styling:** Tailwind CSS.
-- **Auth:** Credentials-based (email or student ID + password), hashed with bcrypt, session via JWT stored in an HTTP-only cookie. This simulates "TAR UMT account login" — do NOT attempt real university SSO integration.
-- **QR codes:** `qrcode` npm package to render, `jsonwebtoken` to generate short-lived signed tokens embedded in the QR (see §6.3 for exact logic).
-- **Charts (for analytics dashboard):** `recharts`.
-- **Validation:** `zod` for all API input validation.
-- **Background jobs:** a simple cron-style scheduled task (using `node-cron` inside the realtime service, or a Next.js API route triggered by an external scheduler) for no-show detection (§6.5) and waitlist promotion (§6.6).
-- **Delivery target:** responsive web app installable as a Progressive Web App (PWA) — NOT a native/React Native app. See §12 for exact PWA setup.
+- **ORM:** Prisma, with reviewed SQL migrations where PostgreSQL constraints are
+  not expressible in the Prisma schema.
+- **Realtime:** one small standalone Node.js and Socket.io process in
+  `realtime/`. Next.js commits durable state before publishing an invalidation.
+- **Styling:** Tailwind CSS and accessible shared UI primitives.
+- **Authentication:** credentials with bcrypt password hashing and a JWT session
+  in an HTTP-only cookie. Real TAR UMT SSO is out of scope.
+- **Validation:** Zod at all external input boundaries.
+- **QR rendering/signing:** `qrcode` and a dedicated QR signing secret.
+- **Analytics:** bounded PostgreSQL/Prisma queries rendered with Recharts.
+- **Jobs:** a simple scheduler for no-shows, reminders, and other approved retry-
+  safe jobs. There is no seat-device simulation job.
 
----
+The university shuttle is free. There are no fares, prices, payments, refunds,
+payment gateways, or paid-ticket concepts.
 
-## 3. User Roles
+## 3. Roles and authorization
 
-| Role | Description |
+| Role | Approved capabilities |
 |---|---|
-| **Student** | Books seats, boards via QR, views own history/penalties. |
-| **Driver** | Logs in, views own trip's manifest/seat status, manually checks in students, reports delays/breakdowns. |
-| **Transport Admin (Staff)** | Manages routes, timetables, buses, driver assignments; reviews penalty appeals; views analytics. |
+| Student | Search compatible journeys, reserve a seat, join a journey-aware waitlist, generate a walk-in pass, present reserved/walk-in/exit QR, view own history, notifications, credit, penalties, and appeals. |
+| Driver | View only assigned trips, operate the current trip, scan passes, use authorized manual boarding/alighting fallbacks, view the minimum necessary manifest, and report delays/cancellations. |
+| Admin | Manage fleet, stops, directional routes, schedules, and driver assignments; review appeals; inspect authorized live operations and historical analytics. |
 
-All three roles log into the same app but see different dashboards after login, based on a `role` field on the `User` table.
+Page redirects are not authorization. Every query and mutation must establish the
+live actor and authorize the specific resource on the server.
 
----
+## 4. Route, trip, and journey vocabulary
 
-## 4. Data Model
+These terms are normative:
 
-Implement exactly these entities in `prisma/schema.prisma`. Field names below are the source of truth — use them as-is in the schema and API.
+- A **Stop** is a reusable named boarding/alighting location with coordinates.
+- A **Route** is one directional ordered list of approximately two to five
+  distinct stops.
+- The opposite direction is a separate Route. Do not implement circular routes.
+- Do not implement transfers or journeys spanning multiple routes.
+- A **Trip** is one scheduled execution of one Route by one bus and, normally,
+  one assigned driver.
+- A **TripStop** is the immutable per-trip snapshot of an ordered RouteStop,
+  including planned timing and its boarding deadline.
+- A **TripSegment** is the directed interval between two adjacent TripStops.
+- A passenger **journey** has one boarding TripStop and one later drop-off
+  TripStop on the same Trip. It traverses every TripSegment from the boarding
+  position, inclusive, to the drop-off position, exclusive.
 
-### 4.1 `User`
-- `id` (uuid, pk)
-- `studentId` (string, unique, nullable — only for students)
-- `name` (string)
-- `email` (string, unique)
-- `passwordHash` (string)
-- `role` (enum: `STUDENT`, `DRIVER`, `ADMIN`)
-- `creditScore` (int, default 100 — used for tiered penalty priority, students only)
-- `isBookingRestricted` (boolean, default false — set true if creditScore drops below a threshold, e.g. 40)
-- `createdAt`, `updatedAt`
+Example:
 
-### 4.2 `Bus`
-- `id` (uuid, pk)
-- `plateNumber` (string, unique)
-- `capacity` (int)
-- `status` (enum: `ACTIVE`, `MAINTENANCE`, `RETIRED`)
-
-### 4.3 `Route`
-- `id` (uuid, pk)
-- `name` (string)
-- `stops` (string[] or a related `RouteStop` table if you want ordered stops with names — simple string array is acceptable for FYP scope)
-
-### 4.4 `Trip`
-A trip is one scheduled run of a bus on a route at a specific date/time. This is the central entity everything else hangs off.
-- `id` (uuid, pk)
-- `routeId` (fk → Route)
-- `busId` (fk → Bus)
-- `driverId` (fk → User, role DRIVER, nullable until assigned)
-- `departureTime` (datetime)
-- `estimatedArrivalTime` (datetime)
-- `boardingDeadline` (datetime — departureTime minus a configurable buffer, e.g. 5 minutes; after this, unboarded bookings become no-shows)
-- `status` (enum: `NOT_STARTED`, `BOARDING`, `DEPARTED`, `ARRIVED`, `DELAYED`, `CANCELLED`)
-- `delayReason` (string, nullable)
-- `createdAt`, `updatedAt`
-
-### 4.5 `Seat`
-Represents one physical seat position on a specific trip (regenerated per trip from the bus's capacity).
-- `id` (uuid, pk)
-- `tripId` (fk → Trip)
-- `seatNumber` (int)
-- `status` (enum: `AVAILABLE`, `RESERVED`, `CHECKED_IN`, `NO_SHOW`) — this field is what drives the real-time dashboard colors (white/red/green as per your original spec: white=available, red=reserved-not-checked-in, green=checked-in).
-
-### 4.6 `Booking`
-- `id` (uuid, pk)
-- `studentId` (fk → User)
-- `tripId` (fk → Trip)
-- `seatId` (fk → Seat, unique — one booking per seat)
-- `status` (enum: `CONFIRMED`, `CANCELLED`, `COMPLETED`, `NO_SHOW`, `WAITLISTED`)
-- `waitlistPosition` (int, nullable — only set when status is WAITLISTED)
-- `qrTokenIssuedAt` (datetime, nullable)
-- `checkedInAt` (datetime, nullable)
-- `createdAt`, `updatedAt`
-
-### 4.7 `Penalty`
-- `id` (uuid, pk)
-- `bookingId` (fk → Booking)
-- `studentId` (fk → User)
-- `creditPointsDeducted` (int)
-- `reason` (string, default "No-show")
-- `status` (enum: `ACTIVE`, `APPEALED`, `OVERTURNED`, `UPHELD`)
-- `createdAt`
-
-### 4.8 `PenaltyAppeal`
-- `id` (uuid, pk)
-- `penaltyId` (fk → Penalty)
-- `studentId` (fk → User)
-- `reason` (text — student's explanation)
-- `status` (enum: `PENDING`, `APPROVED`, `REJECTED`)
-- `reviewedByAdminId` (fk → User, nullable)
-- `adminComment` (text, nullable)
-- `createdAt`, `resolvedAt`
-
-### 4.9 `Notification`
-- `id` (uuid, pk)
-- `userId` (fk → User)
-- `type` (enum: `BOOKING_CONFIRMED`, `DEPARTURE_REMINDER`, `CANCELLED`, `NO_SHOW`, `WAITLIST_PROMOTED`, `PENALTY_ISSUED`, `APPEAL_RESOLVED`, `TRIP_DELAYED`)
-- `message` (string)
-- `isRead` (boolean, default false)
-- `createdAt`
-
-### 4.10 `DeviceStatusLog` (simulated IoT layer)
-Represents the simulated sensor/indicator state for a seat, logged over time — this is what the "IoT" module reads/writes instead of talking to real hardware.
-- `id` (uuid, pk)
-- `seatId` (fk → Seat)
-- `simulatedSignal` (enum: `OK`, `OFFLINE`, `ERROR`)
-- `recordedAt` (datetime)
-
-### Relationships summary
-`Route` 1—* `Trip` *—1 `Bus`; `Trip` 1—* `Seat`; `Seat` 1—1 `Booking` (nullable); `Booking` *—1 `User`(student); `Booking` 1—* `Penalty` (usually 0 or 1); `Penalty` 1—1 `PenaltyAppeal` (nullable); `Trip` *—1 `User`(driver, nullable).
-
----
-
-## 5. Module 1 — Bus Booking System (Student-Facing)
-
-### 5.1 Authentication
-- Register/login with student ID + email + password (bcrypt hashed). No real SSO.
-- JWT stored in HTTP-only cookie, containing `userId` and `role`. Middleware protects all `/student/*` routes, checks `role === STUDENT`.
-
-### 5.2 View Schedule & Availability
-- Student sees a list of upcoming trips (route, departure time, estimated arrival) filtered by route and date.
-- Each trip shows: total seats, seats available, seats reserved, seats checked-in (read from the `Seat` table aggregated by status).
-
-### 5.3 Booking with Waitlist
-Logic to implement exactly:
-1. Student selects a trip and an `AVAILABLE` seat → seat is locked (use a DB transaction with row-level lock to prevent double-booking) → seat status set to `RESERVED`, `Booking` created with status `CONFIRMED`.
-2. If no seats are `AVAILABLE`, student may join the waitlist instead: create a `Booking` with status `WAITLISTED` and `waitlistPosition` = current max position + 1 for that trip. No seat is assigned yet.
-3. **Waitlist promotion trigger:** whenever a `CONFIRMED` booking is cancelled OR a booking is marked `NO_SHOW` **before** the boarding deadline has fully passed (i.e., a cancellation happens with enough lead time) — release that seat back to `AVAILABLE`, then immediately look up the `WAITLISTED` booking with the lowest `waitlistPosition` for that trip, assign it that seat, set its status to `CONFIRMED`, clear `waitlistPosition`, and send a `WAITLIST_PROMOTED` notification.
-4. `isBookingRestricted` check: if true, block new bookings and return a clear error message to the frontend.
-
-### 5.4 Manage Booking
-- View current booking(s), cancel before a configurable cutoff (e.g. 30 minutes before departure) — cancelling triggers §5.3 step 3.
-- Booking history list with filterable status: `COMPLETED`, `CANCELLED`, `NO_SHOW`.
-
-### 5.5 Dynamic QR Boarding Verification
-Exact logic:
-1. When a student opens "My Booking" for a `CONFIRMED` booking whose trip is within a configurable window before departure (e.g. 15 minutes), the frontend requests a QR token from `POST /api/bookings/:id/qr-token`.
-2. Backend generates a JWT signed with a server secret, payload = `{ bookingId, seatId, tripId, issuedAt, exp: issuedAt + 60 seconds }`. Store `qrTokenIssuedAt` on the booking. Return the token encoded as a QR image (via `qrcode` package) to the frontend.
-3. The frontend **must re-request a new token automatically every 45–50 seconds** while the QR screen is open, so the displayed QR is always close to expiry — this is what makes it "dynamic" and prevents screenshot sharing.
-4. Driver or a boarding scanner endpoint (`POST /api/trips/:id/scan`) receives the scanned token string, verifies signature + expiry + that `bookingId`/`tripId` match the trip being scanned, and that the booking status is `CONFIRMED` (not already checked in). If valid: set `Seat.status = CHECKED_IN`, `Booking.checkedInAt = now()`, `Booking.status = COMPLETED`. If invalid/expired: return a clear error (`"QR expired, please refresh"` / `"Already checked in"` / `"Invalid token"`).
-5. Every successful scan must emit a real-time event to the Socket.io service so the monitoring dashboard updates immediately (see §6.1).
-
-### 5.6 No-Show Detection (scheduled job)
-Runs periodically (e.g. every 1 minute):
-1. Find all `Trip`s where `boardingDeadline < now()` and `status` is not yet `DEPARTED`/`CANCELLED`.
-2. For each such trip, find all `Booking`s with status `CONFIRMED` where `checkedInAt IS NULL` → set `Booking.status = NO_SHOW`, `Seat.status = NO_SHOW`.
-3. For each new no-show, create a `Penalty` (see §5.7) and send a `NO_SHOW` notification.
-4. Set the trip's `status` to `DEPARTED` once boarding closes (unless already delayed/cancelled).
-
-### 5.7 Penalty Management
-1. On no-show: create `Penalty` with `creditPointsDeducted` (e.g. 15), deduct from `User.creditScore`, clamped at 0.
-2. If `User.creditScore` falls below a threshold (e.g. 40): set `isBookingRestricted = true` and notify the student.
-3. **Appeal flow:** student can submit a `PenaltyAppeal` with a reason, while `Penalty.status` becomes `APPEALED`. Admin reviews (§7.5): if `APPROVED`, restore the deducted credit points, set `Penalty.status = OVERTURNED`, unset `isBookingRestricted` if score is now above threshold. If `REJECTED`, `Penalty.status = UPHELD`.
-
-### 5.8 Notifications
-- Create a `Notification` row for every event listed in §4.9's enum, at the point each event occurs in the logic above.
-- Simple in-app notification bell/list is sufficient; email is optional/stretch goal — do not build email sending unless time permits, and if built, keep it a thin wrapper that never blocks the main transaction.
-
----
-
-## 6. Module 2 — Monitoring, Administration & Analytics System
-
-### 6.1 Real-Time Dashboard (simulated IoT layer)
-- The standalone Socket.io service listens for internal HTTP "emit" calls from the Next.js API (triggered by: booking created/cancelled, QR scan/check-in, no-show detection, trip status change).
-- On each such event, it broadcasts a `seat-update` or `trip-update` event over the relevant trip's Socket.io "room" (room name = `trip:{tripId}`).
-- The admin dashboard frontend joins the room for whichever trip(s) it's viewing and re-renders seat colors instantly: white = `AVAILABLE`, red = `RESERVED`, green = `CHECKED_IN`, grey = `NO_SHOW`.
-- Dashboard also shows aggregate counts per trip: total/reserved/checked-in/available/no-show.
-
-### 6.2 Simulated Device Health
-- A scheduled job randomly (or based on a simple rule, e.g. every Nth seat) writes a `DeviceStatusLog` row with `simulatedSignal = OFFLINE` occasionally, to demonstrate the "device health monitoring" feature. Dashboard flags any seat whose latest `DeviceStatusLog` is `OFFLINE`/`ERROR` with a warning icon. This is a simulation for demo purposes — document this clearly in code comments.
-
-### 6.3 Driver Features
-- Driver logs in (role `DRIVER`), sees only trips assigned to them (`Trip.driverId === self`).
-- Driver view shows the live seat manifest for their current trip (reusing §6.1's real-time data).
-- **Manual check-in override:** driver can tap a student's name/seat in the manifest to manually mark them `CHECKED_IN` (for when QR scanning fails) — this calls the same logic as §5.5 step 4 but skips token verification; log that this was a manual override (add a `checkInMethod` enum field on `Booking`: `QR`, `MANUAL`).
-- **Delay/breakdown reporting:** driver can set `Trip.status = DELAYED` or `CANCELLED` with a `delayReason`. This triggers `TRIP_DELAYED` notifications to all students with `CONFIRMED`/`WAITLISTED` bookings on that trip, and should also be visible on the admin dashboard.
-
-### 6.4 Bus Status Monitoring
-- Trip status enum drives a simple state indicator on both the driver's view and the admin dashboard: `NOT_STARTED → BOARDING → DEPARTED → ARRIVED`, with `DELAYED`/`CANCELLED` as branches.
-
-### 6.5 Admin / Transport Staff Portal
-CRUD screens for:
-- **Buses:** create/edit/retire buses (`plateNumber`, `capacity`, `status`).
-- **Routes:** create/edit routes and their stops.
-- **Trips/Timetable:** schedule a trip (route + bus + departure time) — on creation, auto-generate `Seat` rows equal to the bus's `capacity`, all `AVAILABLE`.
-- **Driver assignment:** assign a `User` with role `DRIVER` to a `Trip`.
-- **Penalty appeal review:** list `PENDING` appeals, approve/reject (see §5.7 step 3).
-
-### 6.6 Data Analytics
-- Historical view (not real-time) aggregating: bookings per route/time-slot over the past N weeks, no-show rate per route/time-slot, average seat utilization %.
-- Use `recharts` bar/line charts. Data can be computed with straightforward Prisma aggregate queries (`groupBy`) — no need for a separate analytics pipeline at FYP scope.
-- Optionally surface a simple rule-based suggestion (e.g. "Route X at 8am has >90% utilization over the last 4 weeks — consider adding a trip") — this can be a simple threshold check in code, not real ML, and should be labeled as a rule-based suggestion in the UI, not "AI-powered," to avoid overclaiming.
-
----
-
-## 7. API Route Summary (Next.js App Router — adjust exact paths as needed, but cover all of these)
-
-```
-POST   /api/auth/register
-POST   /api/auth/login
-POST   /api/auth/logout
-
-GET    /api/trips                      (list/filter, students+admin)
-GET    /api/trips/:id
-POST   /api/trips                      (admin only)
-PATCH  /api/trips/:id                  (admin/driver: status, delay, cancel)
-
-POST   /api/bookings                   (create booking or join waitlist)
-GET    /api/bookings/mine              (student's own bookings)
-PATCH  /api/bookings/:id/cancel
-POST   /api/bookings/:id/qr-token
-POST   /api/trips/:id/scan             (QR check-in, driver)
-POST   /api/trips/:id/manual-checkin   (driver override)
-
-GET    /api/penalties/mine
-POST   /api/penalties/:id/appeal
-GET    /api/appeals                    (admin)
-PATCH  /api/appeals/:id                (admin approve/reject)
-
-GET    /api/admin/buses  POST  PATCH  DELETE
-GET    /api/admin/routes POST  PATCH  DELETE
-GET    /api/admin/drivers-list
-GET    /api/analytics/utilization
-GET    /api/analytics/no-show-rate
-
-GET    /api/notifications/mine
-PATCH  /api/notifications/:id/read
+```text
+Route: A -> B -> C
+Journey A -> C traverses segments A-B and B-C.
+Journey B -> C traverses only segment B-C.
 ```
 
----
+Students search by `From -> To -> Date -> Departure`. The application finds
+Routes where `From` occurs before `To`, then shows compatible Trips. “Segment” is
+an internal capacity concept and is not a required user-facing wizard step.
 
-## 8. Pages/Screens
+## 5. Normative logical data model
 
-**Student:** Login/Register, Trip List, Trip Detail + Booking, My Bookings, QR Boarding Screen, Booking History, Penalties + Appeal Form, Notifications.
+`framework/ARCHITECTURE.md` contains the migration-oriented physical proposal.
+The actual Prisma schema remains unchanged during Phase 0.
 
-**Driver:** Login, My Trips, Live Manifest (manual check-in, delay/breakdown reporting).
+### 5.1 Identity and fleet
 
-**Admin:** Login, Dashboard (live seat/trip status across all active trips), Buses CRUD, Routes CRUD, Trips/Timetable CRUD, Driver Assignment, Appeal Review Queue, Analytics Dashboard.
+#### `User`
 
----
+- UUID primary key, optional unique student ID, unique email, name, password
+  hash, role, credit score, booking restriction, session version, timestamps.
 
-## 9. Non-Functional Requirements
-- All API inputs validated with `zod`; return 4xx with a clear message on validation failure.
-- All booking/seat state changes that touch more than one row (booking + seat, or no-show + penalty) must be wrapped in a Prisma transaction to avoid race conditions — this matters most for §5.3 (booking) and §5.6 (no-show batch job).
-- Passwords always bcrypt-hashed, never logged in plaintext.
-- Seed script (`prisma/seed.ts`) must create: a handful of routes/buses/drivers, several trips at different times (some in the near future for live demo purposes), and a few demo student accounts with varying credit scores — so the app is demo-ready immediately after setup.
+#### `Bus`
 
----
+- UUID primary key, unique plate number, status, `seatedCapacity`, and
+  `standingCapacity`.
+- Seated capacity must be positive. Standing capacity is configurable per bus and
+  may be zero; it must never be negative.
+- A universal standing-capacity constant is forbidden.
 
-## 10. Folder Structure (suggested)
+#### `Stop`
 
+- UUID primary key, unique stable code, display name, latitude, longitude,
+  optional soft-deletion/active state, timestamps.
+
+#### `Route` and `RouteStop`
+
+- `Route` owns its name and active/deleted state.
+- `RouteStop` links one Stop to one Route at a zero- or one-based `position` used
+  consistently throughout the application.
+- `(routeId, position)` and `(routeId, stopId)` are unique. Repeated stops are
+  therefore disallowed and a route must contain approximately two to five stops.
+- Reverse travel is another Route, never an implicit reversal.
+
+### 5.2 Trip topology and capacity snapshots
+
+#### `Trip`
+
+- Route, bus, optional driver, origin departure time, final estimated arrival,
+  lifecycle status, disruption information, and timestamps.
+- `seatedCapacity` and `standingCapacity` are copied from the Bus when the Trip is
+  created. Later Bus edits must not rewrite scheduled or historical capacity.
+
+#### `TripStop`
+
+- Trip, source Stop, position, display-name/coordinate snapshot, planned arrival,
+  planned departure, and per-stop boarding deadline.
+- Optional actual arrival/departure/passed timestamps support progress and
+  non-mandatory automatic alighting completion.
+- Bookings and walk-in records reference TripStops, not mutable RouteStop rows.
+
+#### `TripSegment`
+
+- Trip, sequence/position, `fromTripStopId`, and `toTripStopId`.
+- One row exists for each adjacent TripStop pair. All segment rows are created
+  with the Trip in one transaction.
+
+#### `TripSeat`
+
+- Trip and physical seat number, unique together.
+- It is inventory, not a whole-trip availability flag. A single mutable
+  `AVAILABLE/RESERVED` seat status cannot represent segment reuse.
+
+### 5.3 Reserved bookings and waitlist
+
+#### `Booking`
+
+- Student, Trip, TripSeat, boarding TripStop, drop-off TripStop, status, QR issue
+  metadata, boarding timestamp/method, optional actual alighting timestamp/method,
+  and timestamps.
+- A confirmed Booking guarantees the selected seat over its complete planned
+  journey.
+- Multiple Bookings may reference the same TripSeat only when their segment sets
+  do not overlap.
+
+#### `ReservedSeatSegment`
+
+- One row for every TripSegment occupied by an active reserved Booking.
+- Fields: Booking, TripSeat, TripSegment.
+- `(tripSeatId, tripSegmentId)` is unique. Creating all required rows in the same
+  transaction makes overlapping seat claims fail safely under concurrency.
+- Cancellation removes the active allocation rows in the cancellation
+  transaction. The Booking retains boarding/drop-off history.
+- Actual alighting does not shorten or extend the planned allocation. Reserved
+  availability is always based on the planned journey.
+
+#### `WaitlistEntry`
+
+- Separate from Booking because it has no guaranteed seat.
+- Student, Trip, boarding TripStop, drop-off TripStop, queue order/created time,
+  status, optional promoted Booking, and timestamps.
+- A student joins only when no single TripSeat is free across every requested
+  TripSegment.
+- Promotion must re-evaluate the entire requested journey and atomically create a
+  Booking plus all segment allocations. A seat free on only part of the journey
+  is not sufficient.
+
+### 5.4 Walk-in intent and admitted standing journey
+
+#### `WalkInIntent`
+
+- Student, Trip, boarding TripStop, drop-off TripStop, pass issue/expiry metadata,
+  status, and timestamps.
+- It represents intent only. Creating it and issuing its QR consume no standing
+  capacity and provide no guarantee of boarding.
+- The UI and pass must state clearly: “Boarding is not guaranteed; standing
+  capacity is checked when scanned.”
+
+#### `WalkInJourney`
+
+- Created only after a successful boarding-time admission.
+- References one WalkInIntent and stores student, Trip, planned boarding/drop-off,
+  boarded time/method, optional actual alighting time/method, and lifecycle
+  status.
+- A WalkInIntent can produce at most one WalkInJourney.
+
+#### `StandingSegmentClaim`
+
+- One row for each TripSegment traversed by an admitted WalkInJourney.
+- `(walkInJourneyId, tripSegmentId)` is unique.
+- Admission locks every requested TripSegment in ascending sequence, counts
+  existing claims for each segment against the Trip's standing-capacity snapshot,
+  and creates the WalkInJourney and all claims in one transaction.
+- If any segment is full, the transaction creates no journey or claims and
+  boarding is rejected as full.
+- Claims use the planned journey. Alighting confirmation is operational evidence,
+  not a prerequisite for correct capacity calculations.
+
+### 5.5 Penalties, notifications, and location
+
+#### `Penalty`, `PenaltyAppeal`, and `Notification`
+
+- Keep the current concepts, with constraints and statuses aligned to the revised
+  reserved-booking lifecycle. A Booking can receive at most one no-show penalty.
+- In-app notifications remain core. Email, SMS, and push infrastructure are out
+  of scope.
+
+#### `TripLocationSample`
+
+- Trip, latitude, longitude, recorded time, source type, and optional accuracy,
+  speed, and heading.
+- Source type distinguishes `SIMULATOR` from a future real `GPS` adapter.
+- `(tripId, recordedAt)` is indexed; retention is bounded by an approved
+  operational policy.
+- Authorized APIs expose a source-neutral latest-location DTO. Student UI must
+  label simulated prototype telemetry honestly.
+
+There is no `DeviceStatusLog`, `DeviceSignal`, seat-sensor health model, or
+device-health scheduler in the target product.
+
+## 6. Student journeys
+
+### 6.1 Search and availability
+
+1. Student selects From, To, date, and a compatible departure.
+2. The server matches directional Routes where From precedes To.
+3. Results show the departure time at the requested boarding TripStop, not only
+   the route-origin departure.
+4. For a selected Trip/journey, availability returns seats with no
+   `ReservedSeatSegment` conflict across any traversed TripSegment.
+5. Whole-trip counts such as `Seat.status = AVAILABLE` are not valid availability
+   evidence for a partial journey.
+
+### 6.2 Reserved seat booking
+
+1. Student selects one available TripSeat.
+2. The use case validates actor, restriction status, Trip lifecycle/time window,
+   boarding/drop-off ordering, and the complete requested segment set.
+3. In one PostgreSQL transaction, create the Booking and all
+   ReservedSeatSegment rows. Database uniqueness resolves concurrent conflicts.
+4. The Booking is confirmed only after the transaction commits.
+5. Publish a non-sensitive realtime invalidation after commit.
+
+### 6.3 Journey-aware waitlist
+
+If no single seat spans the complete journey, the student may create a
+WaitlistEntry for that exact boarding/drop-off pair. Waitlisting does not reserve
+partial segments. Cancellation or another approved release trigger re-runs
+journey-aware promotion under the same locking/uniqueness rules as booking.
+
+Waitlist queue fairness when multiple differently sized journeys compete remains
+an explicit owner policy listed in the architecture audit; do not invent an
+optimization algorithm.
+
+### 6.4 Reserved pass
+
+- A Reserved Pass is issued only for the owner of a confirmed Booking within the
+  configured time window for that Booking's boarding TripStop.
+- Its signed short-lived token includes a pass-purpose/type claim and identifiers
+  for booking, student, trip, seat, boarding TripStop, and drop-off TripStop.
+- A Reserved Pass represents a guaranteed existing seat allocation. Token
+  expiry/reissue reduces replay risk but must not be described as encryption or
+  absolute screenshot prevention.
+
+### 6.5 Walk-in pass
+
+1. An authenticated student selects boarding stop, drop-off stop, and Trip.
+2. The server validates ordered stops and creates or reuses an active
+   WalkInIntent.
+3. It issues a signed Walk-in Pass tied to the student, intent, Trip, boarding
+   TripStop, and drop-off TripStop.
+4. No standing capacity is checked or consumed at issuance.
+5. The UI states that admission is first-come-first-served at scanning and is not
+   guaranteed.
+
+### 6.6 Cancellation, history, no-show, and penalties
+
+- A reserved Booking may be cancelled before the approved cutoff relative to its
+  boarding TripStop. Cancellation removes its active segment allocations and may
+  trigger journey-aware waitlist promotion.
+- Booking, waitlist, walk-in intent, admitted journey, boarding, and alighting
+  histories must be represented honestly rather than collapsed into one status.
+- No-show detection is relative to the passenger's boarding TripStop deadline,
+  not a single route-origin deadline.
+- No-show processing, penalty creation, credit deduction, restriction changes,
+  and notifications must be retry-safe and transactionally consistent.
+- Students may appeal penalties; administrators approve or reject with an
+  optional comment. Credit restoration uses the current locked student record.
+
+## 7. Boarding and alighting
+
+### 7.1 Common boarding validation
+
+Every QR or manual boarding path validates:
+
+- authenticated driver/admin actor and assigned-trip authorization;
+- explicit pass type (`RESERVED` or `WALK_IN`);
+- current Trip and boarding TripStop;
+- ordered planned journey and drop-off;
+- Trip lifecycle/current progress;
+- token purpose, signature, expiry, and live backing record;
+- student identity and duplicate boarding;
+- reserved allocation or standing capacity, as applicable.
+
+Reserved and walk-in scans may share transport and authorization helpers, but
+their domain transitions remain separate.
+
+### 7.2 Reserved boarding
+
+Scanning a Reserved Pass atomically revalidates the confirmed Booking and marks
+it boarded with the method (`QR` or approved manual fallback). It does not create
+capacity: the seat was already guaranteed by ReservedSeatSegment rows.
+
+### 7.3 Walk-in boarding
+
+Scanning a Walk-in Pass:
+
+1. validates the live intent and current boarding stop;
+2. locks all traversed TripSegments in ascending order;
+3. checks claim counts on every segment against the Trip standing-capacity
+   snapshot;
+4. creates one WalkInJourney and all StandingSegmentClaims if all fit;
+5. otherwise rolls back and returns a clear “standing capacity full” result.
+
+This is first-come-first-served at successful transaction commit. Two concurrent
+scans must never exceed capacity.
+
+### 7.4 Alighting
+
+- Reserved Bookings and WalkInJourneys store their planned drop-off.
+- An Exit QR may confirm actual alighting where practical.
+- The assigned driver/admin has a manual “Confirm Alighted” fallback.
+- When no confirmation occurs, a retry-safe job/use case may auto-complete after
+  the Trip has passed the planned drop-off TripStop.
+- A forgotten exit scan must never block future reserved-seat or standing-
+  capacity calculations; planned segment allocations/claims are authoritative.
+
+## 8. GPS location telemetry
+
+Live bus location is core. Physical GPS hardware is not part of the FYP, but the
+prototype must use realistic coordinate telemetry rather than schedule
+interpolation.
+
+Required flow:
+
+```text
+GPS simulator
+  -> authenticated location-source adapter
+  -> location ingestion use case
+  -> PostgreSQL TripLocationSample
+  -> post-commit Socket.io location.changed invalidation
+  -> authorized latest-location query
+  -> student live map
 ```
-/app                 - Next.js App Router pages + API routes
-/prisma              - schema.prisma, seed.ts, migrations
-/realtime            - standalone Socket.io service
-/lib                 - shared utilities (auth, qr, db client, validation schemas)
-/components          - shared React components
-NOTES.md             - log any assumption made where this spec was ambiguous
+
+The simulator and a future physical GPS adapter implement the same input port and
+contract. Ingestion validates Trip, lifecycle, timestamp freshness, coordinate
+ranges, source authorization, and reasonable payload bounds. The UI consumes a
+source-neutral DTO, displays recency, and identifies simulated/prototype data.
+Replacing the source must not require rewriting the student map or Trip domain.
+
+Do not introduce a general IoT platform, message broker, or seat hardware for
+this pipeline.
+
+## 9. Driver, admin, realtime, and analytics
+
+### 9.1 Driver portal
+
+- Assigned trips and current progress only.
+- Journey-aware manifest showing reserved seat, boarding/drop-off, boarding and
+  alighting state, plus admitted walk-ins.
+- Reserved QR scan, Walk-in QR scan, Exit QR scan, and approved manual fallbacks.
+- Enforced Trip transition controls and delay/cancellation reporting.
+
+### 9.2 Admin portal
+
+- Bus CRUD with seated and standing capacity.
+- Stop CRUD and directional Route CRUD with ordered two-to-five-stop validation.
+- Trip scheduling with per-stop timing snapshot, bus/driver conflict checks, and
+  generated TripStops, TripSegments, and TripSeats.
+- Driver account/assignment management.
+- Appeal review.
+- Live journey-aware seated/standing occupancy and Trip state.
+- Historical demand, no-show, seated utilization, standing admission/rejection,
+  and route/time-slot analytics using bounded queries.
+
+There is no seat-sensor status, device-health warning, or device simulation UI.
+
+### 9.3 Realtime process
+
+- Authenticates clients and authorizes Trip room membership.
+- Accepts bounded, typed, authenticated internal events.
+- Publishes non-PII invalidations for Trip, journey occupancy, notifications, and
+  location updates.
+- Does not access Prisma or own durable state.
+- May host simple scheduler triggers, but jobs invoke idempotent Next.js use cases.
+
+## 10. Required API capabilities
+
+Exact paths may be normalized during feature migration, but these capabilities
+must exist through thin App Router Route Handlers:
+
+```text
+Auth: register, login, logout, current user, password change
+Stops/routes: compatible journey search; admin stop/route CRUD and ordering
+Trips: list/detail/create/update; current progress; assigned-driver manifest
+Reserved: journey availability; create/cancel booking; waitlist; reserved QR
+Walk-in: create/list intent; Walk-in QR; boarding admission
+Boarding: reserved scan/manual; walk-in scan/manual; alight QR/manual
+Penalties/appeals: own penalties, submit appeal, admin review
+Notifications: own list/read state
+Location: authenticated ingestion; authorized latest Trip location/history window
+Analytics: bounded utilization/no-show/demand/standing metrics
+Internal jobs: no-shows, reminders, waitlist evaluation, auto-alighting
 ```
 
----
+Every mutation uses Zod validation, live authentication, resource authorization,
+typed errors, and the owning application use case.
 
-## 11. Explicitly Out of Scope (do not build)
-- Real hardware/IoT integration (this is simulated, per §6.1–6.2).
-- Real TAR UMT SSO integration.
-- Payment processing (service is free).
-- Real SMS/push notification infrastructure (in-app notifications only, per §5.8).
-- GPS/live location tracking.
-- Native mobile app (React Native, Flutter, or App Store/Play Store distribution of any kind). The product is a responsive web app with PWA install support — see §12. Do not scaffold a separate mobile project.
+## 11. Non-functional requirements
 
-## 12. PWA (Progressive Web App) Setup
+- Correctness and PostgreSQL concurrency evidence are mandatory for reserved
+  segment allocation and walk-in standing admission.
+- All multi-row transitions use explicit transactions, deterministic lock order,
+  database constraints where possible, and retry/idempotency tests.
+- External input, including IDs, query strings, QR payloads, realtime events, and
+  location samples, is validated.
+- Passwords and secrets are never logged or sent to clients.
+- Students see only their own personal data. Drivers see passenger data only for
+  assigned Trips and only what boarding operations require.
+- The responsive UI supports phone browsers, keyboard navigation, browser zoom,
+  reduced motion, labelled dialogs, loading/empty/error states, and non-color-only
+  status cues.
+- Realtime failure never corrupts durable state; clients recover by refetching.
+- Seed data is deterministic, internally consistent, and includes overlapping and
+  non-overlapping reserved journeys plus walk-in capacity scenarios.
+- No claim is complete without unit, PostgreSQL integration, contract, and
+  appropriate browser workflow evidence.
 
-The app must be installable to a phone's home screen and behave like an app shell when opened (no browser address bar), while remaining the same Next.js codebase — do not create a second frontend project.
+## 12. Required screens
 
-1. **Manifest:** add `/app/manifest.ts` (Next.js App Router supports this natively) exporting a `MetadataRoute.Manifest` object with `name`, `short_name`, `start_url: "/"`, `display: "standalone"`, `background_color`, `theme_color`, and an `icons` array (at least 192x192 and 512x512 PNG icons, placed in `/public`).
-2. **Service worker:** use the `next-pwa` package (or `@ducanh2912/next-pwa`, which has better App Router support) to generate a service worker at build time. Configure it to cache static assets and API GET responses for trip listings so the trip list still renders (with a "showing cached data" note) if the connection briefly drops — this is a stretch goal, not required for core grading, but the manifest + "Add to Home Screen" install prompt IS required.
-3. **Meta tags:** ensure `/app/layout.tsx` includes the standard PWA meta tags (`apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, viewport settings for mobile) so iOS Safari's "Add to Home Screen" also produces a clean full-screen icon, not just Android/Chrome.
-4. **Responsive design:** all pages (student, driver, admin) must be built mobile-first with Tailwind's responsive utilities — students and drivers will realistically use this on a phone, admin more likely on a laptop, but nothing should break on a small screen.
-5. **Testing note:** PWA install prompts do not appear on `localhost` in all browsers reliably — test installability via a deployed preview (e.g. Vercel preview URL) rather than assuming local dev server behavior reflects the real install experience.
+- **Student:** login/register, From/To/date/departure search, journey-aware seat
+  selection, waitlist state, reserved pass, walk-in request/pass disclaimer, own
+  journey history, live simulated-GPS map, notifications, penalties, and appeal.
+- **Driver:** login, assigned Trips, journey-aware manifest, reserved/walk-in/exit
+  scanning and manual fallbacks, Trip lifecycle/progress, delay/cancellation.
+- **Admin:** login, operational dashboard, stops/routes, buses, Trips/timetable,
+  driver assignment, appeals, location/occupancy monitoring, and analytics.
+
+## 13. Explicitly out of scope
+
+- PWA installability, manifest behavior, service workers, offline caching, PWA
+  icons, and install prompts.
+- Native mobile applications.
+- Circular routes, implicit reverse routes, transfers, and multi-route journeys.
+- Fares, prices, payments, refunds, and payment gateways.
+- Seat pressure sensors, seat hardware, `DeviceStatusLog`, `DeviceSignal`, device-
+  health simulation, device-health cron jobs, and sensor dashboards.
+- Physical GPS hardware. A GPS simulator and replaceable telemetry pipeline are
+  in scope.
+- Real TAR UMT SSO.
+- SMS, email, and push-notification infrastructure.
+- Microservices, event sourcing, a general IoT platform, Kafka/Redis, or other
+  enterprise infrastructure without a separately approved concrete need.
+
+## 14. Decisions still requiring owner confirmation
+
+The approved amendments resolve product form, directional routes, segment-aware
+reserved/standing capacity, pass separation, alighting intent, GPS scope, sensor
+removal, and payment scope. The following operational policies still require a
+recorded answer before their affected implementation phase:
+
+1. Journey-aware waitlist fairness when differently sized journeys compete and
+   whether an ineligible head entry may be skipped.
+2. Exact Trip lifecycle/disruption transition matrix, including `DELAYED`.
+3. Exact booking, cancellation, QR, boarding-deadline, pass-expiry, penalty, and
+   restriction configuration values.
+4. Admin terminal-state override rules and required audit logging.
+5. Whether camera scanning is required for the assessed demo or token paste is an
+   accepted fallback demonstration.
+6. Location sample retention, simulator update interval, and deployment topology.
+7. Identity normalization/valid TAR UMT student ID and email formats.
+8. Whether self-service account deletion/data export remains approved scope.
+9. Whether intermediate TripStop planned times are entered explicitly for every
+   Trip or derived from maintained Route travel-time offsets.
+10. Whether Walk-in Pass issuance is allowed whenever a student has no confirmed
+   overlapping Booking, or only when no reserved seat is currently available for
+   the requested journey.
+11. Whether any non-demo database records must survive the journey-model
+    migration; existing records do not contain truthful boarding/drop-off data.
+
+These questions do not authorize speculative behavior. Phase 1 may establish the
+test harness and architecture guardrails while the feature-specific answers are
+recorded before their implementation phases.

@@ -4,6 +4,8 @@ Status: **Proposed; not yet implemented**
 
 Decision date: 2026-08-14
 
+Phase 0 owner amendments aligned: 2026-08-14
+
 Companion audit: [`ARCHITECTURE_AUDIT_2026-08-14.md`](./ARCHITECTURE_AUDIT_2026-08-14.md)
 
 This document is the normative architecture proposal for the TAR UMT Campus
@@ -19,7 +21,7 @@ already-required standalone Socket.io process.
 
 The system therefore has three runtime units, not a fleet of services:
 
-1. The browser/PWA.
+1. The responsive browser application.
 2. One Next.js application containing pages, HTTP endpoints, use cases, domain
    rules, and Prisma persistence.
 3. One small realtime process that broadcasts ephemeral updates and invokes
@@ -49,7 +51,7 @@ current FYP need and would make the system harder to explain and test.
 
 | Runtime/layer | Owns | Must not own |
 |---|---|---|
-| Browser/PWA | Rendering, interaction state, forms, optimistic/pending UI, Socket.io subscription, refetch after events | Authorization, credit calculations, state-transition decisions, secrets |
+| Browser | Responsive rendering, interaction state, forms, pending UI, map display, Socket.io subscription, refetch after events | Authorization, capacity decisions, credit calculations, state-transition decisions, secrets |
 | Next.js route shell | URLs, layouts, loading/error boundaries, composition of server and client components | Raw Prisma queries or duplicated business rules |
 | HTTP transport | Parse request, validate contract, call one use case, map typed result/error to HTTP | Transactions, direct cross-table mutation logic |
 | Application/use cases | Authorization, orchestration, transaction boundary, domain-policy calls, DTO result | JSX, HTTP response construction, Socket.io connections |
@@ -64,20 +66,24 @@ current FYP need and would make the system harder to explain and test.
 | Feature | Owns |
 |---|---|
 | `identity` | Registration, login/logout, password changes, session validation, current-user DTO, role policies |
-| `fleet` | Buses, routes, ordered stops, soft-delete/retirement policy |
-| `trips` | Trip scheduling, driver assignment, trip lifecycle, per-trip seat inventory |
-| `bookings` | Seat reservation, waitlist, cancellation/promotion, booking history |
-| `boarding` | QR issue/verification and QR/manual check-in; uses booking and trip public application APIs |
+| `fleet` | Buses with seated/standing capacity, Stops, directional Routes, ordered RouteStops, soft-delete/retirement policy |
+| `trips` | Trip scheduling, TripStop/TripSegment snapshots, driver assignment, lifecycle/progress, per-trip seat inventory |
+| `bookings` | Reserved seat journeys, segment allocations, journey-aware waitlist, cancellation/promotion, booking history |
+| `walk-ins` | Non-guaranteed intent/pass, boarding-time standing admission, segment claims, walk-in journey history |
+| `boarding` | Reserved/Walk-in/Exit QR verification and authorized manual fallbacks; orchestrates booking, walk-in, and trip facades |
 | `penalties` | No-show penalty, credit score, booking restriction, appeals |
 | `notifications` | In-app notification creation, listing, read state, departure reminders |
-| `monitoring` | Seat/trip monitoring DTOs and simulated device-health logs |
-| `analytics` | Historical, read-only aggregates and rule-based recommendations |
-| `jobs` | Idempotent entry points for no-show, reminders, and device simulation; orchestration only |
+| `monitoring` | Authorized journey-aware seated/standing occupancy and operational manifest DTOs |
+| `location` | Source-neutral telemetry ingestion, latest/history queries, Trip progress evidence, simulator adapter contract |
+| `analytics` | Historical, read-only reserved/walk-in demand, utilization, no-show, and rule-based recommendations |
+| `jobs` | Idempotent entry points for no-shows, reminders, waitlist evaluation, and automatic alighting; orchestration only |
 
-`boarding` is separate from `bookings` because scanning is a driver workflow with
-different authorization and timing rules. It does not get its own persistence
-model. `jobs` is not a business domain; it invokes application use cases owned by
-the relevant features.
+`bookings` and `walk-ins` remain separate because a reserved Booking guarantees a
+seat while a WalkInIntent guarantees nothing. `boarding` is a driver workflow
+with different authorization and timing rules; it coordinates their explicit
+server facades without merging their invariants. `location` accepts the same
+contract from the FYP simulator and a possible future GPS adapter. `jobs` is not
+a business domain; it invokes use cases owned by the relevant features.
 
 ## 5. Exact proposed folder structure
 
@@ -122,25 +128,20 @@ FYPBusSystem/
 │   ├── schema.prisma
 │   ├── migrations/
 │   └── seed.ts
-├── public/
-│   ├── icons/
-│   │   ├── icon-192.png
-│   │   ├── icon-512.png
-│   │   └── icon-maskable-512.png
-│   └── sw.js                         # only when offline scope is approved
+├── public/                           # ordinary website assets only
 ├── realtime/
 │   ├── server.ts                     # composition root only
 │   ├── config.ts
 │   ├── authenticate-socket.ts
 │   ├── emit-handler.ts
 │   ├── rooms.ts
-│   └── scheduler.ts
+│   ├── scheduler.ts
+│   └── location-simulator.ts         # FYP LocationSource adapter
 ├── src/
 │   ├── proxy.ts                      # optimistic page redirects only
 │   ├── app/
 │   │   ├── layout.tsx
 │   │   ├── globals.css
-│   │   ├── manifest.ts
 │   │   ├── global-error.tsx
 │   │   ├── not-found.tsx
 │   │   ├── (public)/
@@ -174,19 +175,31 @@ FYPBusSystem/
 │   │       ├── admin/
 │   │       │   ├── buses/route.ts
 │   │       │   ├── buses/[id]/route.ts
+│   │       │   ├── stops/route.ts
+│   │       │   ├── stops/[id]/route.ts
 │   │       │   ├── routes/route.ts
 │   │       │   ├── routes/[id]/route.ts
 │   │       │   ├── drivers/route.ts
 │   │       │   └── drivers/[id]/route.ts
-│   │       ├── routes/route.ts       # authenticated schedule lookup
+│   │       ├── journeys/search/route.ts
 │   │       ├── trips/route.ts
 │   │       ├── trips/[id]/route.ts
-│   │       ├── trips/[id]/scan/route.ts
-│   │       ├── trips/[id]/manual-checkin/route.ts
+│   │       ├── trips/[id]/location/route.ts
+│   │       ├── trips/[id]/manifest/route.ts
 │   │       ├── bookings/route.ts
 │   │       ├── bookings/mine/route.ts
+│   │       ├── bookings/availability/route.ts
 │   │       ├── bookings/[id]/cancel/route.ts
 │   │       ├── bookings/[id]/qr-token/route.ts
+│   │       ├── waitlist/route.ts
+│   │       ├── walk-ins/route.ts
+│   │       ├── walk-ins/mine/route.ts
+│   │       ├── walk-ins/[id]/qr-token/route.ts
+│   │       ├── boarding/reserved/scan/route.ts
+│   │       ├── boarding/walk-in/scan/route.ts
+│   │       ├── boarding/manual/route.ts
+│   │       ├── alighting/scan/route.ts
+│   │       ├── alighting/manual/route.ts
 │   │       ├── penalties/mine/route.ts
 │   │       ├── penalties/[id]/appeal/route.ts
 │   │       ├── appeals/route.ts
@@ -196,10 +209,13 @@ FYPBusSystem/
 │   │       ├── analytics/utilization/route.ts
 │   │       ├── analytics/no-show-rate/route.ts
 │   │       ├── realtime/token/route.ts
-│   │       └── internal/jobs/
-│   │           ├── no-shows/route.ts
-│   │           ├── reminders/route.ts
-│   │           └── device-health/route.ts
+│   │       └── internal/
+│   │           ├── location/ingest/route.ts
+│   │           └── jobs/
+│   │               ├── no-shows/route.ts
+│   │               ├── reminders/route.ts
+│   │               ├── waitlist/route.ts
+│   │               └── auto-alighting/route.ts
 │   ├── features/
 │   │   ├── identity/
 │   │   │   ├── contracts/
@@ -212,10 +228,12 @@ FYPBusSystem/
 │   │   ├── fleet/                    # same internal shape
 │   │   ├── trips/                    # same internal shape
 │   │   ├── bookings/                 # same internal shape
+│   │   ├── walk-ins/                 # same internal shape
 │   │   ├── boarding/                 # same internal shape
 │   │   ├── penalties/                # same internal shape
 │   │   ├── notifications/            # same internal shape
 │   │   ├── monitoring/               # same internal shape
+│   │   ├── location/                 # same internal shape
 │   │   ├── analytics/                # same internal shape
 │   │   └── jobs/
 │   │       ├── application/
@@ -254,14 +272,18 @@ FYPBusSystem/
     │   ├── auth/
     │   ├── booking-lifecycle/
     │   ├── boarding/
+    │   ├── walk-in-capacity/
+    │   ├── location/
     │   ├── no-show/
     │   └── appeals/
     ├── contract/
     │   ├── api/
     │   └── realtime/
     ├── e2e/
-    │   ├── student-booking.spec.ts
-    │   ├── driver-boarding.spec.ts
+    │   ├── student-reserved-journey.spec.ts
+    │   ├── student-walk-in-request.spec.ts
+    │   ├── driver-boarding-alighting.spec.ts
+    │   ├── student-live-location.spec.ts
     │   └── admin-operations.spec.ts
     ├── architecture/
     │   └── dependency-rules.test.ts
@@ -287,11 +309,16 @@ features/bookings/
 │   └── booking.dto.ts
 ├── domain/
 │   ├── booking-status.ts
+│   ├── journey-segments.ts
+│   ├── seat-availability.ts
 │   ├── cancellation-policy.ts
 │   └── waitlist-policy.ts
 ├── application/
+│   ├── find-journey-availability.ts
 │   ├── create-booking.ts
 │   ├── cancel-booking.ts
+│   ├── join-waitlist.ts
+│   ├── promote-waitlist.ts
 │   ├── list-my-bookings.ts
 │   └── ports.ts
 ├── infrastructure/
@@ -378,8 +405,18 @@ errors are logged server-side with a correlation ID and return a generic message
 
 ### Transactions and concurrency
 
-- Lock the aggregate coordinator row (`Trip`) before booking, cancellation,
-  promotion, check-in, or no-show mutation for that trip.
+- Reserved booking derives the complete ordered TripSegment set, creates the
+  Booking and all `ReservedSeatSegment` rows in one transaction, and relies on
+  unique `(tripSeatId, tripSegmentId)` claims to reject overlap. Promotion also
+  locks the Trip so queue evaluation is deterministic.
+- Walk-in admission locks every requested `TripSegment` row in ascending sequence
+  before counting `StandingSegmentClaim` rows. It creates the WalkInJourney and
+  all claims only when every segment is below the Trip's standing-capacity
+  snapshot. This lock order is mandatory for every admission path.
+- Cancellation and no-show re-read the live journey and release reserved segment
+  claims in the same transaction before any approved waitlist evaluation.
+- Reserved boarding claims no new capacity; it revalidates and transitions the
+  already allocated Booking. Walk-in boarding is the capacity-claiming operation.
 - Re-read mutable state after the lock is acquired. Pre-transaction snapshots
   must not drive a write.
 - No-show processing uses a conditional status transition and a database unique
@@ -398,13 +435,18 @@ domain transition policy.
 ### Booking
 
 ```text
-WAITLISTED -> CONFIRMED | CANCELLED
-CONFIRMED  -> COMPLETED | CANCELLED | NO_SHOW
-COMPLETED, CANCELLED, NO_SHOW -> terminal
+Booking:      CONFIRMED -> BOARDED -> ALIGHTED
+              CONFIRMED -> CANCELLED | NO_SHOW
+Waitlist:     WAITING -> PROMOTED | CANCELLED | EXPIRED
+WalkInIntent: ISSUED -> ADMITTED | CANCELLED | EXPIRED
+WalkInJourney: BOARDED -> ALIGHTED
 ```
 
-`Seat.status` changes in the same transaction as its booking. Seat availability
-is based on per-trip seat rows, never the bus's current mutable capacity.
+An unsuccessful full-capacity Walk-in scan does not create a WalkInJourney or
+claims. Whether the still-valid intent may be retried is governed by its expiry
+and whether the boarding TripStop has passed. Reserved and standing capacity use
+planned TripSegments; actual alighting is evidence and never rewrites the planned
+allocation.
 
 ### Penalty and appeal
 
@@ -431,24 +473,94 @@ NOT_STARTED | BOARDING -> CANCELLED
 transition matrix belongs in `features/trips/domain/trip-status.ts` and its unit
 tests, not in UI button conditions.
 
-## 9. Database rules
+## 9. Architecture v2 data model proposal
 
-Keep PostgreSQL and evolve it with reviewed migrations. Recommended changes are
-subject to the unresolved requirement decisions in the audit.
+Keep PostgreSQL and evolve it with forward, reviewed migrations. Do not edit the
+applied initial migration. Names below are proposed physical names; Phase 1 tests
+must protect current behavior before Phase 2/3 migrations are written.
 
-- Store ordered stops as `RouteStop` rows if segment selection is a real booking
-  requirement; otherwise remove segment claims from the UI and documentation.
-- Add constraints for positive capacity, score range, valid waitlist fields,
-  seat/booking status consistency where practical, and one penalty per booking.
-- Add a partial unique index for one active booking per student/trip and, if
-  historical seat assignment is retained, one active assignment per seat.
-- Add composite indexes matching job and queue reads: trip deadline/status,
-  booking trip/status/position, appeal status/created time, notification
-  user/read/created time, and device log seat/recorded time.
-- Treat soft deletion consistently and exclude deleted fleet records from active
-  queries. Historical DTOs may still include them.
-- Never edit an applied migration. Add a new migration and a backfill/verification
-  step when the model changes.
+### Topology and journey model
+
+```text
+Stop <- RouteStop -> Route -> Trip -> TripStop -> TripSegment
+                              |
+                              +-> TripSeat -> ReservedSeatSegment <- Booking
+                              |                                      ^
+                              |                                      |
+                              |                                WaitlistEntry
+                              |
+                              +-> WalkInIntent -> WalkInJourney -> StandingSegmentClaim
+                              |
+                              +-> TripLocationSample
+```
+
+| Proposed model | Essential fields/invariant | Purpose |
+|---|---|---|
+| `Stop` | code/name, latitude/longitude, active/deleted state | Reusable physical boarding/alighting location. |
+| `Route` | name, active/deleted state | One directional route only. Reverse direction is another row. |
+| `RouteStop` | route, stop, position; unique route+position and route+stop | Ordered two-to-five-stop template; repeated/circular stops prohibited. |
+| `Trip` | route/bus/driver, lifecycle, origin/final times, seated/standing capacity snapshots | One execution whose history is not altered by later Bus edits. |
+| `TripStop` | trip, stop snapshot, position, planned times, boarding deadline, optional actual/passed times | Immutable schedule/progress reference for passenger journeys. |
+| `TripSegment` | trip, sequence, adjacent from/to TripStops | Shared unit for reserved overlap and standing-capacity checks. |
+| `TripSeat` | trip, seat number; unique together | Physical per-trip seat inventory without a misleading global status. |
+| `Booking` | student, trip, TripSeat, boarding/drop-off TripStops, boarding/alighting fields/status | Guaranteed reserved journey and its history. |
+| `ReservedSeatSegment` | booking, TripSeat, TripSegment; unique TripSeat+TripSegment | Active segment claims; guarantees that one seat cannot overlap. |
+| `WaitlistEntry` | student, trip, boarding/drop-off TripStops, order/status, promoted Booking | Non-guaranteed journey request kept separate from Booking. |
+| `WalkInIntent` | student, trip, boarding/drop-off TripStops, pass issue/expiry/status | Non-capacity-bearing Walk-in Pass backing record. |
+| `WalkInJourney` | unique intent, student/trip/journey, boarded/alighted fields/status | Created only on successful first-come boarding admission. |
+| `StandingSegmentClaim` | walk-in journey, TripSegment; unique journey+segment | Auditable standing occupancy per planned segment. |
+| `TripLocationSample` | trip, coordinates, timestamp, source, optional accuracy/speed/heading | Durable source-neutral simulator/GPS telemetry. |
+
+RouteStop data is snapshotted because an administrator may edit a Route after a
+Trip is scheduled. Booking and walk-in records therefore reference TripStops.
+Each TripStop has planned timing so search, QR windows, and no-show deadlines work
+for passengers boarding at intermediate stops.
+
+### Concurrency and constraint strategy
+
+- Creating a reserved Booking inserts one ReservedSeatSegment for every traversed
+  segment. PostgreSQL uniqueness on `(tripSeatId, tripSegmentId)` is the final
+  overlap guard; all inserts roll back if any segment conflicts.
+- Cancelling/no-showing a non-boarded reserved journey removes its active segment
+  rows in the same transaction. The Booking endpoints preserve historical From/
+  To data. A boarded journey keeps its planned claims through completion.
+- Walk-in QR issuance inserts no capacity row. Admission locks requested
+  TripSegments in increasing order, counts StandingSegmentClaims, validates every
+  count against `Trip.standingCapacity`, then inserts the journey and claims.
+- Add database checks for ordered positions, positive seated capacity,
+  non-negative standing capacity, valid credit range, and one Penalty per Booking.
+  Same-Trip and boarding-before-drop-off rules are also enforced in the owning
+  use cases because cross-table ordering checks are not simple Prisma constraints.
+- Add indexes for route-stop matching, TripStop timing/deadlines, reserved
+  segment conflicts, waitlist trip/status/order, standing claims by segment,
+  location trip/time, appeal status/time, and notification user/read/time.
+- Treat soft deletion consistently. Historical TripStop snapshots and journeys
+  remain readable even after fleet templates are retired.
+
+### Current Prisma disposition
+
+| Current model/field | Decision | Architecture v2 treatment |
+|---|---|---|
+| `User` | KEEP + MODIFY | Preserve identity/credit/session fields; add relations to waitlist, walk-in, and location-source audit records only as required. |
+| `Bus` | MODIFY | Rename `capacity` to `seatedCapacity`; add configurable `standingCapacity`; retain status and soft deletion. |
+| `Route` | MODIFY | Keep identity/name/deletion; replace JSON `stops` with `Stop` + ordered `RouteStop`. |
+| `Trip` | MODIFY | Keep schedule/bus/route/driver/lifecycle; add capacity snapshots, TripStops/TripSegments, and progress evidence; replace one origin-only boarding deadline with per-TripStop deadlines. |
+| `Seat` | REPLACE | Migrate to `TripSeat`; remove scalar status and one-to-one Booking relation. Availability comes from segment claims. |
+| `Booking` | MODIFY (breaking) | Reserved journeys only; persist boarding/drop-off TripStops, allow the same TripSeat on non-overlapping journeys, remove waitlist fields, and separate boarded/alighted state. |
+| `Penalty` | KEEP + MODIFY | Add unique booking guarantee and align with revised no-show lifecycle. |
+| `PenaltyAppeal` | KEEP | Preserve concept; tighten transactional review and indexes. |
+| `Notification` | KEEP + MODIFY | Preserve in-app notifications; add only approved reserved/walk-in/location event types. |
+| `DeviceStatusLog` | DELETE | Seat-device monitoring is removed from product scope. |
+| `SeatStatus` | DELETE | A whole-trip scalar cannot express segment-aware availability. |
+| `BookingStatus` | REPLACE values | Separate reserved Booking, WaitlistEntry, WalkInIntent, and WalkInJourney lifecycles. |
+| `CheckInMethod` | MODIFY | Generalize to an explicit boarding/alighting method without merging reserved and walk-in records. |
+| `DeviceSignal` | DELETE | No target consumer remains. |
+| `Stop`, `RouteStop`, `TripStop`, `TripSegment`, `TripSeat` | NEW | Directional topology, immutable trip snapshot, and per-trip inventory. |
+| `ReservedSeatSegment`, `WaitlistEntry` | NEW | Journey-aware guaranteed allocation and non-guaranteed queue. |
+| `WalkInIntent`, `WalkInJourney`, `StandingSegmentClaim` | NEW | Non-guaranteed pass separated from concurrency-safe admission. |
+| `TripLocationSample` | NEW | Simulator-first, replaceable GPS telemetry history/latest state. |
+
+No schema change is performed in Phase 0.
 
 ## 10. Authentication and security
 
@@ -461,11 +573,17 @@ subject to the unresolved requirement decisions in the audit.
 - Login/registration rate limiting must use a deployment-appropriate shared or
   host-provided limiter; a process-local map is not a security boundary.
 - Session and QR secrets are separate, validated at startup, and rotatable.
-- QR issuance checks booking ownership, confirmed state, trip state, and the
-  approved pre-departure time window. Check-in revalidates the live booking,
-  seat, trip, actor assignment, and token binding inside the transaction.
-- Realtime clients authenticate with a short-lived ticket issued by Next.js.
-  Room membership is authorized from ticket claims; knowing a trip UUID is not
+- QR tokens have an explicit purpose/type (`RESERVED_BOARDING`,
+  `WALK_IN_BOARDING`, or `ALIGHTING`) and separate backing records. Issuance
+  checks ownership, journey, Trip progress, and the approved window relative to
+  the passenger's boarding TripStop. Scans revalidate actor assignment, current
+  Trip/stop, ordered journey, duplicate state, and reserved allocation or
+  standing capacity inside the owning transaction.
+- Location ingestion authenticates a source credential independent of user
+  sessions and rejects invalid coordinates, stale/future timestamps, inactive
+  Trips, and oversized payloads.
+- Realtime clients authenticate with a short-lived socket token issued by Next.js.
+  Room membership is authorized from token claims; knowing a trip UUID is not
   permission to subscribe.
 - Add CSP and standard security headers. Do not disable browser zoom.
 
@@ -475,9 +593,9 @@ Socket events are typed invalidations, not alternate state:
 
 ```ts
 type RealtimeEvent =
-  | { type: "seat.changed"; tripId: string; occurredAt: string }
+  | { type: "occupancy.changed"; tripId: string; occurredAt: string }
   | { type: "trip.changed"; tripId: string; occurredAt: string }
-  | { type: "device.changed"; tripId: string; seatId: string; occurredAt: string };
+  | { type: "location.changed"; tripId: string; recordedAt: string };
 ```
 
 Clients receiving an event refetch the authorized monitoring DTO. Events contain
@@ -485,10 +603,13 @@ no student PII. The internal emit endpoint accepts bounded JSON, authenticates a
 server credential in a header, validates the event schema, and reports non-2xx
 responses to the Next.js publisher.
 
-The realtime scheduler may continue to trigger jobs once per minute for the FYP
-demo, provided every job is idempotent. Deployment documentation must state that
-the scheduler is a long-running process and therefore cannot be assumed to run
-inside a request-only/serverless deployment.
+The realtime scheduler may trigger no-show, reminder, waitlist, and automatic-
+alighting entry points, provided every job is idempotent. It does not simulate
+seat devices. The GPS simulator is a location-source adapter that submits the
+same validated ingestion contract a future real source would use; it does not
+write Prisma or publish directly to browsers. Deployment documentation must state
+that the scheduler/simulator are long-running processes and cannot be assumed to
+run inside a request-only/serverless deployment.
 
 ## 12. Frontend and state management
 
@@ -502,21 +623,30 @@ inside a request-only/serverless deployment.
   form/dialog primitives.
 - Dialogs require focus trapping, Escape handling, labelled controls, and focus
   restoration. Status must never be communicated by color alone.
-- Keep the responsive design and useful visual language, but delete fake controls
-  and out-of-scope simulated GPS tracking. Simulated device health remains clearly
-  labelled as simulation because it is an explicit requirement.
-- PWA installability requires real correctly sized icons and HTTPS. Offline API
-  caching remains a stretch goal and must not cache private responses without a
-  reviewed privacy and invalidation policy.
+- The student flow is `From -> To -> Date -> Departure -> Seat`; route segments
+  remain an internal capacity concept. Availability and counts are always scoped
+  to the selected journey.
+- Reserved Pass and Walk-in Pass screens use distinct language and visual state.
+  Walk-in must state that it does not guarantee boarding.
+- Keep the responsive design and useful visual language. Replace schedule-
+  interpolated fake tracking with a map consuming source-neutral telemetry and
+  label simulator data. Remove seat-sensor/device-health UI and unrelated fake
+  controls in their scheduled migration phases.
+- This is a responsive website, not a PWA. Do not add manifest, installability,
+  service-worker, offline-cache, or PWA-icon work.
 
 ## 13. Testing architecture
 
-- **Unit:** pure state transitions, cutoffs, credit math, waitlist order, DTO
+- **Unit:** ordered route matching, journey-segment derivation, state transitions,
+  cutoffs, credit math, waitlist policy, pass-purpose validation, and DTO
   redaction.
-- **Integration:** real PostgreSQL transactions and constraints for booking races,
-  idempotent no-show processing, cancellation/promotion, check-in, and appeals.
+- **Integration:** real PostgreSQL transactions and constraints for overlapping
+  versus adjacent reserved journeys, simultaneous standing scans at the capacity
+  boundary, idempotent boarding/alighting/no-show, cancellation/promotion, and
+  appeals.
 - **Contract:** Zod request/response schemas and realtime event schemas.
-- **E2E:** browser-based role workflows using isolated fixtures and cleanup.
+- **E2E:** browser-based reserved, waitlist, Walk-in disclaimer/admission,
+  boarding/alighting, and simulated-location workflows using isolated fixtures.
 - **Architecture:** forbidden import/dependency rules and `server-only` boundaries.
 
 Tests must assert behavior, not source-code substrings. `npm test`,
