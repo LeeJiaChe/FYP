@@ -185,6 +185,8 @@ export async function listMyReservations(actor: BookingActor) {
       dropOffStopName: booking.dropOffTripStop.stopName,
       checkedInAt: booking.checkedInAt,
       checkInMethod: booking.checkInMethod,
+      actualAlightedAt: booking.actualAlightedAt,
+      alightingMethod: booking.alightingMethod,
       qrTokenIssuedAt: booking.qrTokenIssuedAt,
       createdAt: booking.createdAt,
       trip: {

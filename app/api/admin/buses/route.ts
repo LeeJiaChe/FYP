@@ -87,6 +87,15 @@ export async function PATCH(req: Request) {
         });
 
         for (const trip of upcomingTrips) {
+          await tx.tripStatusHistory.create({
+            data: {
+              tripId: trip.id,
+              fromStatus: trip.status,
+              toStatus: "CANCELLED",
+              actorId: user.userId,
+              reason: `Bus ${bus.plateNumber} status updated to ${status}`,
+            },
+          });
           // Cancel trip
           await tx.trip.update({
             where: { id: trip.id },
@@ -109,6 +118,10 @@ export async function PATCH(req: Request) {
           });
           await tx.waitlistEntry.updateMany({
             where: { tripId: trip.id, status: "WAITING" },
+            data: { status: "CANCELLED" },
+          });
+          await tx.walkInIntent.updateMany({
+            where: { tripId: trip.id, status: "PENDING" },
             data: { status: "CANCELLED" },
           });
 

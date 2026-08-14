@@ -1,369 +1,246 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Bus, DoorOpen, MapPin, Play, QrCode, UserCheck } from "lucide-react";
+import toast from "react-hot-toast";
+
 import Navbar from "@/components/Navbar";
-import SeatGrid, { SeatItem } from "@/components/SeatGrid";
 import QRScannerModal from "@/components/QRScannerModal";
-import ConfirmModal from "@/components/ConfirmModal";
-import Modal from "@/components/Modal";
 import { useAuth } from "@/hooks/useAuth";
 import { useTrips } from "@/hooks/useTrips";
-import toast from "react-hot-toast";
-import {
-  Bus,
-  Clock,
-  UserCheck,
-  AlertTriangle,
-  QrCode,
-  CheckCircle2,
-  RefreshCw,
-  XCircle,
-  FileText,
-} from "lucide-react";
+
+interface ManifestPassenger {
+  recordId: string;
+  kind: "RESERVED" | "WALK_IN";
+  passengerName: string;
+  studentId: string | null;
+  seatNumber: number | null;
+  boardingStop: string;
+  dropOffStop: string;
+  boarded: boolean;
+  alighted: boolean;
+  expectedToAlightHere: boolean;
+}
+
+interface DriverManifest {
+  trip: {
+    id: string;
+    routeName: string;
+    busPlateNumber: string;
+    status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
+    delayMinutes: number;
+    delayReason: string | null;
+    standingCapacity: number;
+  };
+  currentStop: { id: string; position: number; name: string } | null;
+  stops: Array<{
+    id: string;
+    position: number;
+    name: string;
+    actualArrival: string | null;
+    actualDeparture: string | null;
+    passedAt: string | null;
+  }>;
+  manifest: ManifestPassenger[];
+}
+
+function errorMessage(data: unknown): string {
+  if (typeof data !== "object" || data === null) return "Operation failed";
+  const value = data as { error?: string | { message?: string } };
+  return typeof value.error === "string"
+    ? value.error
+    : value.error?.message || "Operation failed";
+}
 
 export default function DriverDashboard() {
   const { user, loading: userLoading } = useAuth();
-  const { trips: myTrips, loadingTrips, fetchTrips } = useTrips(undefined, user?.id);
+  const { trips, loadingTrips, fetchTrips } = useTrips(undefined, user?.id);
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
-  const [selectedTripDetails, setSelectedTripDetails] = useState<any>(null);
-  const loading = userLoading || loadingTrips;
+  const [manifest, setManifest] = useState<DriverManifest | null>(null);
+  const [scannerMode, setScannerMode] = useState<"BOARDING" | "ALIGHTING" | null>(null);
 
-  // Modals state
-  const [showScanner, setShowScanner] = useState(false);
-  const [showDelayModal, setShowDelayModal] = useState(false);
-  const [delayStatus, setDelayStatus] = useState<"DELAYED" | "CANCELLED">("DELAYED");
-  const [delayReason, setDelayReason] = useState("");
-  const [updatingDelay, setUpdatingDelay] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<{title: string, message: string, onConfirm: () => void, isDestructive?: boolean} | null>(null);
+  async function refreshManifest(tripId: string) {
+    const response = await fetch(`/api/trips/${tripId}/manifest`);
+    const data = await response.json();
+    if (!response.ok) {
+      toast.error(errorMessage(data));
+      return;
+    }
+    setManifest(data);
+  }
 
   useEffect(() => {
-    if (myTrips.length > 0 && !selectedTripId) {
-      setSelectedTripId(myTrips[0].id);
-    }
-  }, [myTrips, selectedTripId]);
+    if (!selectedTripId && trips[0]) setSelectedTripId(trips[0].id);
+  }, [selectedTripId, trips]);
 
   useEffect(() => {
-    if (selectedTripId) {
-      fetchTripDetails(selectedTripId);
-      const interval = setInterval(() => fetchTripDetails(selectedTripId), 5000);
-      return () => clearInterval(interval);
-    }
+    if (!selectedTripId) return;
+    void refreshManifest(selectedTripId);
+    const interval = window.setInterval(() => void refreshManifest(selectedTripId), 5_000);
+    return () => window.clearInterval(interval);
   }, [selectedTripId]);
 
-
-
-  async function fetchTripDetails(tripId: string) {
-    try {
-      const res = await fetch(`/api/trips/${tripId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSelectedTripDetails(data.trip);
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to fetch trip details");
-    }
+  async function mutate(path: string, body: unknown) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(errorMessage(data));
+    if (selectedTripId) await refreshManifest(selectedTripId);
+    await fetchTrips();
+    return data;
   }
 
-  async function handleManualCheckIn(seat: SeatItem) {
-    if (!seat.booking || seat.status === "CHECKED_IN") return;
-    if (!confirm(`Manually check in ${seat.booking.studentName} for Seat #${seat.seatNumber}?`)) return;
-
-    try {
-      const res = await fetch(`/api/trips/${selectedTripId}/manual-checkin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId: seat.booking.id }),
-      });
-
-      if (res.ok) {
-        toast.success(`Checked in ${seat.booking.studentName}`);
-        fetchTripDetails(selectedTripId!);
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Failed to check in");
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Network error");
-    }
-  }
-
-  async function handleUpdateTripStatus(newStatus: string) {
+  async function progress(action: string) {
     if (!selectedTripId) return;
-    
-
     try {
-      const res = await fetch(`/api/trips/${selectedTripId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      if (res.ok) {
-        toast.success(`Trip status updated to ${newStatus}`);
-        fetchTripDetails(selectedTripId);
-        fetchTrips();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Failed to update trip status");
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Network error");
+      await mutate(`/api/trips/${selectedTripId}/progress`, { action });
+      toast.success("Trip progress updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Progress update failed");
     }
   }
 
-  async function handleReportDelay(e: React.FormEvent) {
-    e.preventDefault();
+  async function setDelay() {
     if (!selectedTripId) return;
-    setUpdatingDelay(true);
-
+    const minutes = Number(window.prompt("Delay in minutes", String(manifest?.trip.delayMinutes ?? 0)));
+    const reason = window.prompt("Delay reason")?.trim();
+    if (!Number.isInteger(minutes) || minutes < 0 || !reason) return;
     try {
-      const res = await fetch(`/api/trips/${selectedTripId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: delayStatus,
-          delayReason,
-        }),
+      await mutate(`/api/trips/${selectedTripId}/progress`, {
+        action: "SET_DELAY",
+        delayMinutes: minutes,
+        reason,
       });
-
-      if (res.ok) {
-        toast.success(`Status broadcasted: ${delayStatus}`);
-        setShowDelayModal(false);
-        fetchTripDetails(selectedTripId);
-        fetchTrips();
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Failed to broadcast update");
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Network error");
-    } finally {
-      setUpdatingDelay(false);
+      toast.success("Delay metadata updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delay update failed");
     }
   }
 
+  async function cancelTrip() {
+    if (!selectedTripId) return;
+    const reason = window.prompt("Cancellation reason (required)")?.trim();
+    if (!reason) return;
+    try {
+      await mutate(`/api/trips/${selectedTripId}/progress`, { action: "CANCEL", reason });
+      toast.success("Trip cancelled");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Cancellation failed");
+    }
+  }
+
+  async function manualReservedBoarding(passenger: ManifestPassenger) {
+    if (!selectedTripId || passenger.kind !== "RESERVED") return;
+    try {
+      await mutate(`/api/trips/${selectedTripId}/manual-checkin`, {
+        kind: "RESERVED",
+        bookingId: passenger.recordId,
+      });
+      toast.success("Reserved passenger boarded manually");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Manual boarding failed");
+    }
+  }
+
+  async function manualWalkInBoarding() {
+    if (!selectedTripId) return;
+    const walkInIntentId = window.prompt("Walk-in Intent ID")?.trim();
+    if (!walkInIntentId) return;
+    try {
+      await mutate(`/api/trips/${selectedTripId}/manual-checkin`, {
+        kind: "WALK_IN",
+        walkInIntentId,
+      });
+      toast.success("Walk-in admission processed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Walk-in admission failed");
+    }
+  }
+
+  async function manualAlight(passenger: ManifestPassenger) {
+    if (!selectedTripId) return;
+    try {
+      await mutate(`/api/trips/${selectedTripId}/alight`, {
+        mode: "MANUAL",
+        kind: passenger.kind,
+        recordId: passenger.recordId,
+      });
+      toast.success("Alighting recorded manually");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Manual alighting failed");
+    }
+  }
+
+  const loading = userLoading || loadingTrips;
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <Navbar initialUser={user} />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Driver Header */}
-        <div className="glass-panel p-6 rounded-3xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        <header className="glass-panel p-6 rounded-3xl border border-slate-800 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
           <div>
-            <div className="flex items-center space-x-3 mb-1">
-              <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-extrabold text-xs rounded-lg uppercase tracking-wider">
-                Driver Console
-              </span>
-              <span className="text-xs text-slate-400">Welcome, {user?.name}</span>
-            </div>
-            <h1 className="text-2xl font-extrabold text-white tracking-tight">Trip Manifest & Live Boarding Control</h1>
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-400">Assigned-driver operations</p>
+            <h1 className="text-2xl font-extrabold">Boarding, alighting and Trip progress</h1>
           </div>
+          <select value={selectedTripId ?? ""} onChange={(event) => setSelectedTripId(event.target.value)} className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm">
+            {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.routeName} — {new Date(trip.departureTime).toLocaleTimeString()}</option>)}
+          </select>
+        </header>
 
-          {/* Assigned Trip Selector Dropdown */}
-          <div className="flex items-center space-x-3 w-full md:w-auto">
-            <label className="text-xs font-semibold text-slate-400 shrink-0">Assigned Trip:</label>
-            <select
-              value={selectedTripId || ""}
-              onChange={(e) => setSelectedTripId(e.target.value)}
-              className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-xl px-4 py-2.5 focus:outline-none focus:border-amber-500 w-full md:w-64"
-            >
-              {myTrips.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.routeName} ({t.busPlateNumber})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        {loading && <p className="text-slate-400">Loading assigned Trips…</p>}
+        {!loading && trips.length === 0 && <p className="glass-panel p-8 rounded-3xl text-slate-400">No Trips are assigned to this driver.</p>}
 
-        {/* Selected Trip Info & Controls */}
-        {loading ? (
-          <div className="py-20 text-center text-xs text-slate-400">Loading driver manifest...</div>
-        ) : !selectedTripDetails ? (
-          <div className="glass-panel p-12 rounded-3xl text-center text-slate-400 text-xs">
-            No trips currently assigned to your driver account.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Real-time Seat Manifest Grid */}
-            <div className="lg:col-span-2 space-y-6">
-              <div className="glass-panel p-6 rounded-3xl border border-slate-800 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-white">{selectedTripDetails.routeName}</h2>
-                    <p className="text-xs text-slate-400">
-                      Bus: <span className="text-blue-400 font-bold">{selectedTripDetails.busPlateNumber}</span> • Departure:{" "}
-                      {new Date(selectedTripDetails.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowScanner(true)}
-                      className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/25 flex items-center gap-2"
-                    >
-                      <QrCode className="w-4 h-4" /> Scan QR Pass
-                    </button>
-                    <button
-                      onClick={() => setShowDelayModal(true)}
-                      className="px-4 py-2.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5"
-                    >
-                      <AlertTriangle className="w-4 h-4" /> Report Delay
-                    </button>
-                    {selectedTripDetails.status === "SCHEDULED" || selectedTripDetails.status === "BOARDING" || selectedTripDetails.status === "DELAYED" ? (
-                      <button
-                        onClick={() => setConfirmAction({ title: "Start Trip", message: "Are you sure you want to mark this trip as DEPARTED?", onConfirm: () => handleUpdateTripStatus("DEPARTED") })}
-                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
-                      >
-                        Start Trip (Depart)
-                      </button>
-                    ) : selectedTripDetails.status === "DEPARTED" ? (
-                      <button
-                        onClick={() => setConfirmAction({ title: "End Trip", message: "Are you sure you want to mark this trip as ARRIVED?", onConfirm: () => handleUpdateTripStatus("ARRIVED") })}
-                        className="px-4 py-2.5 bg-green-600 hover:bg-green-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5"
-                      >
-                        End Trip (Arrived)
-                      </button>
-                    ) : null}
-                  </div>
+        {manifest && (
+          <>
+            <section className="glass-panel p-5 rounded-3xl border border-slate-800 space-y-4">
+              <div className="flex flex-wrap justify-between gap-3">
+                <div>
+                  <h2 className="font-bold text-lg">{manifest.trip.routeName}</h2>
+                  <p className="text-xs text-slate-400"><Bus className="inline w-3 h-3" /> {manifest.trip.busPlateNumber} · {manifest.trip.status} · standing {manifest.trip.standingCapacity}</p>
+                  <p className="text-xs text-blue-300 mt-1"><MapPin className="inline w-3 h-3" /> {manifest.currentStop ? `Current stop: ${manifest.currentStop.name}` : "Between stops / not started"}</p>
+                  {manifest.trip.delayMinutes > 0 && <p className="text-xs text-amber-300">Delayed {manifest.trip.delayMinutes} min: {manifest.trip.delayReason}</p>}
                 </div>
-
-                {/* Seat Grid */}
-                <SeatGrid
-                  seats={selectedTripDetails.seats || []}
-                  onManualCheckIn={handleManualCheckIn}
-                  mode="driver"
-                />
-              </div>
-            </div>
-
-            {/* Right Column: Live Manifest List & Stats */}
-            <div className="space-y-6">
-              <div className="glass-panel p-6 rounded-3xl border border-slate-800 space-y-4">
-                <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-blue-400" /> Student Manifest
-                </h3>
-
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                  {(selectedTripDetails.seats || []).map((s: SeatItem) => {
-                    if (!s.booking) return null;
-                    return (
-                      <div
-                        key={s.id}
-                        className="p-3 bg-slate-900/80 rounded-2xl border border-slate-800 flex items-center justify-between text-xs"
-                      >
-                        <div>
-                          <div className="font-bold text-white">
-                            Seat #{s.seatNumber} — {s.booking.studentName}
-                          </div>
-                          <div className="text-[10px] text-slate-400">ID: {s.booking.studentId}</div>
-                        </div>
-
-                        {s.status === "CHECKED_IN" ? (
-                          <span className="px-2 py-1 bg-emerald-500/20 text-emerald-300 font-bold rounded-lg text-[10px] flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Checked In
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleManualCheckIn(s)}
-                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-[10px]"
-                          >
-                            Manual Check-In
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setScannerMode("BOARDING")} className="px-3 py-2 bg-emerald-600 rounded-xl text-xs font-bold"><QrCode className="inline w-4 h-4" /> Scan Boarding</button>
+                  <button onClick={() => setScannerMode("ALIGHTING")} className="px-3 py-2 bg-cyan-700 rounded-xl text-xs font-bold"><DoorOpen className="inline w-4 h-4" /> Scan Exit</button>
+                  <button onClick={() => void manualWalkInBoarding()} className="px-3 py-2 bg-blue-700 rounded-xl text-xs font-bold"><UserCheck className="inline w-4 h-4" /> Manual Walk-in</button>
+                  <button onClick={() => void setDelay()} className="px-3 py-2 bg-amber-700 rounded-xl text-xs font-bold">Set delay</button>
+                  {manifest.trip.status !== "ARRIVED" && manifest.trip.status !== "CANCELLED" && <button onClick={() => void cancelTrip()} className="px-3 py-2 bg-rose-800 rounded-xl text-xs font-bold">Cancel</button>}
                 </div>
               </div>
-            </div>
-          </div>
+              <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-4">
+                {manifest.trip.status === "NOT_STARTED" && <button onClick={() => void progress("START_BOARDING")} className="px-4 py-2 bg-blue-600 rounded-xl text-sm font-bold"><Play className="inline w-4 h-4" /> Start boarding</button>}
+                {manifest.trip.status === "DEPARTED" && !manifest.currentStop && <button onClick={() => void progress("ARRIVE_NEXT_STOP")} className="px-4 py-2 bg-blue-600 rounded-xl text-sm font-bold">Arrive next stop</button>}
+                {(manifest.trip.status === "BOARDING" || manifest.trip.status === "DEPARTED") && manifest.currentStop && <button onClick={() => void progress("DEPART_CURRENT_STOP")} className="px-4 py-2 bg-indigo-600 rounded-xl text-sm font-bold">Depart {manifest.currentStop.name}</button>}
+              </div>
+            </section>
+
+            <section className="glass-panel p-5 rounded-3xl border border-slate-800">
+              <h2 className="font-bold mb-4">Operational manifest</h2>
+              <div className="space-y-2">
+                {manifest.manifest.map((passenger) => (
+                  <div key={`${passenger.kind}-${passenger.recordId}`} className="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                    <div>
+                      <p className="font-bold text-white">{passenger.passengerName} · {passenger.kind}{passenger.seatNumber ? ` · Seat ${passenger.seatNumber}` : " · Standing"}</p>
+                      <p className="text-slate-400">ID {passenger.studentId || "—"} · {passenger.boardingStop} → {passenger.dropOffStop}</p>
+                      <p className="text-slate-300">{passenger.alighted ? "Alighted" : passenger.boarded ? "Boarded" : "Not boarded"}{passenger.expectedToAlightHere && !passenger.alighted ? " · Expected to alight here" : ""}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      {!passenger.boarded && passenger.kind === "RESERVED" && <button onClick={() => void manualReservedBoarding(passenger)} className="px-3 py-2 bg-blue-700 rounded-lg font-bold">Manual board</button>}
+                      {passenger.boarded && !passenger.alighted && passenger.expectedToAlightHere && <button onClick={() => void manualAlight(passenger)} className="px-3 py-2 bg-cyan-700 rounded-lg font-bold">Confirm alighted</button>}
+                    </div>
+                  </div>
+                ))}
+                {manifest.manifest.length === 0 && <p className="text-slate-500">No reserved or admitted walk-in passengers.</p>}
+              </div>
+            </section>
+          </>
         )}
       </main>
 
-      {/* QR SCANNER MODAL */}
-      {showScanner && selectedTripId && (
-        <QRScannerModal
-          tripId={selectedTripId}
-          onClose={() => setShowScanner(false)}
-          onSuccess={() => {
-            fetchTripDetails(selectedTripId);
-          }}
-        />
-      )}
-
-      {/* DELAY REPORT MODAL */}
-      {showDelayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel w-full max-w-md rounded-3xl p-6 border border-slate-700/80 shadow-2xl relative space-y-4">
-            <button
-              onClick={() => setShowDelayModal(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800"
-            >
-              ✕
-            </button>
-
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-400" /> Report Delay or Breakdown
-            </h2>
-            <p className="text-xs text-slate-400">
-              Broadcasting status updates to transport admins and booked students.
-            </p>
-
-            <form onSubmit={handleReportDelay} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Status Type</label>
-                <select
-                  value={delayStatus}
-                  onChange={(e) => setDelayStatus(e.target.value as any)}
-                  className="w-full p-2.5 bg-slate-900 border border-slate-800 text-xs text-white rounded-xl"
-                >
-                  <option value="DELAYED">DELAYED</option>
-                  <option value="CANCELLED">CANCELLED (Breakdown / Emergency)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Delay Reason</label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="Describe reason for delay (e.g. heavy traffic jam on DU Highway, engine breakdown)..."
-                  value={delayReason}
-                  onChange={(e) => setDelayReason(e.target.value)}
-                  className="w-full p-3 bg-slate-900 border border-slate-800 text-xs text-white rounded-xl placeholder-slate-600 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowDelayModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={updatingDelay}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-lg disabled:opacity-50"
-                >
-                  {updatingDelay ? "Updating..." : "Broadcast Update"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      <ConfirmModal
-        isOpen={!!confirmAction}
-        onClose={() => setConfirmAction(null)}
-        onConfirm={() => { if (confirmAction) confirmAction.onConfirm(); }}
-        title={confirmAction?.title || ""}
-        message={confirmAction?.message || ""}
-        confirmText="Confirm"
-        isDestructive={confirmAction?.isDestructive}
-      />
+      {scannerMode && selectedTripId && <QRScannerModal tripId={selectedTripId} mode={scannerMode} onClose={() => setScannerMode(null)} onSuccess={() => void refreshManifest(selectedTripId)} />}
     </div>
   );
 }

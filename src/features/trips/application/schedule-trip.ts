@@ -5,6 +5,7 @@ import type {
 import { TripSnapshotError } from "../domain/build-trip-snapshot";
 import {
   createScheduledTripRecord,
+  findTripDetailRecord,
   listTripRecords,
   TripPersistenceError,
 } from "../infrastructure/trip.prisma.server";
@@ -114,11 +115,12 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       estimatedArrivalTime: trip.estimatedArrivalTime,
       boardingDeadline: trip.boardingDeadline,
       status: trip.status,
+      delayMinutes: trip.delayMinutes,
       delayReason: trip.delayReason,
       stats: {
         totalSeats: trip.seatedCapacity,
-        // These counts remain operational legacy diagnostics until Phase 5/8.
-        // They are never used by the Phase 4 journey availability contract.
+        // These counts remain operational legacy diagnostics until Phase 8.
+        // They are never used by journey availability or boarding capacity.
         legacyAvailableSeats: availableSeats,
         legacyReservedSeats: reservedSeats,
         legacyCheckedInSeats: checkedInSeats,
@@ -126,4 +128,89 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       },
     };
   });
+}
+
+export async function getTripDetail(actor: TripActor, tripId: string) {
+  const trip = await findTripDetailRecord(tripId);
+  if (!trip) throw notFound("Trip not found");
+  if (actor.role === "DRIVER" && trip.driverId !== actor.userId) {
+    throw forbidden("Driver may view only assigned Trips");
+  }
+  const canViewManifest = actor.role === "ADMIN" || actor.role === "DRIVER";
+  const seats = trip.tripSeats.map((seat) => {
+    const visibleBookings = seat.bookings.filter(
+      (booking) => canViewManifest || booking.studentId === actor.userId,
+    );
+    const primary = visibleBookings[0];
+    return {
+      id: seat.id,
+      seatNumber: seat.seatNumber,
+      // Compatibility visualization only; journey availability never reads it.
+      status: seat.bookings.some((booking) => booking.checkedInAt)
+        ? "CHECKED_IN"
+        : seat.bookings.length > 0
+          ? "RESERVED"
+          : "AVAILABLE",
+      booking: primary
+        ? {
+            id: primary.id,
+            status: primary.status,
+            studentName: primary.student.name,
+            studentId: primary.student.studentId,
+            checkedInAt: primary.checkedInAt,
+            checkInMethod: primary.checkInMethod,
+          }
+        : null,
+      journeys: visibleBookings.map((booking) => ({
+        bookingId: booking.id,
+        boardingStopName: booking.boardingTripStop.stopName,
+        dropOffStopName: booking.dropOffTripStop.stopName,
+        status: booking.status,
+      })),
+      deviceHealth: "OK" as const,
+    };
+  });
+  return {
+    id: trip.id,
+    routeId: trip.routeId,
+    routeName: trip.route.name,
+    routeStops: trip.tripStops.map((stop) => stop.stopName),
+    tripStops: trip.tripStops.map((stop) => ({
+      id: stop.id,
+      stopId: stop.stopId,
+      position: stop.position,
+      code: stop.stopCode,
+      name: stop.stopName,
+      latitude: stop.latitude.toNumber(),
+      longitude: stop.longitude.toNumber(),
+      plannedArrival: stop.plannedArrival,
+      plannedDeparture: stop.plannedDeparture,
+      boardingDeadline: stop.boardingDeadline,
+      actualArrival: stop.actualArrival,
+      actualDeparture: stop.actualDeparture,
+      passedAt: stop.passedAt,
+    })),
+    busId: trip.busId,
+    busPlateNumber: trip.bus.plateNumber,
+    seatedCapacity: trip.seatedCapacity,
+    standingCapacity: trip.standingCapacity,
+    driverId: trip.driverId,
+    driverName: trip.driver?.name ?? "Unassigned",
+    departureTime: trip.departureTime,
+    estimatedArrivalTime: trip.estimatedArrivalTime,
+    status: trip.status,
+    delayMinutes: trip.delayMinutes,
+    delayReason: trip.delayReason,
+    seats,
+    waitlist: canViewManifest
+      ? trip.waitlistEntries
+      : trip.waitlistEntries.filter((entry) => entry.studentId === actor.userId),
+    stats: {
+      totalSeats: trip.seatedCapacity,
+      availableSeats: seats.filter((seat) => seat.status === "AVAILABLE").length,
+      reservedSeats: seats.filter((seat) => seat.status === "RESERVED").length,
+      checkedInSeats: seats.filter((seat) => seat.status === "CHECKED_IN").length,
+      noShowSeats: 0,
+    },
+  };
 }

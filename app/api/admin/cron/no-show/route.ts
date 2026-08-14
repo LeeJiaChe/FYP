@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { notifyRealtime } from "@/lib/realtime-client";
 import { productPolicy } from "@/shared/config/policies";
 import { releaseNoShowReservation } from "@/features/bookings/server";
 
@@ -83,17 +82,8 @@ export async function POST(req: Request) {
         totalNoShowsProcessed++;
       }
 
-      // Mark trip as DEPARTED once boarding deadline has passed
-      await prisma.trip.update({
-        where: { id: trip.id },
-        data: { status: "DEPARTED" },
-      });
-
-      // Emit realtime event for trip update
-      await notifyRealtime(`trip:${trip.id}`, "trip-update", {
-        tripId: trip.id,
-        status: "DEPARTED",
-      });
+      // Phase 5 Trip progress is driver-owned. Phase 6 will migrate this
+      // penalty job without inferring a DEPARTED transition from wall-clock time.
     }
 
     return NextResponse.json({

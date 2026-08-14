@@ -443,18 +443,17 @@ domain transition policy.
 ### Booking
 
 ```text
-Booking:      CONFIRMED -> BOARDED -> ALIGHTED
-              CONFIRMED -> CANCELLED | NO_SHOW
-Waitlist:     WAITING -> PROMOTED | CANCELLED | EXPIRED
-WalkInIntent: ISSUED -> ADMITTED | CANCELLED | EXPIRED
-WalkInJourney: BOARDED -> ALIGHTED
+Booking:       CONFIRMED (checkedInAt null -> non-null) -> COMPLETED
+               CONFIRMED -> CANCELLED | NO_SHOW
+Waitlist:      WAITING -> PROMOTED | CANCELLED | EXPIRED
+WalkInIntent:  PENDING -> BOARDED | REJECTED_FULL | CANCELLED | EXPIRED
+WalkInJourney: BOARDED -> COMPLETED
 ```
 
 An unsuccessful full-capacity Walk-in scan does not create a WalkInJourney or
-claims. Whether the still-valid intent may be retried is governed by its expiry
-and whether the boarding TripStop has passed. Reserved and standing capacity use
-planned TripSegments; actual alighting is evidence and never rewrites the planned
-allocation.
+claims and marks that attempt `REJECTED_FULL`; a later attempt requires a new
+intent. Reserved and standing capacity use planned TripSegments; actual alighting
+is evidence and never rewrites the planned allocation.
 
 ### Penalty and appeal
 
@@ -578,9 +577,11 @@ admins do not manually enter each stop time.
 | `TripStatusHistory` | NEW | Minimal append-only audit evidence for exceptional Trip lifecycle changes. |
 
 No schema change was performed in Phase 0, Phase 1, or Phase 2. Phase 3 implements
-the topology/inventory subset and Phase 4 implements reserved Booking,
-ReservedSeatSegment, and WaitlistEntry through forward PostgreSQL migrations;
-the remaining rows in this table are still target decisions until their phases.
+topology/inventory, Phase 4 implements reserved Booking/ReservedSeatSegment/
+WaitlistEntry, and Phase 5 implements WalkInIntent/WalkInJourney/
+StandingSegmentClaim plus boarding, alighting, and Trip progress evidence through
+forward PostgreSQL migrations. TripLocationSample and later cleanup rows remain
+target decisions until their phases.
 
 ## 10. Authentication and security
 
@@ -700,8 +701,7 @@ mutate a developer's normal database.
 
 ## 14. Centralized operating-policy configuration
 
-The future `src/shared/config/policies.ts` (or an equivalently single validated
-server-side module) owns these configurable defaults:
+`src/shared/config/policies.ts` owns these configurable defaults:
 
 | Policy | Default |
 |---|---:|

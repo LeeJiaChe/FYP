@@ -18,6 +18,8 @@ Prisma migration, reports migration status, and then executes the integration
 suite. Fixtures must reuse `verifyTestDatabaseEnvironment` and must never run
 destructive setup from an unverified `DATABASE_URL`.
 
-Phase 3 is the first phase with real schema integration coverage. PostgreSQL 16
-CI is the authoritative fallback when a local execution environment does not
-permit PostgreSQL sockets; SQLite is not supported.
+Phase 3 introduced real schema coverage; Phase 4 adds reserved-allocation races,
+and Phase 5 adds locked standing-admission, pass, boarding, alighting, and Trip
+progress scenarios. PostgreSQL 16 CI is the authoritative fallback when a local
+execution environment does not permit PostgreSQL sockets; SQLite is not
+supported.

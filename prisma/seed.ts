@@ -14,6 +14,10 @@ async function resetDemoData() {
   await prisma.penaltyAppeal.deleteMany();
   await prisma.penalty.deleteMany();
   await prisma.reservedSeatSegment.deleteMany();
+  await prisma.standingSegmentClaim.deleteMany();
+  await prisma.walkInJourney.deleteMany();
+  await prisma.walkInIntent.deleteMany();
+  await prisma.tripStatusHistory.deleteMany();
   await prisma.waitlistEntry.deleteMany();
   await prisma.booking.deleteMany();
   await prisma.seat.deleteMany();
@@ -328,8 +332,8 @@ async function main() {
     }));
   }
 
-  const [student1, student2, student4, student5] = await Promise.all(
-    ["student1", "student2", "student4", "student5"].map((student) =>
+  const [student1, student2, student3, student4, student5] = await Promise.all(
+    ["student1", "student2", "student3", "student4", "student5"].map((student) =>
       prisma.user.findUniqueOrThrow({
         where: { email: `${student}@student.tarc.edu.my` },
       }),
@@ -407,12 +411,23 @@ async function main() {
       status: "WAITING",
     },
   });
+  await prisma.walkInIntent.create({
+    data: {
+      studentId: student3.id,
+      tripId: demonstrationTrip.id,
+      boardingTripStopId: stopA!.id,
+      dropOffTripStopId: stopC!.id,
+      status: "PENDING",
+      issuedAt: now,
+      expiresAt: new Date(stopA!.plannedDeparture.getTime() + productPolicy.bookingOpenLeadMs),
+    },
+  });
 
   console.log(
     "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 4 complete Trip snapshots.",
   );
   console.log(
-    "Phase 4 demo: Seat 1 is reused on adjacent A-B/B-C journeys, Seat 2 covers A-C, and one A-C waiter remains unallocated.",
+    "Phase 5 demo: reserved adjacent-seat reuse, one unallocated A-C waiter, and one non-capacity-bearing A-C Walk-in intent.",
   );
 }
 

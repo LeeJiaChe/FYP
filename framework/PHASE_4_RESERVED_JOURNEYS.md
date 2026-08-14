@@ -1,6 +1,6 @@
 # Phase 4 — Reserved Journeys and Journey-Aware Waitlist
 
-Status: **Implemented on `architecture-v2`; Phase 5 not started**
+Status: **Implemented on `architecture-v2`; Phase 5 subsequently implemented**
 
 Date: 2026-08-15
 
@@ -20,8 +20,9 @@ journey over immutable Phase 3 topology:
 - migrated student endpoints are thin transport adapters and the student flow
   passes TripStop IDs from `From -> To -> Date -> Departure -> Seat`.
 
-Walk-in passes/admission, the final boarding lifecycle/scanner, actual alighting,
-GPS telemetry, and penalty migration remain later phases.
+Walk-in passes/admission, the boarding lifecycle/scanner, and actual alighting
+were implemented in Phase 5. GPS telemetry and penalty migration remain later
+phases.
 
 ## Final Booking schema
 
@@ -163,8 +164,8 @@ planned claims after operational state changes.
 
 ## Phase boundary
 
-Phase 4 stops after reserved journeys and journey-aware waitlist. Phase 5 should
-next implement explicit Reserved/Walk-in/Exit pass contracts, assigned-driver
+Phase 4 stopped after reserved journeys and journey-aware waitlist. Phase 5 then
+implemented explicit Reserved/Walk-in/Exit pass contracts, assigned-driver
 boarding authorization, the approved Trip lifecycle, concurrency-safe standing
-admission, and optional/manual alighting. Phase 5 must not reintroduce whole-Trip
+admission, and QR/manual/automatic alighting without reintroducing whole-Trip
 seat status as reservation truth.

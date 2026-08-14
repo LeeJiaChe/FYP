@@ -79,17 +79,19 @@ short decision index, not evidence that the current implementation is complete.
 
 16. **Current implementation status:** Phase 3 replaced JSON stops and scalar Bus
     capacity with normalized directional topology and immutable per-Trip
-    inventory. Phase 4 now persists reserved From/To TripStop journeys, protects
-    each traversed segment, and separates journey-aware waitlist state. Legacy
-    Seat/device/check-in compatibility and all walk-in/location work remain later
-    migration work; they must not be described as implemented.
+    inventory. Phase 4 persists reserved From/To journeys and a separate
+    journey-aware waitlist. Phase 5 implements explicit dynamic passes,
+    assigned-driver boarding, transactionally locked standing admission,
+    operational alighting evidence, and Trip progress. Legacy Seat/device code,
+    penalty/no-show migration, and GPS telemetry remain later work.
 
 17. **Waitlist order:** Promotion is oldest-compatible-first FIFO. A temporarily
     incompatible entry may be skipped but keeps its original priority.
 
 18. **Trip state:** Lifecycle is `NOT_STARTED -> BOARDING -> DEPARTED -> ARRIVED`,
-    with irreversible `ARRIVED`/`CANCELLED` terminals. Delay is metadata. A future
-    post-departure emergency cancellation requires a reason and TripStatusHistory.
+    with irreversible `ARRIVED`/`CANCELLED` terminals. Delay is metadata.
+    Post-departure emergency cancellation requires a reason and records
+    TripStatusHistory.
 
 19. **Central policy:** Defaults are booking 7 days ahead, cancellation 30 minutes
     before the boarding stop, boarding from 15 minutes before through 5 minutes

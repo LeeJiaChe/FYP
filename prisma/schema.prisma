@@ -24,7 +24,6 @@ enum TripStatus {
   BOARDING
   DEPARTED
   ARRIVED
-  DELAYED
   CANCELLED
 }
 
@@ -52,6 +51,25 @@ enum WaitlistStatus {
 enum CheckInMethod {
   QR
   MANUAL
+}
+
+enum AlightingMethod {
+  QR
+  MANUAL
+  AUTO_PLANNED_STOP
+}
+
+enum WalkInIntentStatus {
+  PENDING
+  BOARDED
+  REJECTED_FULL
+  EXPIRED
+  CANCELLED
+}
+
+enum WalkInJourneyStatus {
+  BOARDED
+  COMPLETED
 }
 
 enum PenaltyStatus {
@@ -104,6 +122,9 @@ model User {
   reviewedAppeals PenaltyAppeal[] @relation("AdminReviewedAppeals")
   notifications   Notification[]
   waitlistEntries WaitlistEntry[]
+  walkInIntents   WalkInIntent[]
+  walkInJourneys  WalkInJourney[]
+  tripStatusChanges TripStatusHistory[] @relation("TripStatusActor")
 }
 
 model Bus {
@@ -166,6 +187,7 @@ model Trip {
   seatedCapacity       Int
   standingCapacity     Int
   status               TripStatus @default(NOT_STARTED)
+  delayMinutes         Int        @default(0)
   delayReason          String?
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
@@ -176,6 +198,9 @@ model Trip {
   tripSegments    TripSegment[]
   bookings        Booking[]
   waitlistEntries WaitlistEntry[]
+  walkInIntents   WalkInIntent[]
+  walkInJourneys  WalkInJourney[]
+  statusHistory   TripStatusHistory[]
 
   @@index([routeId])
   @@index([busId])
@@ -210,6 +235,10 @@ model TripStop {
   dropOffBookings         Booking[]       @relation("BookingDropOffStop")
   boardingWaitlistEntries WaitlistEntry[] @relation("WaitlistBoardingStop")
   dropOffWaitlistEntries  WaitlistEntry[] @relation("WaitlistDropOffStop")
+  boardingWalkInIntents   WalkInIntent[]  @relation("WalkInIntentBoardingStop")
+  dropOffWalkInIntents    WalkInIntent[]  @relation("WalkInIntentDropOffStop")
+  boardingWalkInJourneys  WalkInJourney[] @relation("WalkInJourneyBoardingStop")
+  dropOffWalkInJourneys   WalkInJourney[] @relation("WalkInJourneyDropOffStop")
 
   @@unique([tripId, position])
   @@unique([tripId, stopId])
@@ -227,6 +256,7 @@ model TripSegment {
   toTripStopId         String                @db.Uuid
   toTripStop           TripStop              @relation("TripSegmentTo", fields: [toTripStopId], references: [id], onDelete: Cascade)
   reservedSeatSegments ReservedSeatSegment[]
+  standingClaims       StandingSegmentClaim[]
 
   @@unique([tripId, position])
   @@unique([tripId, fromTripStopId, toTripStopId])
@@ -276,6 +306,8 @@ model Booking {
   checkInMethod      CheckInMethod?
   qrTokenIssuedAt    DateTime?
   checkedInAt        DateTime?
+  actualAlightedAt   DateTime?
+  alightingMethod    AlightingMethod?
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
@@ -327,6 +359,84 @@ model WaitlistEntry {
   @@unique([tripId, promotedBookingId])
   @@index([tripId, status, queuedAt])
   @@index([studentId, tripId, status])
+}
+
+model WalkInIntent {
+  id                 String             @id @default(uuid())
+  studentId          String
+  student            User               @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  tripId             String
+  trip               Trip               @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  boardingTripStopId String             @db.Uuid
+  boardingTripStop   TripStop           @relation("WalkInIntentBoardingStop", fields: [tripId, boardingTripStopId], references: [tripId, id], onDelete: Restrict)
+  dropOffTripStopId  String             @db.Uuid
+  dropOffTripStop    TripStop           @relation("WalkInIntentDropOffStop", fields: [tripId, dropOffTripStopId], references: [tripId, id], onDelete: Restrict)
+  status             WalkInIntentStatus @default(PENDING)
+  issuedAt           DateTime           @default(now())
+  expiresAt          DateTime
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  journey            WalkInJourney?
+
+  @@unique([tripId, id, studentId, boardingTripStopId, dropOffTripStopId])
+  @@index([studentId, status, expiresAt])
+  @@index([tripId, status, expiresAt])
+}
+
+model WalkInJourney {
+  id                 String              @id @default(uuid())
+  walkInIntentId     String              @unique
+  walkInIntent       WalkInIntent        @relation(fields: [tripId, walkInIntentId, studentId, boardingTripStopId, dropOffTripStopId], references: [tripId, id, studentId, boardingTripStopId, dropOffTripStopId], onDelete: Restrict)
+  studentId          String
+  student            User                @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  tripId             String
+  trip               Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  boardingTripStopId String              @db.Uuid
+  boardingTripStop   TripStop            @relation("WalkInJourneyBoardingStop", fields: [tripId, boardingTripStopId], references: [tripId, id], onDelete: Restrict)
+  dropOffTripStopId  String              @db.Uuid
+  dropOffTripStop    TripStop            @relation("WalkInJourneyDropOffStop", fields: [tripId, dropOffTripStopId], references: [tripId, id], onDelete: Restrict)
+  boardedAt          DateTime
+  boardingMethod     CheckInMethod
+  status             WalkInJourneyStatus @default(BOARDED)
+  actualAlightedAt   DateTime?
+  alightingMethod    AlightingMethod?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  standingClaims     StandingSegmentClaim[]
+
+  @@unique([tripId, id])
+  @@unique([tripId, walkInIntentId, studentId, boardingTripStopId, dropOffTripStopId])
+  @@index([studentId, tripId, status])
+  @@index([tripId, status])
+}
+
+model StandingSegmentClaim {
+  id                String        @id @default(uuid()) @db.Uuid
+  walkInJourneyId   String
+  tripId            String
+  tripSegmentId     String        @db.Uuid
+  walkInJourney     WalkInJourney @relation(fields: [tripId, walkInJourneyId], references: [tripId, id], onDelete: Cascade)
+  tripSegment       TripSegment   @relation(fields: [tripId, tripSegmentId], references: [tripId, id], onDelete: Cascade)
+  createdAt         DateTime      @default(now())
+
+  @@unique([walkInJourneyId, tripSegmentId])
+  @@index([tripId, tripSegmentId])
+  @@index([walkInJourneyId])
+}
+
+model TripStatusHistory {
+  id         String     @id @default(uuid())
+  tripId     String
+  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromStatus TripStatus
+  toStatus   TripStatus
+  actorId    String
+  actor      User       @relation("TripStatusActor", fields: [actorId], references: [id], onDelete: Restrict)
+  reason     String?
+  occurredAt DateTime   @default(now())
+
+  @@index([tripId, occurredAt])
+  @@index([actorId, occurredAt])
 }
 
 model Penalty {

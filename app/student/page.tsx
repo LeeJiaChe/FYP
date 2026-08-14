@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 import ConfirmModal from "@/components/ConfirmModal";
 import SeatGrid, { SeatItem } from "@/components/SeatGrid";
-import DynamicQRModal from "@/components/DynamicQRModal";
+import DynamicQRModal, { type DynamicPassDescriptor } from "@/components/DynamicQRModal";
 import PenaltyAppealModal from "@/components/PenaltyAppealModal";
 import RestrictedBanner from "@/components/student/RestrictedBanner";
 import NextTripBanner from "@/components/student/NextTripBanner";
@@ -47,7 +47,8 @@ export default function StudentDashboard() {
   // My Bookings state
   const [myBookings, setMyBookings] = useState<any[]>([]);
   const [myWaitlist, setMyWaitlist] = useState<any[]>([]);
-  const [activeQRBooking, setActiveQRBooking] = useState<any>(null);
+  const [myWalkIns, setMyWalkIns] = useState<any[]>([]);
+  const [activePass, setActivePass] = useState<DynamicPassDescriptor | null>(null);
 
   // Tracked trip for real-time location
   const [trackedTrip, setTrackedTrip] = useState<any>(null);
@@ -59,6 +60,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     fetchRoutes();
     fetchBookings();
+    fetchWalkIns();
     fetchPenalties();
   }, []);
 
@@ -81,6 +83,51 @@ export default function StudentDashboard() {
         setMyWaitlist(data.waitlist || []);
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); }
+  }
+
+  async function fetchWalkIns() {
+    try {
+      const response = await fetch("/api/walk-ins");
+      if (response.ok) {
+        const data = await response.json();
+        setMyWalkIns(data.intents || []);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Unable to load Walk-in Passes");
+    }
+  }
+
+  function openReservedPass(booking: any) {
+    setActivePass({
+      endpoint: `/api/bookings/${booking.id}/qr-token`,
+      title: "Reserved Boarding Pass",
+      purpose: "Reserved Boarding",
+      routeName: booking.trip.routeName,
+      journey: `${booking.boardingStopName} → ${booking.dropOffStopName}`,
+      seatNumber: booking.seatNumber,
+    });
+  }
+
+  function openWalkInPass(intent: any) {
+    setActivePass({
+      endpoint: `/api/walk-ins/${intent.id}/pass`,
+      title: "Walk-in Boarding Pass",
+      purpose: "Walk-in Boarding",
+      routeName: intent.trip.routeName,
+      journey: `${intent.boardingStopName} → ${intent.dropOffStopName}`,
+      warning: "This pass does not guarantee boarding. Standing capacity is checked when scanned.",
+    });
+  }
+
+  function openAlightingPass(kind: "RESERVED" | "WALK_IN", record: any) {
+    setActivePass({
+      endpoint: "/api/passes/alighting",
+      requestBody: { kind, recordId: record.id },
+      title: "Exit / Alighting Pass",
+      purpose: "Alighting",
+      routeName: record.trip.routeName,
+      journey: `${record.boardingStopName} → ${record.dropOffStopName}`,
+    });
   }
 
   async function fetchPenalties() {
@@ -192,6 +239,41 @@ export default function StudentDashboard() {
     }
   }
 
+  async function handleGenerateWalkInPass() {
+    if (!selectedTrip || !selectedJourney) return;
+    setBookingLoading(true);
+    setBookingError(null);
+    try {
+      const response = await fetch("/api/walk-ins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tripId: selectedTrip.id,
+          boardingTripStopId: selectedJourney.boardingTripStopId,
+          dropOffTripStopId: selectedJourney.dropOffTripStopId,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setBookingError(data.error?.message || "Unable to create Walk-in Pass");
+        return;
+      }
+      const intent = {
+        ...data,
+        boardingStopName: selectedJourney.boardingStopName,
+        dropOffStopName: selectedJourney.dropOffStopName,
+        trip: { routeName: selectedTrip.routeName },
+      };
+      setSelectedTrip(null);
+      await fetchWalkIns();
+      openWalkInPass(intent);
+    } catch {
+      setBookingError("Network error generating Walk-in Pass");
+    } finally {
+      setBookingLoading(false);
+    }
+  }
+
   async function handleLeaveWaitlist(entryId: string) {
     const res = await fetch(`/api/waitlist/${entryId}`, { method: "DELETE" });
     const data = await res.json();
@@ -251,7 +333,7 @@ export default function StudentDashboard() {
         {/* Next Trip Banner */}
         <NextTripBanner
           myBookings={myBookings}
-          onViewQR={(booking) => setActiveQRBooking(booking)}
+          onViewQR={openReservedPass}
         />
 
         {/* Route 3->6 Highlight Card */}
@@ -343,9 +425,12 @@ export default function StudentDashboard() {
           <MyBookingsTab
             myBookings={myBookings}
             waitlistEntries={myWaitlist}
-            onRefresh={fetchBookings}
+            walkInIntents={myWalkIns}
+            onRefresh={() => { void fetchBookings(); void fetchWalkIns(); }}
             onBrowseTrips={() => setActiveTab("trips")}
-            onOpenQR={setActiveQRBooking}
+            onOpenQR={openReservedPass}
+            onOpenWalkInQR={openWalkInPass}
+            onOpenAlightingQR={openAlightingPass}
             onTrackTrip={(trip) => {
               setTrackedTrip(trip);
               setActiveTab("track");
@@ -473,15 +558,23 @@ export default function StudentDashboard() {
                 )}
               </div>
             </div>
+            <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+              <p className="text-xs text-amber-200">
+                Prefer standing walk-in? This does not reserve capacity or guarantee boarding. Capacity is checked only when the driver scans the pass.
+              </p>
+              <button disabled={bookingLoading} onClick={handleGenerateWalkInPass} className="btn-ghost text-xs shrink-0">
+                Generate Walk-in Pass
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* DYNAMIC QR MODAL */}
-      {activeQRBooking && (
+      {activePass && (
         <DynamicQRModal
-          booking={activeQRBooking}
-          onClose={() => setActiveQRBooking(null)}
+          pass={activePass}
+          onClose={() => setActivePass(null)}
         />
       )}
 

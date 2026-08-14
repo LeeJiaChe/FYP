@@ -5,4 +5,4 @@ export {
   scheduleTripSchema,
   tripIdSchema,
 } from "./contracts/trip.schemas";
-export { listTrips, scheduleTrip } from "./application/schedule-trip";
+export { getTripDetail, listTrips, scheduleTrip } from "./application/schedule-trip";

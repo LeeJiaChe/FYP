@@ -10,7 +10,7 @@
     "lint:legacy": "eslint .",
     "typecheck": "next typegen && tsc --noEmit --pretty false",
     "test": "npm run test:unit",
-    "test:unit": "node --import tsx --test tests/specification/*.test.ts tests/unit/shared/*.test.ts tests/unit/fleet/*.test.ts tests/unit/trips/*.test.ts tests/unit/bookings/*.test.ts",
+    "test:unit": "node --import tsx --test tests/specification/*.test.ts tests/unit/shared/*.test.ts tests/unit/fleet/*.test.ts tests/unit/trips/*.test.ts tests/unit/bookings/*.test.ts tests/unit/boarding/*.test.ts",
     "test:integration": "node --import tsx scripts/run-integration-tests.ts",
     "test:architecture": "node --import tsx --test tests/architecture/*.test.ts",
     "verify": "npm run lint && npm run typecheck && npm run test:unit && npm run test:architecture",

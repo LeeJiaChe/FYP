@@ -34,11 +34,6 @@ export const updateBusSchema = createBusSchema.partial().extend({
 });
 
 
-export const updateTripStatusSchema = z.object({
-  status: z.enum(["NOT_STARTED", "BOARDING", "DEPARTED", "ARRIVED", "DELAYED", "CANCELLED"]),
-  delayReason: z.string().optional(),
-});
-
 export const submitAppealSchema = z.object({
   reason: z.string().min(10, "Please provide a detailed explanation (at least 10 characters)"),
 });

@@ -223,13 +223,15 @@ User ──┬── Booking ───── Penalty ── PenaltyAppeal
 Trip ──── Seat ──── DeviceStatusLog
 ```
 
-`Stop`, ordered `RouteStop`, `TripStop`, `TripSegment`, and `TripSeat` are now
-implemented. `Booking`, `ReservedSeatSegment`, and separate `WaitlistEntry` now
-provide segment-aware reservations. `WalkInIntent`, `WalkInJourney`,
-`StandingSegmentClaim`, and `TripLocationSample` remain later phases.
-`Seat.status` and device models are temporary compatibility and never determine
-reserved availability. See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md)
-and [Phase 4 report](./framework/PHASE_4_RESERVED_JOURNEYS.md).
+`Stop`, ordered `RouteStop`, `TripStop`, `TripSegment`, and `TripSeat` provide the
+directional Trip snapshot. `Booking`, `ReservedSeatSegment`, and `WaitlistEntry`
+provide segment-aware reservations. Phase 5 adds `WalkInIntent`, admitted
+`WalkInJourney`, segment standing claims, dynamic passes, assigned-driver
+boarding, alighting evidence, and Trip progress. `TripLocationSample` remains a
+later phase. `Seat.status` and device models are temporary compatibility and
+never determine reserved or standing availability. See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md),
+[Phase 4 report](./framework/PHASE_4_RESERVED_JOURNEYS.md), and
+[Phase 5 report](./framework/PHASE_5_BOARDING_AND_WALKIN.md).
 
 ---
 
@@ -261,7 +263,7 @@ that the prototype already satisfies the full audit:
 
 - **JWT sessions** stored in HTTP-only cookies (`fyp_session`) — inaccessible to JavaScript
 - **QR tokens** have explicit Reserved/Walk-in/Alighting purposes and short expiry; rotation reduces replay risk but does not guarantee screenshot prevention
-- **QR scanning** uses a real browser camera in the final product; token paste is only a development/demo fallback
+- **QR scanning** uses the browser camera and native barcode detection where supported; token paste is visibly restricted to a development/demo fallback
 - **Internal jobs and realtime publication** authenticate bounded, validated requests in every environment
 - **Reserved concurrency** is enforced by unique seat/TripSegment claims in PostgreSQL transactions
 - **Walk-in concurrency** locks every requested TripSegment before capacity check and claim
@@ -314,7 +316,6 @@ FYPBusSystem/
 ├── lib/
 │   ├── auth.ts         # JWT helpers & getCurrentUser()
 │   ├── prisma.ts       # Prisma client singleton
-│   ├── qr.ts           # QR token generation & verification
 │   ├── realtime-client.ts # Server-side HTTP bridge to realtime service
 │   ├── theme.tsx       # Theme provider
 │   └── validations.ts  # Zod schemas

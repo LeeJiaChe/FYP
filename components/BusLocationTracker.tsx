@@ -76,8 +76,6 @@ export default function BusLocationTracker({
       ? "#4ade80"
       : status === "DEPARTED"
       ? "var(--accent-secondary)"
-      : status === "DELAYED"
-      ? "#fbbf24"
       : status === "ARRIVED"
       ? "#4ade80"
       : "var(--text-muted)";

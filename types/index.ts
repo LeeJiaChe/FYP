@@ -31,7 +31,8 @@ export interface Trip {
   driverId: string;
   departureTime: string;
   estimatedArrivalTime: string;
-  status: "SCHEDULED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "DELAYED" | "CANCELLED";
+  status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
+  delayMinutes?: number;
   createdAt: string;
   
   // Relations

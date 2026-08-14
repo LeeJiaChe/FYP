@@ -242,16 +242,25 @@ export async function inspectArchitectureV2Source(
   workspaceRoot: string,
 ): Promise<DependencyViolation[]> {
   const files = await sourceFiles(path.join(workspaceRoot, "src"));
-  const migratedPhase4Routes = [
+  const migratedRoutes = [
     "app/api/bookings/route.ts",
     "app/api/bookings/mine/route.ts",
     "app/api/bookings/availability/route.ts",
     "app/api/bookings/[id]/cancel/route.ts",
     "app/api/waitlist/route.ts",
     "app/api/waitlist/[id]/route.ts",
+    "app/api/bookings/[id]/qr-token/route.ts",
+    "app/api/passes/alighting/route.ts",
+    "app/api/trips/[id]/alight/route.ts",
+    "app/api/trips/[id]/manifest/route.ts",
+    "app/api/trips/[id]/manual-checkin/route.ts",
+    "app/api/trips/[id]/progress/route.ts",
+    "app/api/trips/[id]/scan/route.ts",
+    "app/api/walk-ins/route.ts",
+    "app/api/walk-ins/[id]/pass/route.ts",
   ].map((file) => path.join(workspaceRoot, file));
   const results = await Promise.all(
-    [...files, ...migratedPhase4Routes].map(async (file) =>
+    [...files, ...migratedRoutes].map(async (file) =>
       inspectDependencyPolicy(
         path.relative(workspaceRoot, file),
         await readFile(file, "utf8"),

@@ -228,3 +228,40 @@ export async function listTripRecords(
     orderBy: { departureTime: "asc" },
   });
 }
+
+export async function findTripDetailRecord(tripId: string) {
+  return prisma.trip.findUnique({
+    where: { id: tripId },
+    include: {
+      route: { select: { name: true } },
+      bus: { select: { plateNumber: true } },
+      driver: { select: { id: true, name: true } },
+      tripStops: { orderBy: { position: "asc" } },
+      tripSeats: {
+        orderBy: { seatNumber: "asc" },
+        include: {
+          bookings: {
+            where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+            include: {
+              student: { select: { id: true, name: true, studentId: true } },
+              boardingTripStop: { select: { stopName: true } },
+              dropOffTripStop: { select: { stopName: true } },
+            },
+          },
+        },
+      },
+      waitlistEntries: {
+        where: { status: "WAITING" },
+        orderBy: [{ queuedAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          studentId: true,
+          status: true,
+          queuedAt: true,
+          boardingTripStopId: true,
+          dropOffTripStopId: true,
+        },
+      },
+    },
+  });
+}

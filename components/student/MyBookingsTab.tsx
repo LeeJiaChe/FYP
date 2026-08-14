@@ -1,13 +1,16 @@
 "use client";
 
-import { Ticket, RefreshCw, Clock, QrCode, Navigation } from "lucide-react";
+import { Clock, DoorOpen, Navigation, QrCode, RefreshCw, Ticket } from "lucide-react";
 
 interface MyBookingsTabProps {
   myBookings: any[];
   waitlistEntries: any[];
+  walkInIntents: any[];
   onRefresh: () => void;
   onBrowseTrips: () => void;
   onOpenQR: (booking: any) => void;
+  onOpenWalkInQR: (intent: any) => void;
+  onOpenAlightingQR: (kind: "RESERVED" | "WALK_IN", record: any) => void;
   onTrackTrip: (trip: any) => void;
   onCancelBooking: (bookingId: string) => void;
   onLeaveWaitlist: (entryId: string) => void;
@@ -16,230 +19,75 @@ interface MyBookingsTabProps {
 export default function MyBookingsTab({
   myBookings,
   waitlistEntries,
+  walkInIntents,
   onRefresh,
   onBrowseTrips,
   onOpenQR,
+  onOpenWalkInQR,
+  onOpenAlightingQR,
   onTrackTrip,
   onCancelBooking,
   onLeaveWaitlist,
 }: MyBookingsTabProps) {
+  const empty = myBookings.length === 0 && waitlistEntries.length === 0 && walkInIntents.length === 0;
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="section-title text-xl">My Bookings</h2>
-          <p className="section-subtitle">
-            Your reserved shuttles & boarding passes
-          </p>
-        </div>
-        <button
-          onClick={onRefresh}
-          className="btn-ghost flex items-center gap-1.5 text-xs"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Refresh
-        </button>
+        <div><h2 className="section-title text-xl">My journeys and passes</h2><p className="section-subtitle">Reserved seats, waitlist requests and non-guaranteed walk-in intentions</p></div>
+        <button onClick={onRefresh} className="btn-ghost flex items-center gap-1.5 text-xs"><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
       </div>
 
-      {myBookings.length === 0 && waitlistEntries.length === 0 ? (
-        <div
-          className="py-16 text-center rounded-2xl"
-          style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <Ticket
-            className="w-10 h-10 mx-auto mb-3"
-            style={{ color: "var(--text-muted)" }}
-          />
-          <p
-            className="font-bold"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            No bookings yet
-          </p>
-          <p
-            className="text-xs mt-1"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Browse the schedule to book a seat!
-          </p>
-          <button
-            onClick={onBrowseTrips}
-            className="btn-primary mt-4 text-xs"
-          >
-            Browse Trips
-          </button>
+      {empty ? (
+        <div className="py-16 text-center rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          <Ticket className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+          <p className="font-bold" style={{ color: "var(--text-secondary)" }}>No journeys yet</p>
+          <button onClick={onBrowseTrips} className="btn-primary mt-4 text-xs">Browse Trips</button>
         </div>
       ) : (
         <div className="space-y-4">
-          {myBookings.map((b, idx) => {
-            return (
-            <div
-              key={b.id}
-              className="rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center gap-5 transition-all duration-200 animate-slide-up"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                animationDelay: `${idx * 60}ms`,
-              }}
-            >
-              <div
-                className="w-1 self-stretch rounded-full shrink-0 hidden md:block"
-                style={{
-                  background:
-                    b.status === "CONFIRMED"
-                      ? "var(--accent-primary)"
-                      : b.status === "COMPLETED"
-                          ? "#22c55e"
-                          : "var(--border)",
-                }}
-              />
-
+          {myBookings.map((booking) => (
+            <article key={booking.id} className="rounded-2xl p-5 flex flex-col md:flex-row gap-5 md:items-center" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
               <div className="flex-1 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className="badge"
-                    style={
-                      b.status === "CONFIRMED"
-                        ? {
-                            background: "rgba(99,102,241,0.15)",
-                            color: "var(--accent-secondary)",
-                            borderColor: "var(--border-hover)",
-                          }
-                        : b.status === "COMPLETED"
-                            ? {
-                                background: "rgba(34,197,94,0.15)",
-                                color: "#4ade80",
-                                borderColor: "rgba(34,197,94,0.3)",
-                              }
-                            : {
-                                background: "var(--bg-surface)",
-                                color: "var(--text-muted)",
-                                borderColor: "var(--border)",
-                              }
-                    }
-                  >
-                    {b.status}
-                  </span>
-                  <span
-                    className="text-xs font-bold"
-                    style={{ color: "var(--accent-secondary)" }}
-                  >
-                    {b.trip.busPlateNumber}
-                  </span>
-                </div>
-
-                <h3
-                  className="font-bold text-base"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  {b.trip.routeName}
-                </h3>
-
-                <div
-                  className="flex flex-wrap items-center gap-4 text-xs"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  <span className="flex items-center gap-1">
-                    <Clock
-                      className="w-3.5 h-3.5"
-                      style={{ color: "var(--accent-secondary)" }}
-                    />
-                    {new Date(b.trip.departureTime).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                  {b.seatNumber && (
-                    <span
-                      className="font-bold px-2 py-0.5 rounded-lg"
-                      style={{
-                        background: "var(--accent-glow)",
-                        color: "var(--accent-secondary)",
-                        border: "1px solid var(--border-hover)",
-                      }}
-                    >
-                      Seat #{b.seatNumber}
-                    </span>
-                  )}
-                  <span>
-                    {b.boardingStopName} → {b.dropOffStopName}
-                  </span>
-                  {b.checkInMethod && (
-                    <span
-                      className="font-medium"
-                      style={{ color: "#4ade80" }}
-                    >
-                      ✓ Checked in via {b.checkInMethod}
-                    </span>
-                  )}
+                <span className="badge">RESERVED · {booking.status}</span>
+                <h3 className="font-bold">{booking.trip.routeName}</h3>
+                <div className="flex flex-wrap gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
+                  <span><Clock className="inline w-3 h-3" /> {new Date(booking.trip.departureTime).toLocaleString()}</span>
+                  <strong>Seat {booking.seatNumber}</strong>
+                  <span>{booking.boardingStopName} → {booking.dropOffStopName}</span>
+                  {booking.checkedInAt && <span className="text-emerald-400">Boarded via {booking.checkInMethod}</span>}
+                  {booking.actualAlightedAt && <span className="text-cyan-400">Alighted via {booking.alightingMethod}</span>}
                 </div>
               </div>
-
               <div className="flex flex-wrap gap-2">
-                {b.status === "CONFIRMED" && (
-                  <>
-                    <button
-                      onClick={() => onOpenQR(b)}
-                      className="btn-primary flex items-center gap-1.5 text-xs"
-                    >
-                      <QrCode className="w-4 h-4" />
-                      Boarding Pass
-                    </button>
-                    <button
-                      onClick={() => onTrackTrip(b.trip)}
-                      className="btn-ghost flex items-center gap-1.5 text-xs"
-                    >
-                      <Navigation className="w-3.5 h-3.5" />
-                      Track
-                    </button>
-                    <button
-                      onClick={() => onCancelBooking(b.id)}
-                      className="btn-ghost text-xs ml-auto"
-                      style={{
-                        color: "#f87171",
-                        borderColor: "rgba(239,68,68,0.3)",
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </>
-                )}
+                {booking.status === "CONFIRMED" && !booking.checkedInAt && <button onClick={() => onOpenQR(booking)} className="btn-primary text-xs"><QrCode className="inline w-4 h-4" /> Reserved Pass</button>}
+                {booking.status === "CONFIRMED" && booking.checkedInAt && !booking.actualAlightedAt && <button onClick={() => onOpenAlightingQR("RESERVED", booking)} className="btn-primary text-xs"><DoorOpen className="inline w-4 h-4" /> Exit Pass</button>}
+                <button onClick={() => onTrackTrip(booking.trip)} className="btn-ghost text-xs"><Navigation className="inline w-3 h-3" /> Track</button>
+                {booking.status === "CONFIRMED" && !booking.checkedInAt && <button onClick={() => onCancelBooking(booking.id)} className="btn-ghost text-xs text-red-400">Cancel</button>}
               </div>
-            </div>
-          );
-          })}
-          {waitlistEntries.map((entry, idx) => (
-            <div
-              key={entry.id}
-              className="rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center gap-5 animate-slide-up"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid rgba(245,158,11,0.3)",
-                animationDelay: `${(myBookings.length + idx) * 60}ms`,
-              }}
-            >
+            </article>
+          ))}
+
+          {walkInIntents.map((intent) => (
+            <article key={intent.id} className="rounded-2xl p-5 flex flex-col md:flex-row gap-5 md:items-center border border-amber-500/30 bg-amber-500/5">
               <div className="flex-1 space-y-2">
-                <span className="badge" style={{ color: "#fbbf24" }}>
-                  WAITLIST {entry.status}
-                </span>
-                <h3 className="font-bold text-base">{entry.trip.routeName}</h3>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  {entry.boardingStopName} → {entry.dropOffStopName} · queued {new Date(entry.queuedAt).toLocaleString()}
-                </p>
+                <span className="badge text-amber-300">WALK-IN · {intent.status}</span>
+                <h3 className="font-bold">{intent.trip.routeName}</h3>
+                <p className="text-xs text-slate-400">{intent.boardingStopName} → {intent.dropOffStopName}</p>
+                <p className="text-xs font-semibold text-amber-200">This pass does not guarantee boarding. Standing capacity is checked when scanned.</p>
+                {intent.journey && <p className="text-xs text-emerald-400">Boarded {new Date(intent.journey.boardedAt).toLocaleString()}{intent.journey.actualAlightedAt ? ` · alighted via ${intent.journey.alightingMethod}` : ""}</p>}
               </div>
-              {entry.status === "WAITING" && (
-                <button
-                  onClick={() => onLeaveWaitlist(entry.id)}
-                  className="btn-ghost text-xs"
-                  style={{ color: "#f87171" }}
-                >
-                  Leave Waitlist
-                </button>
-              )}
-            </div>
+              <div className="flex gap-2">
+                {intent.status === "PENDING" && <button onClick={() => onOpenWalkInQR(intent)} className="btn-primary text-xs"><QrCode className="inline w-4 h-4" /> Walk-in Pass</button>}
+                {intent.journey?.status === "BOARDED" && !intent.journey.actualAlightedAt && <button onClick={() => onOpenAlightingQR("WALK_IN", { ...intent, id: intent.journey.id })} className="btn-primary text-xs"><DoorOpen className="inline w-4 h-4" /> Exit Pass</button>}
+              </div>
+            </article>
+          ))}
+
+          {waitlistEntries.map((entry) => (
+            <article key={entry.id} className="rounded-2xl p-5 flex flex-col md:flex-row gap-5 md:items-center border border-amber-500/30" style={{ background: "var(--bg-card)" }}>
+              <div className="flex-1"><span className="badge text-amber-300">WAITLIST · {entry.status}</span><h3 className="font-bold mt-2">{entry.trip.routeName}</h3><p className="text-xs text-slate-400">{entry.boardingStopName} → {entry.dropOffStopName} · queued {new Date(entry.queuedAt).toLocaleString()}</p></div>
+              {entry.status === "WAITING" && <button onClick={() => onLeaveWaitlist(entry.id)} className="btn-ghost text-xs text-red-400">Leave Waitlist</button>}
+            </article>
           ))}
         </div>
       )}

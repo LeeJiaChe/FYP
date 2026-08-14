@@ -535,9 +535,9 @@ typed errors, and the owning application use case.
 
 ## 14. Approved operating and migration decisions
 
-- Terminal Trip states are irreversible. A future admin emergency cancellation
-  after departure requires a reason and a minimal append-only
-  `TripStatusHistory` audit record; Phase 1 does not implement it.
+- Terminal Trip states are irreversible. Admin emergency cancellation after
+  departure requires a reason and appends a minimal `TripStatusHistory` audit
+  record.
 - Camera scanning is required in the final web product; token paste is only a
   development/demo fallback.
 - Route travel-time offsets derive TripStop planned times.
@@ -550,6 +550,7 @@ typed errors, and the owning application use case.
   processes remains an implementation/deployment decision, not an unresolved
   product rule.
 
-All product decisions required to implement Phase 4 have now been recorded. Later
-implementation discoveries may still require an ADR, but must not silently alter
-these rules.
+Phases 3 through 5 now implement topology/inventory, reserved journeys/waitlist,
+and boarding/walk-in/alighting/Trip progress respectively. Penalty/no-show,
+telemetry, and later legacy cleanup remain implementation work. Later discoveries
+may still require an ADR, but must not silently alter these product rules.

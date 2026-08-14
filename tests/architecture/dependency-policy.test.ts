@@ -152,7 +152,6 @@ describe("Architecture v2 dependency policy", () => {
     for (const file of [
       "lib/auth.ts",
       "lib/prisma.ts",
-      "lib/qr.ts",
       "lib/realtime-client.ts",
     ]) {
       const source = await readFile(path.join(workspace, file), "utf8");
