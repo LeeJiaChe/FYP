@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
 import { reviewAppealSchema } from "@/lib/validations";
+import { productPolicy } from "@/shared/config/policies";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -48,8 +49,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           data: { status: "OVERTURNED" },
         });
 
-        const newCreditScore = Math.min(100, appeal.student.creditScore + appeal.penalty.creditPointsDeducted);
-        const isRestricted = newCreditScore < 40;
+        const newCreditScore = Math.min(
+          productPolicy.initialCredit,
+          appeal.student.creditScore + appeal.penalty.creditPointsDeducted,
+        );
+        const isRestricted =
+          newCreditScore < productPolicy.bookingRestrictionBelowCredit;
 
         await tx.user.update({
           where: { id: appeal.studentId },

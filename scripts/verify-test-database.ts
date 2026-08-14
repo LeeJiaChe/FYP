@@ -8,10 +8,10 @@ export interface VerifiedTestDatabase {
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
-function normalizedConnection(url: URL): string {
-  const copy = new URL(url);
-  copy.searchParams.sort();
-  return copy.toString();
+function databaseIdentity(url: URL): string {
+  return `${url.protocol}//${url.hostname}:${url.port}/${decodeURIComponent(
+    url.pathname.replace(/^\//, ""),
+  )}`;
 }
 
 export function verifyTestDatabaseEnvironment(
@@ -52,7 +52,7 @@ export function verifyTestDatabaseEnvironment(
     }
 
     if (
-      normalizedConnection(developmentUrl) === normalizedConnection(testUrl)
+      databaseIdentity(developmentUrl) === databaseIdentity(testUrl)
     ) {
       throw new Error(
         "TEST_DATABASE_URL must not equal the normal development DATABASE_URL",

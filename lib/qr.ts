@@ -1,10 +1,11 @@
+import "server-only";
+
 import jwt from "jsonwebtoken";
 import QRCode from "qrcode";
+import { serverEnvironment } from "@/shared/config/env.server";
+import { productPolicy } from "@/shared/config/policies";
 
-const QR_SECRET = (process.env.QR_SECRET || process.env.JWT_SECRET) as string;
-if (!QR_SECRET) {
-  throw new Error("FATAL: QR_SECRET or JWT_SECRET environment variable is not set.");
-}
+const QR_SECRET = serverEnvironment.qr.signingSecret;
 
 export interface QRTokenPayload {
   bookingId: string;
@@ -21,7 +22,7 @@ export async function generateQRTokenData(payload: Omit<QRTokenPayload, "issuedA
       issuedAt,
     },
     QR_SECRET,
-    { expiresIn: "60s" } // 60 seconds TTL for dynamic security
+    { expiresIn: productPolicy.qrTokenLifetimeSeconds }
   );
 
   const qrDataUrl = await QRCode.toDataURL(token, {

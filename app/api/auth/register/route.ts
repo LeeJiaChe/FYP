@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword, signToken, COOKIE_NAME } from "@/lib/auth";
 import { registerSchema } from "@/lib/validations";
 import { registerRateLimiter } from "@/lib/rate-limit";
+import { productPolicy } from "@/shared/config/policies";
 
 export async function POST(req: Request) {
   try {
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
         studentId: validated.studentId || `STU${Date.now().toString().slice(-6)}`,
         passwordHash,
         role: "STUDENT",
-        creditScore: 100,
+        creditScore: productPolicy.initialCredit,
         isBookingRestricted: false,
       },
     });

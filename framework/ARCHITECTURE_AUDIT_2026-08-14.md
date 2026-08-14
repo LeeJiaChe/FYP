@@ -381,7 +381,7 @@ work has begun. **This documentation task completes that exit condition.**
   bundling the approved font.
 
 Exit: the repository has trustworthy red/green evidence and a reproducible
-baseline. **Phase 1 is now authorized; it must stop before Phase 2.**
+baseline. **Phase 1 completed this exit condition.**
 
 ### Phase 2 — shared server foundation
 
@@ -389,10 +389,15 @@ baseline. **Phase 1 is now authorized; it must stop before Phase 2.**
   clock, ID schemas, `server-only`, origin checks, and security headers.
 - Add the one validated operating-policy configuration defined in Architecture
   §14; domain code receives resolved policy values and contains no magic numbers.
-- Centralize session/cookie/password policy and reduce session DTO data.
-- Keep Proxy optimistic; add secure actor/role/resource helpers for use cases.
+- Mark existing secret-bearing auth, QR, Prisma, and realtime internals as
+  server-only, while leaving the user-visible auth/session migration to its
+  ordered feature phase.
+- Add same-origin mutation protection and a thin transport adapter without
+  turning Proxy or Route Handlers into a second application framework.
 
 Exit: new feature code can be built without copying handler boilerplate.
+**Phase 2 completed this exit condition; see
+`framework/PHASE_2_SHARED_FOUNDATION.md`.**
 
 ### Phase 3 — directional topology and per-trip inventory
 
@@ -634,12 +639,17 @@ provisions PostgreSQL 16. The default Turbopack build is blocked by the sandbox'
 port restriction after removing the external font fetch, while the webpack
 production build completes. No schema or product migration occurred.
 
+### Phase 2 verification addendum
+
+Phase 2 added the shared server/configuration, policy, time, validation, Prisma,
+typed-error, HTTP-adapter, origin-protection, and dependency boundaries described
+in `framework/PHASE_2_SHARED_FOUNDATION.md`. Existing handlers remain legacy
+adapters except for narrow consumption of centralized values; no schema or
+product feature migration occurred.
+
 ## 13. Recommended next action
 
-Phase 1 is complete within the environment limits recorded above. The next task
-is **Phase 2 — shared server foundation**: validated server environment, common
-errors/HTTP adapter, Prisma boundary, clock/ID contracts, `server-only`, origin
-checks, security headers, and the centralized operating-policy configuration.
-
-Do not combine Phase 2 with Phase 3 schema/topology migration. Phase 2 has not
-started in this change.
+Phase 2 is complete within the environment limits recorded in its phase report.
+The next task is **Phase 3 — directional topology and per-trip inventory**. It
+must start as a separate change and begin with the PostgreSQL schema/migration
+slice defined in §8; this Phase 2 change deliberately stops before it.

@@ -1,12 +1,14 @@
 # Architecture v2
 
-Status: **Proposed; not yet implemented**
+Status: **Approved target; Phase 2 shared foundation implemented incrementally**
 
 Decision date: 2026-08-14
 
 Phase 0 owner amendments and pre-Phase-1 operating decisions aligned: 2026-08-14
 
 Companion audit: [`ARCHITECTURE_AUDIT_2026-08-14.md`](./ARCHITECTURE_AUDIT_2026-08-14.md)
+
+Phase 2 evidence: [`PHASE_2_SHARED_FOUNDATION.md`](./PHASE_2_SHARED_FOUNDATION.md)
 
 This document is the normative architecture proposal for the TAR UMT Campus
 Shuttle Management System. `APP_SPECIFICATION.md` remains the product source of
@@ -240,20 +242,23 @@ FYPBusSystem/
 │   └── shared/
 │       ├── config/
 │       │   ├── env.server.ts
-│       │   └── constants.ts
+│       │   ├── server-environment.ts
+│       │   └── policies.ts
+│       ├── application/
+│       │   └── application-error.ts
 │       ├── db/
-│       │   ├── prisma.ts
-│       │   └── transaction.ts
+│       │   └── prisma.server.ts
 │       ├── http/
-│       │   ├── api-error.ts
-│       │   ├── api-response.ts
-│       │   ├── handle-route.ts
+│       │   ├── error-response.ts
+│       │   ├── handle-route.server.ts
 │       │   └── origin-check.ts
 │       ├── realtime/
 │       │   ├── event-contracts.ts
 │       │   └── publisher.server.ts
 │       ├── time/
 │       │   └── clock.ts
+│       ├── validation/
+│       │   └── student-identity.ts
 │       ├── ui/
 │       │   ├── modal.tsx
 │       │   ├── confirm-dialog.tsx
@@ -261,7 +266,7 @@ FYPBusSystem/
 │       │   ├── empty-state.tsx
 │       │   └── status-badge.tsx
 │       └── types/
-│           └── branded-id.ts
+│           └── uuid.ts
 └── tests/
     ├── unit/
     │   ├── bookings/
@@ -568,7 +573,7 @@ admins do not manually enter each stop time.
 | `TripLocationSample` | NEW | Simulator-first, replaceable GPS telemetry history/latest state. |
 | `TripStatusHistory` | NEW | Minimal append-only audit evidence for exceptional Trip lifecycle changes. |
 
-No schema change is performed in Phase 0 or Phase 1.
+No schema change is performed in Phase 0, Phase 1, or Phase 2.
 
 ## 10. Authentication and security
 
@@ -578,6 +583,12 @@ No schema change is performed in Phase 0 or Phase 1.
   claims. The live user/session version is checked for protected operations.
 - Cookie settings are centralized. Mutating endpoints validate origin in addition
   to `SameSite`, validate content type and size, and use consistent 401/403 rules.
+- Browser mutations (`POST`, `PUT`, `PATCH`, and `DELETE`) require an `Origin`
+  matching the public request origin. Behind a normal reverse proxy, public origin
+  is derived from sanitized `X-Forwarded-Host`/`X-Forwarded-Proto`, falling back to
+  `Host` and the request URL. Deployments must overwrite untrusted forwarded
+  headers. Existing machine-only cron endpoints are exempt from browser-origin
+  validation because they authenticate a separate service secret.
 - Login/registration rate limiting must use a deployment-appropriate shared or
   host-provided limiter; a process-local map is not a security boundary.
 - Session and QR secrets are separate, validated at startup, and rotatable.
@@ -596,7 +607,11 @@ No schema change is performed in Phase 0 or Phase 1.
 - Realtime clients authenticate with a short-lived socket token issued by Next.js.
   Room membership is authorized from token claims; knowing a trip UUID is not
   permission to subscribe.
-- Add CSP and standard security headers. Do not disable browser zoom.
+- Apply a deliberately limited CSP (`frame-ancestors`, `object-src`, `base-uri`,
+  and `form-action`) plus clickjacking fallback, `nosniff`, strict referrer, and
+  least-privilege browser permissions. A strict `script-src`/`style-src` policy is
+  deferred until a tested nonce/hash design can support Next.js rendering without
+  brittle `unsafe-inline`. Do not disable browser zoom.
 
 ## 11. Realtime and scheduled jobs
 

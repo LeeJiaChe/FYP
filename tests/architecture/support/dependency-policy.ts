@@ -33,6 +33,10 @@ function isClientModule(source: string): boolean {
   return /^\s*["']use client["'];?/m.test(source.slice(0, 300));
 }
 
+function isServerOnlyModule(file: string): boolean {
+  return /\.server\.[cm]?[jt]sx?$/.test(file);
+}
+
 function featureOwner(file: string): string | undefined {
   return normalized(file).match(/(?:^|\/)src\/features\/([^/]+)\//)?.[1];
 }
@@ -74,6 +78,63 @@ export function inspectDependencyPolicy(
     }
   }
 
+  if (
+    isServerOnlyModule(fileName) &&
+    !imports.includes("server-only")
+  ) {
+    violations.push({
+      file,
+      rule: "server-module-must-declare-boundary",
+      detail: ".server modules must import server-only",
+    });
+  }
+
+  if (
+    fileName.includes("src/shared/") &&
+    imports.some((specifier) => specifier.startsWith("@/features/"))
+  ) {
+    violations.push({
+      file,
+      rule: "shared-must-not-import-features",
+      detail: "shared code cannot depend on a product feature",
+    });
+  }
+
+  if (
+    source.includes("new PrismaClient(") &&
+    fileName !== "src/shared/db/prisma.server.ts"
+  ) {
+    violations.push({
+      file,
+      rule: "only-shared-db-constructs-prisma",
+      detail: "Architecture v2 PrismaClient construction belongs in shared/db",
+    });
+  }
+
+  if (/\/src\/features\/[^/]+\/domain\//.test(`/${fileName}`)) {
+    for (const specifier of imports) {
+      if (
+        specifier === "react" ||
+        specifier.startsWith("react/") ||
+        specifier === "next" ||
+        specifier.startsWith("next/")
+      ) {
+        violations.push({
+          file,
+          rule: "domain-is-framework-independent",
+          detail: `domain module imports ${specifier}`,
+        });
+      }
+    }
+    if (/\bprocess\.env\b/.test(source)) {
+      violations.push({
+        file,
+        rule: "domain-is-framework-independent",
+        detail: "domain module reads process.env",
+      });
+    }
+  }
+
   const owner = featureOwner(fileName);
   if (owner) {
     for (const specifier of imports) {
@@ -101,6 +162,7 @@ export function inspectDependencyPolicy(
         specifier.includes("/infrastructure/") ||
         specifier.endsWith("/server") ||
         specifier.includes("/server/") ||
+        /\.server(?:\.[^/]*)?$/.test(specifier) ||
         /(?:^|\/)server(?:\.[^/]*)?$/.test(specifier)
       ) {
         violations.push({

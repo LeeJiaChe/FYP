@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
 import { generateQRTokenData } from "@/lib/qr";
+import { productPolicy } from "@/shared/config/policies";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -44,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       token,
       qrDataUrl,
       issuedAt,
-      expiresInSeconds: 60,
+      expiresInSeconds: productPolicy.qrTokenLifetimeSeconds,
     });
   } catch (err: any) {
     return NextResponse.json({ error: "Failed to generate QR token" }, { status: 500 });

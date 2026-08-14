@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyRealtime } from "@/lib/realtime-client";
+import { productPolicy } from "@/shared/config/policies";
 
 export async function POST(req: Request) {
   try {
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
           }
 
           // Create Penalty record
-          const penaltyDeduction = 15;
+          const penaltyDeduction = productPolicy.noShowPenaltyPoints;
           const penalty = await tx.penalty.create({
             data: {
               bookingId: booking.id,
@@ -62,9 +63,11 @@ export async function POST(req: Request) {
             where: { id: booking.studentId },
           });
 
-          const currentScore = currentStudent?.creditScore ?? 100;
+          const currentScore =
+            currentStudent?.creditScore ?? productPolicy.initialCredit;
           const newCreditScore = Math.max(0, currentScore - penaltyDeduction);
-          const isRestricted = newCreditScore < 40;
+          const isRestricted =
+            newCreditScore < productPolicy.bookingRestrictionBelowCredit;
 
           await tx.user.update({
             where: { id: booking.studentId },

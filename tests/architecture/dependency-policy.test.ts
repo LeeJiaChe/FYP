@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 import path from "node:path";
 
 import {
   inspectArchitectureV2Source,
   inspectDependencyPolicy,
+  sourceImports,
 } from "./support/dependency-policy";
 
 function rules(file: string, source: string): string[] {
@@ -61,6 +63,40 @@ describe("Architecture v2 dependency policy", () => {
       ),
       ["no-server-import-in-client"],
     );
+    assert.deepEqual(
+      rules(
+        "src/features/location/ui/LiveMap.tsx",
+        `'use client';\nimport { env } from "@/shared/config/env.server";`,
+      ),
+      ["no-server-import-in-client"],
+    );
+  });
+
+  it("allows only shared DB infrastructure to construct PrismaClient", () => {
+    assert.deepEqual(
+      rules(
+        "src/features/bookings/infrastructure/booking.prisma.ts",
+        'import { PrismaClient } from "@prisma/client";\nexport const db = new PrismaClient();',
+      ),
+      ["only-shared-db-constructs-prisma"],
+    );
+  });
+
+  it("requires explicit server-only markers and framework-free domains", () => {
+    assert.deepEqual(
+      rules(
+        "src/shared/config/env.server.ts",
+        "export const secret = process.env.JWT_SECRET;",
+      ),
+      ["server-module-must-declare-boundary"],
+    );
+    assert.deepEqual(
+      rules(
+        "src/features/bookings/domain/policy.ts",
+        'import { cookies } from "next/headers";\nexport const value = process.env.VALUE;',
+      ),
+      ["domain-is-framework-independent", "domain-is-framework-independent"],
+    );
   });
 
   it("rejects persistence and business-layer imports in Route Handlers", () => {
@@ -102,5 +138,21 @@ describe("Architecture v2 dependency policy", () => {
     );
 
     assert.deepEqual(violations, []);
+  });
+
+  it("marks current sensitive legacy internals as server-only during migration", async () => {
+    const workspace = path.resolve(import.meta.dirname, "../..");
+    for (const file of [
+      "lib/auth.ts",
+      "lib/prisma.ts",
+      "lib/qr.ts",
+      "lib/realtime-client.ts",
+    ]) {
+      const source = await readFile(path.join(workspace, file), "utf8");
+      assert.ok(
+        sourceImports(source).includes("server-only"),
+        `${file} must import server-only`,
+      );
+    }
   });
 });

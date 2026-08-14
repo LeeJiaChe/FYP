@@ -95,7 +95,7 @@ an internal capacity concept and is not a required user-facing wizard step.
 ## 5. Normative logical data model
 
 `framework/ARCHITECTURE.md` contains the migration-oriented physical proposal.
-The actual Prisma schema remains unchanged through Phase 1.
+The actual Prisma schema remains unchanged through Phase 2.
 
 ### 5.1 Identity and fleet
 
@@ -546,6 +546,6 @@ typed errors, and the owning application use case.
   processes remains an implementation/deployment decision, not an unresolved
   product rule.
 
-All product decisions required to begin Phase 1 have now been recorded. Later
+All product decisions required to begin Phase 3 have now been recorded. Later
 implementation discoveries may still require an ADR, but must not silently alter
 these rules.

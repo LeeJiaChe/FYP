@@ -247,14 +247,16 @@ the [data-model proposal](./framework/ARCHITECTURE.md#9-architecture-v2-data-mod
 | `npm test` | Run pure unit/specification tests |
 | `npm run test:architecture` | Enforce Architecture v2 dependency boundaries |
 | `npm run test:integration` | Run guarded tests against dedicated PostgreSQL (`*_test`) |
-| `npm run verify` | Run the fast non-database Phase 1 gate |
+| `npm run verify` | Run the fast non-database Architecture v2 gate |
 
 ---
 
 ## 🔒 Security Direction
 
-These are Architecture v2 requirements, not claims that the prototype already
-satisfies the audit:
+The Phase 2 shared security foundation is documented in
+[`framework/PHASE_2_SHARED_FOUNDATION.md`](./framework/PHASE_2_SHARED_FOUNDATION.md).
+The product-specific items below remain Architecture v2 requirements, not claims
+that the prototype already satisfies the full audit:
 
 - **JWT sessions** stored in HTTP-only cookies (`fyp_session`) — inaccessible to JavaScript
 - **QR tokens** have explicit Reserved/Walk-in/Alighting purposes and short expiry; rotation reduces replay risk but does not guarantee screenshot prevention

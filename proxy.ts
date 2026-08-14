@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { assertSameOriginMutation } from "@/shared/http/origin-check";
+
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 async function verifyJWTEdge(
   token: string,
@@ -50,6 +53,27 @@ async function verifyJWTEdge(
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (
+    pathname.startsWith("/api/") &&
+    MUTATION_METHODS.has(request.method) &&
+    !pathname.startsWith("/api/admin/cron/")
+  ) {
+    try {
+      assertSameOriginMutation(request);
+    } catch {
+      return NextResponse.json(
+        {
+          error: {
+            code: "FORBIDDEN",
+            message: "Cross-origin mutation rejected",
+          },
+        },
+        { status: 403 },
+      );
+    }
+  }
+
   const token = request.cookies.get("fyp_session")?.value;
   const secret = process.env.JWT_SECRET;
 
@@ -143,5 +167,11 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/student/:path*", "/driver/:path*", "/admin/:path*"],
+  matcher: [
+    "/",
+    "/student/:path*",
+    "/driver/:path*",
+    "/admin/:path*",
+    "/api/:path*",
+  ],
 };

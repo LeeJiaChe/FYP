@@ -47,6 +47,15 @@ describe("integration database safety", () => {
         }),
       /must not equal/,
     );
+    assert.throws(
+      () =>
+        verifyTestDatabaseEnvironment({
+          DATABASE_URL: `${shared}?schema=public`,
+          TEST_DATABASE_URL: `${shared}?schema=integration`,
+          TEST_DATABASE_CONFIRM: confirmation,
+        }),
+      /must not equal/,
+    );
   });
 
   it("requires an explicit destructive-test acknowledgement", () => {

@@ -43,7 +43,9 @@ Integration execution requires all of the following:
 
 1. explicit `TEST_DATABASE_URL` using `postgres:` or `postgresql:`;
 2. a database name ending in `_test`;
-3. a target different from `DATABASE_URL`, when the latter exists;
+3. a physical database target different from `DATABASE_URL`, when the latter
+   exists (credentials and connection query parameters do not make the same
+   host/database safe);
 4. `TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION` acknowledgement.
 
 There is no SQLite fallback. Future destructive fixture setup must call the same

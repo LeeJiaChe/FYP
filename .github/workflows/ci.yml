@@ -4,7 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      - main
+      - master
       - architecture-v2
 
 concurrency:
@@ -38,6 +38,7 @@ jobs:
       JWT_SECRET: ci-session-secret-at-least-32-characters
       QR_SECRET: ci-qr-secret-distinct-at-least-32-characters
       REALTIME_SERVICE_SECRET: ci-realtime-secret-at-least-32-characters
+      REALTIME_URL: http://localhost:4000
 
     steps:
       - name: Check out repository

@@ -12,7 +12,13 @@ The guard enforces:
 - no server, infrastructure, or Prisma import from a `use client` module;
 - no Prisma, transactions, domain/application/infrastructure imports in App
   Router Route Handlers; they delegate to feature server facades.
+- only `src/shared/db/prisma.server.ts` constructs PrismaClient for Architecture
+  v2 code;
+- `.server.ts` modules explicitly import `server-only`;
+- shared code cannot import features, and domain code cannot import Next/React or
+  read environment variables.
 
-The existing root `app/`, `components/`, and `lib/` tree is audited legacy code.
-It is intentionally not grandfathered into `src/`, and it remains covered by the
-documented migration plan rather than weakening the Architecture v2 rules.
+The existing root `app/`, `components/`, and most of `lib/` remain audited legacy
+code. Phase 2 additionally verifies `server-only` markers on current auth,
+Prisma, QR, and realtime publisher internals while leaving their feature
+migration for later phases.

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { createBookingSchema } from "@/lib/validations";
 import { notifyRealtime } from "@/lib/realtime-client";
+import { productPolicy } from "@/shared/config/policies";
 
 export async function POST(req: Request) {
   try {
@@ -11,9 +12,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized. Student role required." }, { status: 403 });
     }
 
-    if (user.isBookingRestricted || user.creditScore < 40) {
+    if (
+      user.isBookingRestricted ||
+      user.creditScore < productPolicy.bookingRestrictionBelowCredit
+    ) {
       return NextResponse.json(
-        { error: "Booking restricted due to low credit score (< 40 points). Please resolve active penalties." },
+        {
+          error: `Booking restricted due to low credit score (< ${productPolicy.bookingRestrictionBelowCredit} points). Please resolve active penalties.`,
+        },
         { status: 403 }
       );
     }
