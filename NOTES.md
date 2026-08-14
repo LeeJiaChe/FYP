@@ -1,6 +1,12 @@
 # Project Assumptions & Design Decisions (NOTES.md)
 
-1. **Database Provider**: Using PostgreSQL with Prisma ORM. The schema adheres 100% to the specification entities and field names.
+> These notes include historical implementation assumptions. Unresolved items and
+> current recommendations are tracked in
+> [`framework/ARCHITECTURE_AUDIT_2026-08-14.md`](./framework/ARCHITECTURE_AUDIT_2026-08-14.md);
+> approved Architecture v2 rules belong in
+> [`framework/ARCHITECTURE.md`](./framework/ARCHITECTURE.md) or a focused ADR.
+
+1. **Database Provider**: PostgreSQL with Prisma ORM is intentional and must be preserved. Architecture v2 may evolve the schema through forward migrations where correctness requires additional constraints or an approved segment model.
 
 2. **Realtime Service**: Standalone Node.js service running in `/realtime` using Express and Socket.io. Next.js API routes trigger realtime broadcasts via HTTP requests to `http://localhost:4000/emit`. Two env vars are intentionally split:
    - `REALTIME_URL` (server-only, no `NEXT_PUBLIC_` prefix) — used by `lib/realtime-client.ts` in API routes. Never exposed to client bundle.
@@ -23,7 +29,7 @@
 
 8. **Directional Routes & Leg-Based Booking Flow**:
    - Routes are single-directional (`->`). Bidirectional routes from the original spec are split into explicit outbound and inbound routes.
-   - Booking wizard: `Route → Date → From/To Segment → Time & Seat`. Seat availability is checked for the whole trip, but the student's from/to selection is metadata; full per-segment seat reservation is out of scope for FYP (spec §5.3 does not require it).
+   - The current booking wizard displays `Route → Date → From/To Segment → Time & Seat`, but the selected segment is not persisted or sent in the booking request. Whether to persist segment metadata, implement segment-aware capacity, or remove the step is an unresolved product decision; the UI must not imply behavior the model does not support.
 
 9. **Route API Separation**:
    - `GET /api/routes` — public authenticated endpoint (any logged-in role) for reading routes in the student booking UI.
@@ -32,10 +38,10 @@
 
 10. **QR Scanner UI**: The driver's QR scanner currently requires pasting the JWT token string (text input). In a real deployment, this would use a device camera with a barcode scanning library. For demo/FYP purposes, the paste-based scanner is sufficient and is explicitly a simulation.
 
-11. **Platform Strategy**: Currently targeting web app only. No PWA/mobile app decision has been finalized yet. The existing PWA configuration (manifest and meta tags) is left as-is for now, and a decision on Native vs PWA will be settled after Phase 4. All core application logic has been audited and fixed across Phases 1-3.
+11. **Platform Strategy**: The specification requires a responsive installable PWA; a native mobile app is not required. Offline trip-list caching remains stretch scope. The current manifest/meta foundation is incomplete because the declared icons are placeholder pixels and installability has not been verified.
 
 12. **Analytics Historical Coverage**: Historical trip data from all buses (including those now RETIRED) is included in analytics aggregations. This is the correct decision for accurate historical demand reporting. Assumption logged here per spec §3 instruction.
 
-13. **Waitlist Auto-Promotion Lead Time**: Currently instant (no time cutoff). Whether to disable promotion within 15 minutes of departure is a UX decision pending user input. See Audit Report Q1.
+13. **Waitlist Auto-Promotion Lead Time**: Currently instant (no time cutoff). The cutoff and the interaction between post-deadline no-show detection and waitlist promotion require an explicit rule. See audit unresolved question Q5.
 
-14. **Driver Account Deletion Handling**: Currently no cascade logic exists for driver deletion while trips are assigned. `Trip.driverId` uses `onDelete: SetNull` at the schema level, so driver deletion sets the trip to "Unassigned" automatically at the DB level. No additional application-level cascade needed.
+14. **Driver Account Deletion Handling**: `Trip.driverId` uses `onDelete: SetNull`, so a database-level driver deletion would unassign trips. The application does not currently expose the promised driver deletion flow; Architecture v2 must define authorization, future-trip handling, and audit behavior before implementing it.

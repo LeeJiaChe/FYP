@@ -1,5 +1,11 @@
 # Code Review Audit Log & Checklist
 
+> **Historical record:** This file records earlier point-in-time review work and
+> is not evidence that the current branch is complete or verified. The 2026-08-14
+> issue #2 audit supersedes its current-state and completion claims. See
+> [`framework/ARCHITECTURE_AUDIT_2026-08-14.md`](./framework/ARCHITECTURE_AUDIT_2026-08-14.md)
+> and the target [`framework/ARCHITECTURE.md`](./framework/ARCHITECTURE.md).
+
 ## Checklist
 
 - [ ] **Setup**

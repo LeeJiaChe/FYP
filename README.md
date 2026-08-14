@@ -40,6 +40,11 @@
 
 ## 🏗️ Architecture
 
+The current-state audit and the normative target architecture are documented in
+[`framework/ARCHITECTURE_AUDIT_2026-08-14.md`](./framework/ARCHITECTURE_AUDIT_2026-08-14.md)
+and [`framework/ARCHITECTURE.md`](./framework/ARCHITECTURE.md). The diagram below
+describes the existing runtime at a high level, not the completed Architecture v2.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Browser / PWA                        │
@@ -55,8 +60,8 @@
 │         /api/analytics  /api/routes                         │
 │         /api/admin/{buses,routes,drivers-list,cron}         │
 │                                                             │
-│  Middleware: JWT auth guard + role-based routing            │
-│  ORM: Prisma + SQLite                                       │
+│  Proxy: optimistic JWT role redirects                       │
+│  ORM: Prisma + PostgreSQL                                   │
 └──────┬───────────────────────────────────────┬──────────────┘
        │ HTTP POST /emit                        │ Socket.io client
        │ (server→realtime bridge)               │ (browser→realtime)
@@ -79,7 +84,7 @@
 | Framework | [Next.js 16](https://nextjs.org) (App Router, React 19) |
 | Language | TypeScript 5 |
 | Styling | Tailwind CSS 4 |
-| Database | SQLite via [Prisma ORM](https://prisma.io) 6 |
+| Database | PostgreSQL via [Prisma ORM](https://prisma.io) 6 |
 | Auth | JWT (`jsonwebtoken`) stored in HTTP-only cookies |
 | Realtime | Socket.io 4 (standalone Node.js service) |
 | Cron | `node-cron` (inside realtime service) |
@@ -92,8 +97,9 @@
 
 ## 📦 Prerequisites
 
-- **Node.js** ≥ 18
+- **Node.js** ≥ 20.9 (required by Next.js 16)
 - **npm** ≥ 9
+- **PostgreSQL** (a reachable development database)
 
 ---
 
@@ -113,17 +119,19 @@ Create a `.env` file in the project root:
 
 ```env
 # Database
-DATABASE_URL="file:./prisma/dev.db"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fyp_bus?schema=public"
 
-# JWT secret for session tokens
-JWT_SECRET="your-secret-key-here"
+# Use separate, strong random secrets outside local development
+JWT_SECRET="replace-with-a-strong-session-secret"
+QR_SECRET="replace-with-a-different-strong-qr-secret"
 
 # Realtime service (server-side only — never exposed to browser)
 REALTIME_URL="http://localhost:4000"
-REALTIME_SERVICE_SECRET="fyp-realtime-secret-key"
+REALTIME_SERVICE_SECRET="replace-with-a-strong-service-secret"
 
 # Realtime service (browser-side Socket.io connection)
 NEXT_PUBLIC_REALTIME_URL="http://localhost:4000"
+CORS_ORIGIN="http://localhost:3000"
 
 # Internal URL used by realtime service to call Next.js cron endpoints
 NEXTJS_INTERNAL_URL="http://localhost:3000"
@@ -132,8 +140,8 @@ NEXTJS_INTERNAL_URL="http://localhost:3000"
 ### 3. Set Up the Database
 
 ```bash
-# Push schema to SQLite
-npx prisma db push
+# Apply the committed PostgreSQL migrations
+npx prisma migrate deploy
 
 # Seed with demo data (routes, buses, drivers, students)
 npm run db:seed
@@ -227,7 +235,7 @@ Key models: `User`, `Bus`, `Route`, `Trip`, `Seat`, `Booking`, `Penalty`, `Penal
 ## 📐 Design Decisions
 
 See [`NOTES.md`](./NOTES.md) for a full list of assumptions and design decisions, including:
-- Why SQLite was chosen over PostgreSQL for zero-dependency local execution
+- Why PostgreSQL is the intentional database platform
 - How the realtime service is architecturally decoupled from Next.js
 - Directional route splitting (bidirectional routes from spec → explicit outbound + inbound)
 - Waitlist auto-promotion and no-show detection logic
