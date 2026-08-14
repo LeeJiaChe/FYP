@@ -140,13 +140,16 @@ not create admitted standing claims, GPS, or device state.
 
 ## Verification evidence
 
-Local verification passes Architecture v2 lint, strict typecheck, 15
+Local verification passes Architecture v2 lint, strict typecheck, 16
 unit/specification test files, the expanded dependency-policy scan, Prisma
 validation/generation in the writable diagnostic workspace, and whitespace
 checks. Local PostgreSQL is unavailable; the fail-closed integration command
-correctly refuses to use `DATABASE_URL` without `TEST_DATABASE_URL`. A clean
-PostgreSQL 16 migration plus the Phase 3–5 integration suites and production
-build are required from GitHub Actions before Phase 5 is considered verified.
+correctly refuses to use `DATABASE_URL` without `TEST_DATABASE_URL`. GitHub
+Actions run `31840645562` applied the complete forward migration history to a
+clean PostgreSQL 16 service and passed all 31 Phase 3–5 integration scenarios,
+Architecture v2 lint, strict typecheck, all 16 unit/specification files, the
+dependency-policy scan, and the production build at commit
+`cca1d392d04b64660de992239bd835971a69378a`.
 
 The Phase 5 PostgreSQL suite contains 12 grouped scenarios covering zero-capacity
 issuance, complete segment claiming, adjacent standing reuse, partial-segment
