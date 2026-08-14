@@ -26,10 +26,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         seats: {
           orderBy: { seatNumber: "asc" },
           include: {
-            booking: {
+            tripSeat: {
               include: {
-                student: {
-                  select: { id: true, name: true, studentId: true },
+                bookings: {
+                  where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+                  include: {
+                    student: {
+                      select: { id: true, name: true, studentId: true },
+                    },
+                    boardingTripStop: true,
+                    dropOffTripStop: true,
+                  },
                 },
               },
             },
@@ -39,9 +46,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             },
           },
         },
-        bookings: {
-          where: { status: "WAITLISTED" },
-          orderBy: { waitlistPosition: "asc" },
+        waitlistEntries: {
+          where: { status: "WAITING" },
+          orderBy: [{ queuedAt: "asc" }, { id: "asc" }],
           include: {
             student: { select: { id: true, name: true, studentId: true } },
           },
@@ -53,28 +60,44 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: "Trip not found" }, { status: 404 });
     }
 
-    const formattedSeats = trip.seats.map((seat) => ({
-      id: seat.id,
-      seatNumber: seat.seatNumber,
-      status: seat.status,
-      booking: seat.booking
-        ? {
-            id: seat.booking.id,
-            status: seat.booking.status,
+    const formattedSeats = trip.seats.map((seat) => {
+      const bookings = seat.tripSeat?.bookings ?? [];
+      const primaryBooking = bookings[0];
+      const compatibilityStatus =
+        seat.status === "CHECKED_IN" || seat.status === "NO_SHOW"
+          ? seat.status
+          : bookings.length > 0
+            ? "RESERVED"
+            : "AVAILABLE";
+      return {
+        id: seat.id,
+        seatNumber: seat.seatNumber,
+        status: compatibilityStatus,
+        booking: primaryBooking
+          ? {
+            id: primaryBooking.id,
+            status: primaryBooking.status,
             studentName:
-              user.role === "ADMIN" || user.role === "DRIVER" || seat.booking.student.id === user.userId
-                ? seat.booking.student.name
+              user.role === "ADMIN" || user.role === "DRIVER" || primaryBooking.student.id === user.userId
+                ? primaryBooking.student.name
                 : "Student",
             studentId:
-              user.role === "ADMIN" || user.role === "DRIVER" || seat.booking.student.id === user.userId
-                ? seat.booking.student.studentId
+              user.role === "ADMIN" || user.role === "DRIVER" || primaryBooking.student.id === user.userId
+                ? primaryBooking.student.studentId
                 : "***",
-            checkedInAt: seat.booking.checkedInAt,
-            checkInMethod: seat.booking.checkInMethod,
-          }
-        : null,
-      deviceHealth: seat.deviceLogs[0]?.simulatedSignal || "OK",
-    }));
+            checkedInAt: primaryBooking.checkedInAt,
+            checkInMethod: primaryBooking.checkInMethod,
+            }
+          : null,
+        journeys: bookings.map((booking) => ({
+          bookingId: booking.id,
+          boardingStopName: booking.boardingTripStop.stopName,
+          dropOffStopName: booking.dropOffTripStop.stopName,
+          status: booking.status,
+        })),
+        deviceHealth: seat.deviceLogs[0]?.simulatedSignal || "OK",
+      };
+    });
 
     const totalSeats = trip.seatedCapacity;
     const availableSeats = formattedSeats.filter((s) => s.status === "AVAILABLE").length;
@@ -115,8 +138,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         seats: formattedSeats,
         waitlist:
           user.role === "ADMIN" || user.role === "DRIVER"
-            ? trip.bookings
-            : trip.bookings.filter((b) => b.studentId === user.userId),
+            ? trip.waitlistEntries
+            : trip.waitlistEntries.filter((entry) => entry.studentId === user.userId),
         stats: {
           totalSeats,
           availableSeats,
@@ -147,7 +170,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       include: {
         route: true,
         bookings: {
-          where: { status: { in: ["CONFIRMED", "WAITLISTED"] } },
+          where: { status: "CONFIRMED" },
+          select: { studentId: true },
+        },
+        waitlistEntries: {
+          where: { status: "WAITING" },
           select: { studentId: true },
         },
       },
@@ -173,14 +200,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
       // Cascading logic for CANCELLED trip
       if (validated.status === "CANCELLED") {
-        // Cancel all confirmed & waitlisted bookings
+        await tx.reservedSeatSegment.deleteMany({ where: { tripId: id } });
         await tx.booking.updateMany({
-          where: { tripId: id, status: { in: ["CONFIRMED", "WAITLISTED"] } },
-          data: {
-            status: "CANCELLED",
-            seatId: null,
-            waitlistPosition: null,
-          },
+          where: { tripId: id, status: "CONFIRMED" },
+          data: { status: "CANCELLED" },
+        });
+        await tx.waitlistEntry.updateMany({
+          where: { tripId: id, status: "WAITING" },
+          data: { status: "CANCELLED" },
         });
 
         // Reset all seats to AVAILABLE
@@ -190,7 +217,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         });
 
         // Notify affected students
-        const studentIds = Array.from(new Set(trip.bookings.map((b) => b.studentId)));
+        const studentIds = Array.from(new Set([
+          ...trip.bookings.map((booking) => booking.studentId),
+          ...trip.waitlistEntries.map((entry) => entry.studentId),
+        ]));
         if (studentIds.length > 0) {
           const cancelMsg = `Trip for ${trip.route.name} departing at ${new Date(trip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} was CANCELLED. ${validated.delayReason ? `Reason: ${validated.delayReason}` : ""}`;
           await tx.notification.createMany({

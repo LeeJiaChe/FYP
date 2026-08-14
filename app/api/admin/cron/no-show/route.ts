@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyRealtime } from "@/lib/realtime-client";
 import { productPolicy } from "@/shared/config/policies";
+import { releaseNoShowReservation } from "@/features/bookings/server";
 
 export async function POST(req: Request) {
   try {
@@ -22,8 +23,12 @@ export async function POST(req: Request) {
       },
       include: {
         bookings: {
-          where: { status: "CONFIRMED", checkedInAt: null },
-          include: { student: true, seat: true },
+          where: {
+            status: "CONFIRMED",
+            checkedInAt: null,
+            boardingTripStop: { boardingDeadline: { lt: now } },
+          },
+          include: { student: true },
         },
       },
     });
@@ -32,20 +37,8 @@ export async function POST(req: Request) {
 
     for (const trip of expiredTrips) {
       for (const booking of trip.bookings) {
+        await releaseNoShowReservation(booking.id, { now: () => now });
         await prisma.$transaction(async (tx) => {
-          // Mark booking and seat as NO_SHOW
-          await tx.booking.update({
-            where: { id: booking.id },
-            data: { status: "NO_SHOW" },
-          });
-
-          if (booking.seatId) {
-            await tx.seat.update({
-              where: { id: booking.seatId },
-              data: { status: "NO_SHOW" },
-            });
-          }
-
           // Create Penalty record
           const penaltyDeduction = productPolicy.noShowPenaltyPoints;
           const penalty = await tx.penalty.create({

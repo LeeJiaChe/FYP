@@ -13,6 +13,8 @@ async function resetDemoData() {
   await prisma.notification.deleteMany();
   await prisma.penaltyAppeal.deleteMany();
   await prisma.penalty.deleteMany();
+  await prisma.reservedSeatSegment.deleteMany();
+  await prisma.waitlistEntry.deleteMany();
   await prisma.booking.deleteMany();
   await prisma.seat.deleteMany();
   await prisma.tripSeat.deleteMany();
@@ -177,6 +179,20 @@ async function main() {
         creditScore: 35,
         isBookingRestricted: true,
       },
+      {
+        studentId: "24WAB01237",
+        name: "Chloe Lim",
+        email: "student4@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+      },
+      {
+        studentId: "24WAB01238",
+        name: "David Tan",
+        email: "student5@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+      },
     ],
   });
 
@@ -184,7 +200,7 @@ async function main() {
     prisma.bus.create({
       data: {
         plateNumber: "TAR-1001",
-        seatedCapacity: 20,
+        seatedCapacity: 2,
         standingCapacity: 8,
         status: "ACTIVE",
       },
@@ -302,20 +318,101 @@ async function main() {
     [danauOutbound.id, bus2.id, driver2.id, 26],
     [danauInbound.id, bus1.id, driver1.id, 29],
   ] as const;
+  const demoTrips = [];
   for (const [routeId, busId, driverId, hoursFromNow] of tripInputs) {
-    await createDemoTrip({
+    demoTrips.push(await createDemoTrip({
       routeId,
       busId,
       driverId,
       departureTime: new Date(now.getTime() + hoursFromNow * 60 * 60 * 1_000),
+    }));
+  }
+
+  const [student1, student2, student4, student5] = await Promise.all(
+    ["student1", "student2", "student4", "student5"].map((student) =>
+      prisma.user.findUniqueOrThrow({
+        where: { email: `${student}@student.tarc.edu.my` },
+      }),
+    ),
+  );
+  const demonstrationTrip = await prisma.trip.findUniqueOrThrow({
+    where: { id: demoTrips[0]!.id },
+    include: {
+      tripStops: { orderBy: { position: "asc" } },
+      tripSegments: { orderBy: { position: "asc" } },
+      tripSeats: { orderBy: { seatNumber: "asc" } },
+    },
+  });
+  const [stopA, stopB, stopC] = demonstrationTrip.tripStops;
+  const [segmentAB, segmentBC] = demonstrationTrip.tripSegments;
+  const [seat1, seat2] = demonstrationTrip.tripSeats;
+
+  async function createReservedDemoJourney(input: {
+    studentId: string;
+    tripSeatId: string;
+    boardingTripStopId: string;
+    dropOffTripStopId: string;
+    tripSegmentIds: string[];
+  }) {
+    return prisma.$transaction(async (transaction) => {
+      const booking = await transaction.booking.create({
+        data: {
+          studentId: input.studentId,
+          tripId: demonstrationTrip.id,
+          tripSeatId: input.tripSeatId,
+          boardingTripStopId: input.boardingTripStopId,
+          dropOffTripStopId: input.dropOffTripStopId,
+        },
+      });
+      await transaction.reservedSeatSegment.createMany({
+        data: input.tripSegmentIds.map((tripSegmentId) => ({
+          id: randomUUID(),
+          bookingId: booking.id,
+          tripId: demonstrationTrip.id,
+          tripSeatId: input.tripSeatId,
+          tripSegmentId,
+        })),
+      });
+      return booking;
     });
   }
+
+  await createReservedDemoJourney({
+    studentId: student1.id,
+    tripSeatId: seat1!.id,
+    boardingTripStopId: stopA!.id,
+    dropOffTripStopId: stopB!.id,
+    tripSegmentIds: [segmentAB!.id],
+  });
+  await createReservedDemoJourney({
+    studentId: student2.id,
+    tripSeatId: seat1!.id,
+    boardingTripStopId: stopB!.id,
+    dropOffTripStopId: stopC!.id,
+    tripSegmentIds: [segmentBC!.id],
+  });
+  await createReservedDemoJourney({
+    studentId: student4.id,
+    tripSeatId: seat2!.id,
+    boardingTripStopId: stopA!.id,
+    dropOffTripStopId: stopC!.id,
+    tripSegmentIds: [segmentAB!.id, segmentBC!.id],
+  });
+  await prisma.waitlistEntry.create({
+    data: {
+      studentId: student5.id,
+      tripId: demonstrationTrip.id,
+      boardingTripStopId: stopA!.id,
+      dropOffTripStopId: stopC!.id,
+      status: "WAITING",
+    },
+  });
 
   console.log(
     "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 4 complete Trip snapshots.",
   );
   console.log(
-    "No Phase 4 reserved-segment, waitlist, or walk-in data was created.",
+    "Phase 4 demo: Seat 1 is reused on adjacent A-B/B-C journeys, Seat 2 covers A-C, and one A-C waiter remains unallocated.",
   );
 }
 

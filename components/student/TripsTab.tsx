@@ -27,7 +27,11 @@ interface TripsTabProps {
   loadingTrips: boolean;
   isBookingRestricted?: boolean;
   onRefresh: () => void;
-  onOpenSeatModal: (tripId: string) => void;
+  onOpenSeatModal: (
+    tripId: string,
+    boardingTripStopId: string,
+    dropOffTripStopId: string,
+  ) => void;
   onTrackTrip: (trip: any) => void;
 }
 
@@ -140,16 +144,6 @@ export default function TripsTab({
       if (!hasTimeMatch) return false;
     }
 
-    if (availabilityFilter !== "ALL") {
-      if (availabilityFilter === "AVAILABLE") {
-        const hasAvailable = routeTrips.some((t) => (t.stats?.availableSeats ?? 0) > 0);
-        if (!hasAvailable) return false;
-      } else if (availabilityFilter === "WAITLIST") {
-        const hasWaitlist = routeTrips.some((t) => (t.stats?.availableSeats ?? 0) === 0);
-        if (!hasWaitlist) return false;
-      }
-    }
-
     return true;
   });
 
@@ -203,8 +197,16 @@ export default function TripsTab({
   });
 
   function handleSelectDepartureSlot(tripId: string) {
+    const trip = trips.find((candidate) => candidate.id === tripId);
+    const boarding = trip?.tripStops?.find(
+      (stop: { stopName: string }) => stop.stopName === modalFromStop,
+    );
+    const dropOff = trip?.tripStops?.find(
+      (stop: { stopName: string }) => stop.stopName === modalToStop,
+    );
+    if (!boarding || !dropOff) return;
     setSelectedRouteForModal(null);
-    onOpenSeatModal(tripId);
+    onOpenSeatModal(tripId, boarding.id, dropOff.id);
   }
 
   function resetFilters() {
@@ -349,9 +351,7 @@ export default function TripsTab({
               onChange={(e) => setAvailabilityFilter(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
             >
-              <option value="ALL">All Routes</option>
-              <option value="AVAILABLE">Seats Available Only</option>
-              <option value="WAITLIST">Waitlist Open</option>
+              <option value="ALL">Checked after From / To selection</option>
             </select>
           </div>
         </div>
@@ -570,7 +570,7 @@ export default function TripsTab({
                 <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-4">
                   <div className="flex items-center gap-2 text-xs text-indigo-300 font-semibold">
                     <MapPin className="w-4 h-4 text-indigo-400" />
-                    <span>Select Boarding & Dropoff Segment:</span>
+                    <span>Select boarding and drop-off stops:</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -656,8 +656,12 @@ export default function TripsTab({
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
                     {filteredModalTrips.map((t) => {
-                      const isFull = t.stats?.availableSeats === 0;
-                      const departureTimeStr = new Date(t.departureTime).toLocaleTimeString([], {
+                      const boardingStop = t.tripStops?.find(
+                        (stop: { stopName: string }) => stop.stopName === modalFromStop,
+                      );
+                      const departureTimeStr = new Date(
+                        boardingStop?.plannedDeparture ?? t.departureTime,
+                      ).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
                       });
@@ -679,12 +683,9 @@ export default function TripsTab({
                             </div>
 
                             <div className="flex justify-between text-xs text-slate-400 pt-1">
-                              <span>Leg Seat Status</span>
-                              <span
-                                className="font-bold"
-                                style={{ color: isFull ? "#ef4444" : "#4ade80" }}
-                              >
-                                {t.stats?.availableSeats ?? "—"} / {t.stats?.totalSeats ?? "—"} available
+                              <span>Journey seat status</span>
+                              <span className="font-bold text-indigo-300">
+                                Check complete From / To journey
                               </span>
                             </div>
                           </div>
@@ -693,14 +694,9 @@ export default function TripsTab({
                             onClick={() => handleSelectDepartureSlot(t.id)}
                             disabled={!!isBookingRestricted}
                             className="btn-primary w-full text-xs py-2 flex items-center justify-center gap-1.5"
-                            style={
-                              isFull
-                                ? { background: "linear-gradient(135deg, #d97706, #f59e0b)" }
-                                : {}
-                            }
                           >
                             <Ticket className="w-3.5 h-3.5" />
-                            {isFull ? "Join Waitlist" : "Select Seat Matrix"}
+                            Check Seats
                           </button>
                         </div>
                       );
@@ -710,7 +706,7 @@ export default function TripsTab({
 
                 <div className="pt-2 flex justify-between">
                   <button onClick={() => setModalStep(2)} className="btn-ghost text-xs">
-                    Back to Segment
+                    Back to From / To
                   </button>
                   <button
                     type="button"

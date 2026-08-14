@@ -126,9 +126,7 @@ export default function TrackBusTab({
                 },
                 {
                   label: "Available Seats",
-                  value: `${trackedTrip.stats?.availableSeats ?? "—"} / ${
-                    trackedTrip.stats?.totalSeats ?? "—"
-                  }`,
+                  value: "Select From / To to check",
                 },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between text-xs">
@@ -202,7 +200,7 @@ export default function TrackBusTab({
               </div>
             </div>
 
-            {(trackedTrip.stats?.availableSeats ?? 0) > 0 && (
+            {trackedTrip.status === "NOT_STARTED" && (
               <button
                 onClick={() => onOpenSeatModal(trackedTrip.id)}
                 disabled={!!user?.isBookingRestricted}

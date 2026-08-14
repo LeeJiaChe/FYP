@@ -41,19 +41,39 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: verification.error || "Invalid QR token" }, { status: 400 });
     }
 
-    const { bookingId, tripId: tokenTripId, seatId } = verification.payload;
+    const {
+      bookingId,
+      tripId: tokenTripId,
+      tripSeatId,
+      boardingTripStopId,
+      dropOffTripStopId,
+      passType,
+    } = verification.payload;
 
     if (tokenTripId !== tripId) {
       return NextResponse.json({ error: "QR code belongs to a different trip" }, { status: 400 });
     }
 
+    if (passType !== "RESERVED") {
+      return NextResponse.json({ error: "Expected a Reserved Pass" }, { status: 400 });
+    }
+
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      include: { seat: true, student: true },
+      include: { tripSeat: { include: { legacySeat: true } }, student: true },
     });
 
     if (!booking) {
       return NextResponse.json({ error: "Booking record not found" }, { status: 404 });
+    }
+
+    if (
+      booking.tripId !== tripId ||
+      booking.tripSeatId !== tripSeatId ||
+      booking.boardingTripStopId !== boardingTripStopId ||
+      booking.dropOffTripStopId !== dropOffTripStopId
+    ) {
+      return NextResponse.json({ error: "Reserved Pass journey does not match Booking" }, { status: 400 });
     }
 
     if (booking.status === "COMPLETED" || booking.checkedInAt) {
@@ -75,9 +95,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         },
       });
 
-      if (booking.seatId) {
+      if (booking.tripSeat.legacySeat) {
         await tx.seat.update({
-          where: { id: booking.seatId },
+          where: { id: booking.tripSeat.legacySeat.id },
           data: { status: "CHECKED_IN" },
         });
       }
@@ -88,7 +108,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Notify Socket.io room — fire-and-forget
     notifyRealtime(`trip:${tripId}`, "seat-update", {
       tripId,
-      seatId: booking.seatId,
+      tripSeatId: booking.tripSeatId,
       bookingId,
       studentName: booking.student.name,
       seatStatus: "CHECKED_IN",

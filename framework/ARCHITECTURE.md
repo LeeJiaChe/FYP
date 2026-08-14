@@ -1,6 +1,6 @@
 # Architecture v2
 
-Status: **Approved target; Phase 3 topology and inventory implemented incrementally**
+Status: **Approved target; Phase 4 reserved journeys implemented incrementally**
 
 Decision date: 2026-08-14
 
@@ -11,6 +11,8 @@ Companion audit: [`ARCHITECTURE_AUDIT_2026-08-14.md`](./ARCHITECTURE_AUDIT_2026-
 Phase 2 evidence: [`PHASE_2_SHARED_FOUNDATION.md`](./PHASE_2_SHARED_FOUNDATION.md)
 
 Phase 3 evidence: [`PHASE_3_TOPOLOGY_AND_INVENTORY.md`](./PHASE_3_TOPOLOGY_AND_INVENTORY.md)
+
+Phase 4 evidence: [`PHASE_4_RESERVED_JOURNEYS.md`](./PHASE_4_RESERVED_JOURNEYS.md)
 
 This document is the normative architecture proposal for the TAR UMT Campus
 Shuttle Management System. `APP_SPECIFICATION.md` remains the product source of
@@ -575,8 +577,9 @@ admins do not manually enter each stop time.
 | `TripLocationSample` | NEW | Simulator-first, replaceable GPS telemetry history/latest state. |
 | `TripStatusHistory` | NEW | Minimal append-only audit evidence for exceptional Trip lifecycle changes. |
 
-No schema change was performed in Phase 0, Phase 1, or Phase 2. Phase 3 now
-implements the topology/inventory subset through a forward PostgreSQL migration;
+No schema change was performed in Phase 0, Phase 1, or Phase 2. Phase 3 implements
+the topology/inventory subset and Phase 4 implements reserved Booking,
+ReservedSeatSegment, and WaitlistEntry through forward PostgreSQL migrations;
 the remaining rows in this table are still target decisions until their phases.
 
 ## 10. Authentication and security
@@ -702,7 +705,7 @@ server-side module) owns these configurable defaults:
 
 | Policy | Default |
 |---|---:|
-| Booking opens | 7 days before Trip departure |
+| Booking opens | 7 days before boarding-stop planned departure |
 | Reserved cancellation cutoff | 30 minutes before boarding-stop planned departure |
 | Boarding opens | 15 minutes before boarding-stop planned departure |
 | Normal boarding closes | 5 minutes after boarding-stop planned departure |

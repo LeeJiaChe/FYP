@@ -1,6 +1,6 @@
 # Phase 3 — Directional Topology and Per-Trip Inventory
 
-Status: **Implemented and verified on `architecture-v2`; Phase 4 not started**
+Status: **Implemented and verified on `architecture-v2`; Phase 4 completed separately**
 
 Date: 2026-08-15
 
@@ -165,9 +165,6 @@ test processes resolve the same boundary that Next.js resolves during builds.
 
 ## Phase boundary and next task
 
-Phase 3 stops here. Phase 4 should implement reserved passenger journeys and the
-journey-aware waitlist: add boarding/drop-off TripStop references,
-`ReservedSeatSegment`, database-enforced overlap protection, adjacent segment
-reuse, oldest-compatible-first promotion, and the student
-`From -> To -> Date -> Departure -> Seat` flow. It must remove Booking's reliance
-on the compatibility Seat status but must not begin walk-in admission or GPS.
+Phase 3 stopped here. Phase 4 subsequently implemented reserved passenger
+journeys and the journey-aware waitlist without beginning walk-in admission or
+GPS; see `framework/PHASE_4_RESERVED_JOURNEYS.md`.

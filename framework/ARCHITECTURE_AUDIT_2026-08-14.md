@@ -434,6 +434,9 @@ recorded there rather than inferred from Prisma validation.**
 
 Exit: reserved journeys and promotions are correct under PostgreSQL concurrency.
 
+**Phase 4 implements this exit condition; see
+`framework/PHASE_4_RESERVED_JOURNEYS.md`.**
+
 ### Phase 5 — passes, boarding, walk-ins, and alighting
 
 - Implement the approved Trip lifecycle/progress matrix and assigned-driver
@@ -662,6 +665,7 @@ not an Architecture v2 availability source.
 
 ## 13. Recommended next action
 
-After Phase 3 PostgreSQL 16 CI is green, the next separate task is **Phase 4 —
-reserved journeys and journey-aware waitlist**. It must use TripStops and
-TripSegments created here and must not preserve whole-Trip Seat locking.
+After Phase 4 PostgreSQL 16 CI is green, the next separate task is **Phase 5 —
+passes, boarding, walk-ins, and alighting**. It must consume the reserved journey
+allocations created here and must not rewrite planned allocation from actual
+alighting evidence.

@@ -10,7 +10,11 @@ const QR_SECRET = serverEnvironment.qr.signingSecret;
 export interface QRTokenPayload {
   bookingId: string;
   seatId?: string | null;
+  tripSeatId: string;
   tripId: string;
+  boardingTripStopId: string;
+  dropOffTripStopId: string;
+  passType: "RESERVED";
   issuedAt: number;
 }
 

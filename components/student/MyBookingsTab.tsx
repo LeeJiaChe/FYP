@@ -4,20 +4,24 @@ import { Ticket, RefreshCw, Clock, QrCode, Navigation } from "lucide-react";
 
 interface MyBookingsTabProps {
   myBookings: any[];
+  waitlistEntries: any[];
   onRefresh: () => void;
   onBrowseTrips: () => void;
   onOpenQR: (booking: any) => void;
   onTrackTrip: (trip: any) => void;
   onCancelBooking: (bookingId: string) => void;
+  onLeaveWaitlist: (entryId: string) => void;
 }
 
 export default function MyBookingsTab({
   myBookings,
+  waitlistEntries,
   onRefresh,
   onBrowseTrips,
   onOpenQR,
   onTrackTrip,
   onCancelBooking,
+  onLeaveWaitlist,
 }: MyBookingsTabProps) {
   return (
     <div className="space-y-5 animate-fade-in">
@@ -37,7 +41,7 @@ export default function MyBookingsTab({
         </button>
       </div>
 
-      {myBookings.length === 0 ? (
+      {myBookings.length === 0 && waitlistEntries.length === 0 ? (
         <div
           className="py-16 text-center rounded-2xl"
           style={{
@@ -71,7 +75,6 @@ export default function MyBookingsTab({
       ) : (
         <div className="space-y-4">
           {myBookings.map((b, idx) => {
-            const isTooLate = new Date(b.trip.departureTime).getTime() - Date.now() < 30 * 60 * 1000;
             return (
             <div
               key={b.id}
@@ -88,9 +91,7 @@ export default function MyBookingsTab({
                   background:
                     b.status === "CONFIRMED"
                       ? "var(--accent-primary)"
-                      : b.status === "WAITLISTED"
-                        ? "#f59e0b"
-                        : b.status === "COMPLETED"
+                      : b.status === "COMPLETED"
                           ? "#22c55e"
                           : "var(--border)",
                 }}
@@ -107,13 +108,7 @@ export default function MyBookingsTab({
                             color: "var(--accent-secondary)",
                             borderColor: "var(--border-hover)",
                           }
-                        : b.status === "WAITLISTED"
-                          ? {
-                              background: "rgba(245,158,11,0.15)",
-                              color: "#fbbf24",
-                              borderColor: "rgba(245,158,11,0.3)",
-                            }
-                          : b.status === "COMPLETED"
+                        : b.status === "COMPLETED"
                             ? {
                                 background: "rgba(34,197,94,0.15)",
                                 color: "#4ade80",
@@ -126,9 +121,7 @@ export default function MyBookingsTab({
                               }
                     }
                   >
-                    {b.status === "WAITLISTED"
-                      ? `WAITLISTED #${b.waitlistPosition}`
-                      : b.status}
+                    {b.status}
                   </span>
                   <span
                     className="text-xs font-bold"
@@ -171,6 +164,9 @@ export default function MyBookingsTab({
                       Seat #{b.seatNumber}
                     </span>
                   )}
+                  <span>
+                    {b.boardingStopName} → {b.dropOffStopName}
+                  </span>
                   {b.checkInMethod && (
                     <span
                       className="font-medium"
@@ -201,30 +197,50 @@ export default function MyBookingsTab({
                     </button>
                     <button
                       onClick={() => onCancelBooking(b.id)}
-                      disabled={isTooLate}
-                      className="btn-ghost text-xs disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+                      className="btn-ghost text-xs ml-auto"
                       style={{
                         color: "#f87171",
                         borderColor: "rgba(239,68,68,0.3)",
                       }}
                     >
-                      {isTooLate ? "Too late to cancel" : "Cancel"}
+                      Cancel
                     </button>
                   </>
-                )}
-                {b.status === "WAITLISTED" && (
-                  <button
-                    onClick={() => onCancelBooking(b.id)}
-                    className="btn-ghost text-xs"
-                    style={{ color: "#f87171" }}
-                  >
-                    Leave Waitlist
-                  </button>
                 )}
               </div>
             </div>
           );
           })}
+          {waitlistEntries.map((entry, idx) => (
+            <div
+              key={entry.id}
+              className="rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center gap-5 animate-slide-up"
+              style={{
+                background: "var(--bg-card)",
+                border: "1px solid rgba(245,158,11,0.3)",
+                animationDelay: `${(myBookings.length + idx) * 60}ms`,
+              }}
+            >
+              <div className="flex-1 space-y-2">
+                <span className="badge" style={{ color: "#fbbf24" }}>
+                  WAITLIST {entry.status}
+                </span>
+                <h3 className="font-bold text-base">{entry.trip.routeName}</h3>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {entry.boardingStopName} → {entry.dropOffStopName} · queued {new Date(entry.queuedAt).toLocaleString()}
+                </p>
+              </div>
+              {entry.status === "WAITING" && (
+                <button
+                  onClick={() => onLeaveWaitlist(entry.id)}
+                  className="btn-ghost text-xs"
+                  style={{ color: "#f87171" }}
+                >
+                  Leave Waitlist
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -42,8 +42,19 @@ export interface Trip {
   // Stats added by API
   stats?: {
     totalSeats: number;
-    availableSeats: number;
+    legacyAvailableSeats?: number;
   };
+
+  tripStops?: Array<{
+    id: string;
+    stopId: string;
+    position: number;
+    stopCode: string;
+    stopName: string;
+    plannedArrival: string;
+    plannedDeparture: string;
+    boardingDeadline: string;
+  }>;
   
   // For frontend use sometimes
   routeName?: string;
@@ -55,8 +66,7 @@ export interface Booking {
   id: string;
   tripId: string;
   userId: string;
-  status: "CONFIRMED" | "WAITLISTED" | "CANCELLED" | "CHECKED_IN" | "NO_SHOW";
-  waitlistPosition?: number | null;
+  status: "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
   createdAt: string;
   
   // Relations

@@ -93,6 +93,16 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       routeId: trip.routeId,
       routeName: trip.route.name,
       routeStops,
+      tripStops: trip.tripStops.map((stop) => ({
+        id: stop.id,
+        stopId: stop.stopId,
+        position: stop.position,
+        stopCode: stop.stopCode,
+        stopName: stop.stopName,
+        plannedArrival: stop.plannedArrival,
+        plannedDeparture: stop.plannedDeparture,
+        boardingDeadline: stop.boardingDeadline,
+      })),
       busId: trip.busId,
       busPlateNumber: trip.bus.plateNumber,
       busCapacity: trip.seatedCapacity,
@@ -107,10 +117,12 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       delayReason: trip.delayReason,
       stats: {
         totalSeats: trip.seatedCapacity,
-        availableSeats,
-        reservedSeats,
-        checkedInSeats,
-        noShowSeats,
+        // These counts remain operational legacy diagnostics until Phase 5/8.
+        // They are never used by the Phase 4 journey availability contract.
+        legacyAvailableSeats: availableSeats,
+        legacyReservedSeats: reservedSeats,
+        legacyCheckedInSeats: checkedInSeats,
+        legacyNoShowSeats: noShowSeats,
       },
     };
   });

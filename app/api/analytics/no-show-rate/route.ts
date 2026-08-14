@@ -26,7 +26,7 @@ export async function GET() {
 
       route.trips.forEach((trip) => {
         trip.bookings.forEach((booking) => {
-          if (booking.status !== "WAITLISTED" && booking.status !== "CANCELLED") {
+          if (booking.status !== "CANCELLED") {
             totalBookings++;
             if (booking.status === "NO_SHOW") totalNoShows++;
             if (booking.status === "COMPLETED") totalCompleted++;

@@ -80,8 +80,9 @@ export async function PATCH(req: Request) {
           },
           include: {
             bookings: {
-              where: { status: { in: ["CONFIRMED", "WAITLISTED"] } },
+              where: { status: "CONFIRMED" },
             },
+            waitlistEntries: { where: { status: "WAITING" } },
           },
         });
 
@@ -96,11 +97,19 @@ export async function PATCH(req: Request) {
           });
 
           // Cancel bookings for trip
-          const studentIds = Array.from(new Set(trip.bookings.map((b) => b.studentId)));
+          const studentIds = Array.from(new Set([
+            ...trip.bookings.map((booking) => booking.studentId),
+            ...trip.waitlistEntries.map((entry) => entry.studentId),
+          ]));
 
+          await tx.reservedSeatSegment.deleteMany({ where: { tripId: trip.id } });
           await tx.booking.updateMany({
-            where: { tripId: trip.id, status: { in: ["CONFIRMED", "WAITLISTED"] } },
-            data: { status: "CANCELLED", seatId: null, waitlistPosition: null },
+            where: { tripId: trip.id, status: "CONFIRMED" },
+            data: { status: "CANCELLED" },
+          });
+          await tx.waitlistEntry.updateMany({
+            where: { tripId: trip.id, status: "WAITING" },
+            data: { status: "CANCELLED" },
           });
 
           // Release seats

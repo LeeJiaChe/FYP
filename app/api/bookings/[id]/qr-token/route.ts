@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      include: { trip: true, seat: true },
+      include: { tripSeat: { include: { legacySeat: true } } },
     });
 
     if (!booking) {
@@ -32,8 +32,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const { token, qrDataUrl, issuedAt } = await generateQRTokenData({
       bookingId: booking.id,
-      seatId: booking.seatId,
+      seatId: booking.tripSeat.legacySeat?.id ?? null,
+      tripSeatId: booking.tripSeatId,
       tripId: booking.tripId,
+      boardingTripStopId: booking.boardingTripStopId,
+      dropOffTripStopId: booking.dropOffTripStopId,
+      passType: "RESERVED",
     });
 
     await prisma.booking.update({

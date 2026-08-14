@@ -32,6 +32,12 @@ export default function StudentDashboard() {
 
   // Seat booking modal state
   const [selectedTrip, setSelectedTrip] = useState<any>(null);
+  const [selectedJourney, setSelectedJourney] = useState<{
+    boardingTripStopId: string;
+    dropOffTripStopId: string;
+    boardingStopName: string;
+    dropOffStopName: string;
+  } | null>(null);
   const [tripSeats, setTripSeats] = useState<SeatItem[]>([]);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -40,6 +46,7 @@ export default function StudentDashboard() {
 
   // My Bookings state
   const [myBookings, setMyBookings] = useState<any[]>([]);
+  const [myWaitlist, setMyWaitlist] = useState<any[]>([]);
   const [activeQRBooking, setActiveQRBooking] = useState<any>(null);
 
   // Tracked trip for real-time location
@@ -71,6 +78,7 @@ export default function StudentDashboard() {
       if (res.ok) {
         const data = await res.json();
         setMyBookings(data.bookings || []);
+        setMyWaitlist(data.waitlist || []);
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
@@ -85,20 +93,42 @@ export default function StudentDashboard() {
     } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
-  async function openSeatBookingModal(tripId: string) {
+  async function openSeatBookingModal(
+    tripId: string,
+    boardingTripStopId?: string,
+    dropOffTripStopId?: string,
+  ) {
+    if (!boardingTripStopId || !dropOffTripStopId) {
+      toast.error("Select a From and To stop before checking seats");
+      return;
+    }
     setBookingError(null);
     setSelectedSeatId(null);
     try {
-      const res = await fetch(`/api/trips/${tripId}`);
+      const params = new URLSearchParams({
+        tripId,
+        boardingTripStopId,
+        dropOffTripStopId,
+      });
+      const res = await fetch(`/api/bookings/availability?${params}`);
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
-        setSelectedTrip(data.trip);
-        setTripSeats(data.trip.seats || []);
+        const trip = trips.find((candidate) => candidate.id === tripId);
+        setSelectedTrip(trip);
+        setSelectedJourney(data.availability.journey);
+        setTripSeats(
+          data.availability.seats.map((seat: { id: string; seatNumber: number }) => ({
+            ...seat,
+            status: "AVAILABLE" as const,
+          })),
+        );
+      } else {
+        toast.error(data.error?.message || "Unable to check journey seats");
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
 
-  async function handleConfirmBooking(isWaitlist: boolean = false) {
+  async function handleConfirmBooking() {
     if (!selectedTrip) return;
     setBookingLoading(true);
     setBookingError(null);
@@ -109,13 +139,15 @@ export default function StudentDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tripId: selectedTrip.id,
-          seatId: isWaitlist ? undefined : selectedSeatId || undefined,
+          boardingTripStopId: selectedJourney?.boardingTripStopId,
+          dropOffTripStopId: selectedJourney?.dropOffTripStopId,
+          tripSeatId: selectedSeatId || undefined,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        setBookingError(data.error || "Booking failed");
+        setBookingError(data.error?.message || data.error || "Booking failed");
         setBookingLoading(false);
         return;
       }
@@ -131,6 +163,46 @@ export default function StudentDashboard() {
     }
   }
 
+  async function handleJoinWaitlist() {
+    if (!selectedTrip || !selectedJourney) return;
+    setBookingLoading(true);
+    setBookingError(null);
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tripId: selectedTrip.id,
+          boardingTripStopId: selectedJourney.boardingTripStopId,
+          dropOffTripStopId: selectedJourney.dropOffTripStopId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBookingError(data.error?.message || "Unable to join waitlist");
+        return;
+      }
+      setSelectedTrip(null);
+      await fetchBookings();
+      setActiveTab("bookings");
+    } catch {
+      setBookingError("Network error joining waitlist");
+    } finally {
+      setBookingLoading(false);
+    }
+  }
+
+  async function handleLeaveWaitlist(entryId: string) {
+    const res = await fetch(`/api/waitlist/${entryId}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error?.message || "Unable to leave waitlist");
+      return;
+    }
+    toast.success("Waitlist request cancelled");
+    fetchBookings();
+  }
+
     async function handleCancelBooking(bookingId: string) {
     try {
       const res = await fetch(`/api/bookings/${bookingId}/cancel`, {
@@ -142,7 +214,7 @@ export default function StudentDashboard() {
         fetchTrips();
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to cancel booking");
+        toast.error(data.error?.message || data.error || "Failed to cancel booking");
       }
     } catch (err: any) { toast.error(err.message || "Network error"); }
   }
@@ -159,13 +231,8 @@ export default function StudentDashboard() {
   });
 
   const activeBookingsCount = myBookings.filter(
-    (b) => b.status === "CONFIRMED" || b.status === "WAITLISTED"
-  ).length;
-
-  const availableSeatsCount = trips.reduce(
-    (a, t) => a + (t.stats?.availableSeats || 0),
-    0
-  );
+    (b) => b.status === "CONFIRMED"
+  ).length + myWaitlist.filter((entry) => entry.status === "WAITING").length;
 
   return (
     <div
@@ -275,6 +342,7 @@ export default function StudentDashboard() {
         {activeTab === "bookings" && (
           <MyBookingsTab
             myBookings={myBookings}
+            waitlistEntries={myWaitlist}
             onRefresh={fetchBookings}
             onBrowseTrips={() => setActiveTab("trips")}
             onOpenQR={setActiveQRBooking}
@@ -283,6 +351,7 @@ export default function StudentDashboard() {
               setActiveTab("track");
             }}
             onCancelBooking={(id) => setConfirmCancelId(id)}
+            onLeaveWaitlist={handleLeaveWaitlist}
           />
         )}
 
@@ -335,6 +404,11 @@ export default function StudentDashboard() {
                 minute: "2-digit",
               })}
             </p>
+            {selectedJourney && (
+              <p className="text-xs mb-5" style={{ color: "var(--accent-secondary)" }}>
+                {selectedJourney.boardingStopName} → {selectedJourney.dropOffStopName}
+              </p>
+            )}
 
             {bookingError && (
               <div
@@ -380,7 +454,7 @@ export default function StudentDashboard() {
                 0 ? (
                   <button
                     disabled={!selectedSeatId || bookingLoading}
-                    onClick={() => handleConfirmBooking(false)}
+                    onClick={handleConfirmBooking}
                     className="btn-primary text-xs"
                   >
                     {bookingLoading ? "Confirming..." : "Confirm Booking"}
@@ -388,7 +462,7 @@ export default function StudentDashboard() {
                 ) : (
                   <button
                     disabled={bookingLoading}
-                    onClick={() => handleConfirmBooking(true)}
+                    onClick={handleJoinWaitlist}
                     className="btn-primary text-xs"
                     style={{
                       background: "linear-gradient(135deg, #d97706, #f59e0b)",

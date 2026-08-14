@@ -175,13 +175,13 @@ export function inspectDependencyPolicy(
     }
   }
 
-  if (/\/src\/app\/(?:.*\/)?route\.[cm]?[jt]s$/.test(`/${fileName}`)) {
+  if (/\/(?:src\/)?app\/(?:.*\/)?route\.[cm]?[jt]s$/.test(`/${fileName}`)) {
     for (const specifier of imports) {
       if (
         isPrismaBoundaryImport(specifier) ||
-        specifier.includes("/domain/") ||
-        specifier.includes("/application/") ||
-        specifier.includes("/infrastructure/")
+        /(?:^|\/)features\/[^/]+\/(?:domain|application|infrastructure)\//.test(
+          specifier,
+        )
       ) {
         violations.push({
           file,
@@ -242,8 +242,16 @@ export async function inspectArchitectureV2Source(
   workspaceRoot: string,
 ): Promise<DependencyViolation[]> {
   const files = await sourceFiles(path.join(workspaceRoot, "src"));
+  const migratedPhase4Routes = [
+    "app/api/bookings/route.ts",
+    "app/api/bookings/mine/route.ts",
+    "app/api/bookings/availability/route.ts",
+    "app/api/bookings/[id]/cancel/route.ts",
+    "app/api/waitlist/route.ts",
+    "app/api/waitlist/[id]/route.ts",
+  ].map((file) => path.join(workspaceRoot, file));
   const results = await Promise.all(
-    files.map(async (file) =>
+    [...files, ...migratedPhase4Routes].map(async (file) =>
       inspectDependencyPolicy(
         path.relative(workspaceRoot, file),
         await readFile(file, "utf8"),

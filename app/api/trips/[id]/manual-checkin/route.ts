@@ -36,21 +36,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (bookingId) {
       targetBooking = await prisma.booking.findUnique({
         where: { id: bookingId },
-        include: { student: true },
+        include: { student: true, tripSeat: { include: { legacySeat: true } } },
       });
     } else if (seatId) {
       targetBooking = await prisma.booking.findFirst({
-        where: { seatId, tripId },
-        include: { student: true },
+        where: { tripId, tripSeat: { legacySeat: { id: seatId } } },
+        include: { student: true, tripSeat: { include: { legacySeat: true } } },
       });
     }
 
     if (!targetBooking) {
       return NextResponse.json({ error: "Booking or seat not found" }, { status: 404 });
     }
-
     if (targetBooking.status === "COMPLETED" || targetBooking.checkedInAt) {
       return NextResponse.json({ error: "Student is already checked in" }, { status: 400 });
+    }
+
+    if (targetBooking.tripId !== tripId || targetBooking.status !== "CONFIRMED") {
+      return NextResponse.json({ error: "Booking is not a confirmed journey on this Trip" }, { status: 400 });
     }
 
     // Execute transaction
@@ -64,9 +67,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         },
       });
 
-      if (targetBooking.seatId) {
+      if (targetBooking.tripSeat.legacySeat) {
         await tx.seat.update({
-          where: { id: targetBooking.seatId },
+          where: { id: targetBooking.tripSeat.legacySeat.id },
           data: { status: "CHECKED_IN" },
         });
       }
@@ -75,7 +78,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Emit realtime event — fire-and-forget
     notifyRealtime(`trip:${tripId}`, "seat-update", {
       tripId,
-      seatId: targetBooking.seatId,
+      tripSeatId: targetBooking.tripSeatId,
       bookingId: targetBooking.id,
       studentName: targetBooking.student.name,
       seatStatus: "CHECKED_IN",

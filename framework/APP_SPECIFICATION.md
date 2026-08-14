@@ -95,10 +95,11 @@ an internal capacity concept and is not a required user-facing wizard step.
 ## 5. Normative logical data model
 
 `framework/ARCHITECTURE.md` contains the migration-oriented physical proposal.
-The actual Prisma schema remained unchanged through Phase 2. Phase 3 implements
+The Prisma schema remained unchanged through Phase 2. Phase 3 implemented
 `Stop`, normalized `RouteStop`, Trip capacity snapshots, `TripStop`,
-`TripSegment`, and `TripSeat`; reserved/waitlist/walk-in/location models remain
-normative targets for later phases.
+`TripSegment`, and `TripSeat`. Phase 4 implements reserved journey `Booking`,
+`ReservedSeatSegment`, and separate `WaitlistEntry`; walk-in and location models
+remain normative targets for later phases.
 
 ### 5.1 Identity and fleet
 
@@ -341,8 +342,8 @@ Booking for the same Trip and journey.
   optional comment. Credit restoration uses the current locked student record.
 
 Default policy values are centralized and configurable: booking opens seven days
-before Trip departure; reserved cancellation closes 30 minutes before the
-passenger's boarding-stop planned departure; boarding opens 15 minutes before and
+before the passenger's boarding-stop planned departure; reserved cancellation
+closes 30 minutes before that departure; boarding opens 15 minutes before and
 normally closes five minutes after that planned departure; an operational delay
 may extend the closing window; dynamic QR tokens live for 60 seconds; initial
 credit is 100; a no-show costs 15 points; and booking is restricted below 40
@@ -549,6 +550,6 @@ typed errors, and the owning application use case.
   processes remains an implementation/deployment decision, not an unresolved
   product rule.
 
-All product decisions required to implement Phase 3 have now been recorded. Later
+All product decisions required to implement Phase 4 have now been recorded. Later
 implementation discoveries may still require an ADR, but must not silently alter
 these rules.

@@ -3,7 +3,8 @@
 > **Final Year Project (FYP)** — A responsive web application for directional journey search, segment-aware reserved seating, non-guaranteed walk-in boarding, live simulated-GPS location, and transport operations.
 
 > **Architecture v2 status:** The approved target below is not yet fully
-> implemented. The current prototype still contains whole-trip seat logic, PWA
+> implemented. Reserved journeys and journey-aware waitlist are now migrated.
+> The current prototype still contains legacy boarding/device Seat status, PWA
 > artifacts, schedule-interpolated location, and seat-device simulation that are
 > scheduled for migration/removal. See the linked audit before treating current
 > behavior as product truth.
@@ -208,14 +209,14 @@ All accounts use the password: **`password123`**
 
 ## 🗄️ Database Schema Status
 
-Phase 3 implements the Architecture v2 topology/inventory slice:
+Phase 3 implements topology/inventory and Phase 4 implements reserved journeys:
 
 ```
 Stop ── RouteStop ── Route ── Trip ── TripStop ── TripSegment
-                              └──── TripSeat
+                              └──── TripSeat ── ReservedSeatSegment ── Booking
 
-User ──┬── Booking ──── Seat (temporary compatibility mirror)
-       │        └───── Penalty ── PenaltyAppeal
+User ──┬── Booking ───── Penalty ── PenaltyAppeal
+       ├── WaitlistEntry
        ├── Notification
        └── Trip (as driver)
 
@@ -223,10 +224,12 @@ Trip ──── Seat ──── DeviceStatusLog
 ```
 
 `Stop`, ordered `RouteStop`, `TripStop`, `TripSegment`, and `TripSeat` are now
-implemented. `ReservedSeatSegment`, `WaitlistEntry`, `WalkInIntent`,
-`WalkInJourney`, `StandingSegmentClaim`, and `TripLocationSample` remain later
-phases. `Seat.status`, device models, and combined Booking/waitlist state are
-temporary legacy compatibility. See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md).
+implemented. `Booking`, `ReservedSeatSegment`, and separate `WaitlistEntry` now
+provide segment-aware reservations. `WalkInIntent`, `WalkInJourney`,
+`StandingSegmentClaim`, and `TripLocationSample` remain later phases.
+`Seat.status` and device models are temporary compatibility and never determine
+reserved availability. See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md)
+and [Phase 4 report](./framework/PHASE_4_RESERVED_JOURNEYS.md).
 
 ---
 

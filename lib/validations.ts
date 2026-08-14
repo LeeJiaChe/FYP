@@ -39,11 +39,6 @@ export const updateTripStatusSchema = z.object({
   delayReason: z.string().optional(),
 });
 
-export const createBookingSchema = z.object({
-  tripId: z.string().uuid(),
-  seatId: z.string().uuid().optional(),
-});
-
 export const submitAppealSchema = z.object({
   reason: z.string().min(10, "Please provide a detailed explanation (at least 10 characters)"),
 });
