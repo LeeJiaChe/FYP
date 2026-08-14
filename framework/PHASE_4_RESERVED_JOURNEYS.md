@@ -137,12 +137,22 @@ WaitlistEntry with no allocation. No walk-in data is seeded.
 ## Verification evidence
 
 Before the candidate push, the zero-warning Architecture v2 lint gate, strict
-TypeScript diagnostic, 14 unit/specification files, and architecture scan over
-the real bookings feature and migrated Route Handlers pass in the writable local
-diagnostic workspace. Local PostgreSQL execution remains environment-dependent;
-the final PostgreSQL 16 integration, migration-status, default build, and GitHub
-Actions evidence is recorded here after the pushed run rather than inferred from
-Prisma validation.
+TypeScript diagnostic, 14 unit/specification files, architecture scan over the
+real bookings feature and migrated Route Handlers, Prisma validation, whitespace
+check, and the webpack production build passed in the writable local diagnostic
+workspace. The default Turbopack build could not bind its worker port in the
+managed local sandbox; the equivalent default build was therefore retained as a
+CI gate. Local PostgreSQL was unavailable and was not represented as a pass.
+
+GitHub Actions Verification run
+[`31835414325`](https://github.com/jclee-wm25/FYP/actions/runs/31835414325)
+completed successfully for commit `37144c33165488de8571a46f5512f6d12500aa38`
+on PostgreSQL 16. CI applied all three forward migrations to a reset isolated
+`fyp_bus_test` database, reported the schema up to date, and passed all 19
+integration tests. Lint, typecheck, all 38 unit/specification assertions, all 10
+architecture assertions, and the default production build also passed. This is
+the required real-database verification; no SQLite or mocked concurrency result
+is being substituted for it.
 
 The Phase 4 PostgreSQL suite covers adjacent reuse, overlap rejection,
 fragmented availability, a concurrent final-seat race, cross-Trip foreign-key
