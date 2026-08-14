@@ -47,7 +47,7 @@ export async function issueSignedPass(
   const token = jwt.sign(
     { ...claims, iat: issuedAt, exp: expiresAt, jti: tokenId },
     serverEnvironment.qr.signingSecret,
-    { algorithm: "HS256", noTimestamp: true },
+    { algorithm: "HS256" },
   );
   const qrDataUrl = await QRCode.toDataURL(token, {
     margin: 2,
