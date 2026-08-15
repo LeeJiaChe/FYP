@@ -1,6 +1,6 @@
 # Phase 8 — GPS Telemetry, Realtime Hardening, Device Removal, and Analytics
 
-Status: **Implemented on `architecture-v2`; PostgreSQL 16 CI evidence pending first push**
+Status: **Implemented and verified on `architecture-v2` against PostgreSQL 16**
 
 Date: 2026-08-15
 
@@ -123,7 +123,7 @@ than 366 days. PostgreSQL performs the grouped/count work.
 These definitions deliberately avoid `Booking count / seatedCapacity`, which is
 misleading when seats are reused on adjacent segments.
 
-## Verification before first push
+## Verification evidence
 
 - `npm run verify`: **PASS** — zero-warning Architecture v2 lint, strict Next.js
   type generation/typecheck, 23 unit/specification files, and dependency rules.
@@ -137,6 +137,18 @@ misleading when seats are reused on adjacent segments.
   because no isolated `TEST_DATABASE_URL` is available. PostgreSQL 16 CI is the
   required database/migration/concurrency evidence and is not claimed yet.
 - `git diff --check`: **PASS**.
+
+GitHub Actions Verification run
+[`31864888065`](https://github.com/jclee-wm25/FYP/actions/runs/31864888065)
+completed successfully on PostgreSQL 16 for commit
+`aaf3be866b7518b897ee6e360f909ef17d5de36a`:
+
+- clean migration apply/status: **PASS** — all six forward migrations applied,
+  including `20260816150000_phase_8_gps_realtime_analytics`;
+- PostgreSQL integration: **PASS** — 55 tests across 13 suites;
+- unit/specification: **PASS** — 65 tests across 30 suites;
+- architecture dependency tests: **PASS** — 10 tests;
+- lint, Next.js type generation/typecheck, and production build: **PASS**.
 
 The Phase 8 PostgreSQL suite covers both telemetry sources, latest-by-recorded
 time, database coordinate/FK constraints, terminal Trip rejection, simulator use
