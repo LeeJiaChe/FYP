@@ -582,7 +582,10 @@ WaitlistEntry, and Phase 5 implements WalkInIntent/WalkInJourney/
 StandingSegmentClaim plus boarding, alighting, and Trip progress evidence through
 forward PostgreSQL migrations. Phase 6 implements reserved no-show, constrained
 credit, derived restriction, Penalty/PenaltyAppeal concurrency, and retry-safe
-reconciliation. TripLocationSample and later cleanup rows remain target decisions
+reconciliation. Phase 7 completes authoritative fleet/driver administration,
+serialized scheduling and safe rescheduling, immutable snapshot operations, and
+one Trip cancellation coordinator used by admin, assigned-driver, and Bus-status
+entry points. No Phase 7 schema migration is required. TripLocationSample and later cleanup rows remain target decisions
 until their phases.
 
 ## 10. Authentication and security

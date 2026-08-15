@@ -1,13 +1,17 @@
 import type {
+  CancelTripInput,
   ListTripsQuery,
   ScheduleTripInput,
+  UpdateScheduledTripInput,
 } from "../contracts/trip.schemas";
 import { TripSnapshotError } from "../domain/build-trip-snapshot";
 import {
   createScheduledTripRecord,
+  cancelTripRecord,
   findTripDetailRecord,
   listTripRecords,
   TripPersistenceError,
+  updateScheduledTripRecord,
 } from "../infrastructure/trip.prisma.server";
 import {
   conflict,
@@ -38,6 +42,14 @@ function mapPersistenceFailure(error: TripPersistenceError): never {
       throw conflict("Driver is already assigned to an overlapping Trip");
     case "INVENTORY_COUNT_MISMATCH":
       throw invariantViolation("Trip inventory could not be created completely");
+    case "TRIP_NOT_FOUND":
+      throw notFound("Trip not found");
+    case "TRIP_NOT_CANCELLABLE":
+      throw conflict("Trip cannot be cancelled from its current state");
+    case "TRIP_NOT_EDITABLE":
+      throw conflict("Only empty, not-started Trips may be rescheduled or reassigned");
+    case "ACTOR_FORBIDDEN":
+      throw forbidden("Actor is not authorized for this Trip operation");
   }
 }
 
@@ -76,17 +88,18 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       trip.tripStops.length > 0
         ? trip.tripStops.map((stop) => stop.stopName)
         : trip.route.routeStops.map((routeStop) => routeStop.stop.name);
-    const availableSeats = trip.seats.filter(
-      (seat) => seat.status === "AVAILABLE",
+    const confirmedReserved = trip.bookings.filter(
+      (booking) => booking.status === "CONFIRMED",
     ).length;
-    const reservedSeats = trip.seats.filter(
-      (seat) => seat.status === "RESERVED",
+    const boardedReserved = trip.bookings.filter(
+      (booking) => booking.status === "CONFIRMED" && booking.checkedInAt,
     ).length;
-    const checkedInSeats = trip.seats.filter(
-      (seat) => seat.status === "CHECKED_IN",
+    const noShow = trip.bookings.filter((booking) => booking.status === "NO_SHOW").length;
+    const walkInBoarded = trip.walkInJourneys.filter(
+      (journey) => journey.status === "BOARDED",
     ).length;
-    const noShowSeats = trip.seats.filter(
-      (seat) => seat.status === "NO_SHOW",
+    const waitlistWaiting = trip.waitlistEntries.filter(
+      (entry) => entry.status === "WAITING",
     ).length;
 
     return {
@@ -119,15 +132,52 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       delayReason: trip.delayReason,
       stats: {
         totalSeats: trip.seatedCapacity,
-        // These counts remain operational legacy diagnostics until Phase 8.
-        // They are never used by journey availability or boarding capacity.
-        legacyAvailableSeats: availableSeats,
-        legacyReservedSeats: reservedSeats,
-        legacyCheckedInSeats: checkedInSeats,
-        legacyNoShowSeats: noShowSeats,
+        confirmedReserved,
+        boardedReserved,
+        noShow,
+        walkInBoarded,
+        waitlistWaiting,
       },
     };
   });
+}
+
+export async function cancelTrip(
+  actor: TripActor,
+  tripId: string,
+  input: CancelTripInput,
+  clock: Clock = systemClock,
+) {
+  if (actor.role !== "ADMIN" && actor.role !== "DRIVER") {
+    throw forbidden("Admin or assigned Driver role required");
+  }
+  try {
+    return await cancelTripRecord({
+      tripId,
+      actorId: actor.userId,
+      reason: input.reason,
+      now: clock.now(),
+      allowAssignedDriver: actor.role === "DRIVER",
+    });
+  } catch (error) {
+    if (error instanceof TripPersistenceError) mapPersistenceFailure(error);
+    throw error;
+  }
+}
+
+export async function updateScheduledTrip(
+  actor: TripActor,
+  tripId: string,
+  input: UpdateScheduledTripInput,
+  clock: Clock = systemClock,
+) {
+  if (actor.role !== "ADMIN") throw forbidden("Admin role required");
+  try {
+    return await updateScheduledTripRecord(tripId, input, clock.now());
+  } catch (error) {
+    if (error instanceof TripPersistenceError) mapPersistenceFailure(error);
+    throw error;
+  }
 }
 
 export async function getTripDetail(actor: TripActor, tripId: string) {

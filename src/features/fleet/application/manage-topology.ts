@@ -1,24 +1,34 @@
 import type {
+  CreateBusInput,
   CreateRouteInput,
   CreateStopInput,
+  UpdateBusInput,
   UpdateRouteInput,
   UpdateStopInput,
 } from "../contracts/fleet.schemas";
 import { RouteTopologyError } from "../domain/route-topology";
 import {
   createRouteRecord,
+  createBusRecord,
   createStopRecord,
+  FleetPersistenceError,
+  listBusesRecord,
   listActiveRoutesRecord,
   listActiveStopsRecord,
   retireRouteRecord,
+  retireBusRecord,
   retireStopRecord,
+  updateBusRecord,
   updateRouteRecord,
   updateStopRecord,
 } from "../infrastructure/fleet.prisma.server";
 import {
+  conflict,
   forbidden,
+  notFound,
   validationError,
 } from "@/shared/application/application-error";
+import { systemClock, type Clock } from "@/shared/time/clock";
 
 export interface FleetActor {
   readonly userId: string;
@@ -71,6 +81,76 @@ function routeDto(route: Awaited<ReturnType<typeof createRouteRecord>>) {
   };
 }
 
+function busDto(bus: Awaited<ReturnType<typeof createBusRecord>>) {
+  return {
+    id: bus.id,
+    plateNumber: bus.plateNumber,
+    seatedCapacity: bus.seatedCapacity,
+    standingCapacity: bus.standingCapacity,
+    status: bus.status,
+    tripsCount: bus._count.trips,
+    _count: bus._count,
+  };
+}
+
+function fleetFailure(error: unknown): never {
+  if (error instanceof FleetPersistenceError) {
+    if (error.code === "NOT_FOUND") throw notFound("Fleet asset not found");
+    if (error.code === "DUPLICATE") throw conflict("Fleet asset already exists");
+    if (error.code === "STOP_IN_ACTIVE_ROUTE") {
+      throw conflict("Deactivate or edit active Routes that use this Stop first");
+    }
+    throw conflict("A retired Bus cannot be reactivated");
+  }
+  if (
+    error instanceof Error &&
+    (error.message.includes("Unique constraint") || error.message.includes("P2002"))
+  ) {
+    throw conflict("A fleet asset with that unique value already exists");
+  }
+  throw error;
+}
+
+export async function listBuses(actor: FleetActor) {
+  requireAdmin(actor);
+  return (await listBusesRecord()).map(busDto);
+}
+
+export async function createBus(actor: FleetActor, input: CreateBusInput) {
+  requireAdmin(actor);
+  try {
+    return busDto(await createBusRecord(input));
+  } catch (error) {
+    fleetFailure(error);
+  }
+}
+
+export async function updateBus(
+  actor: FleetActor,
+  input: UpdateBusInput,
+  clock: Clock = systemClock,
+) {
+  requireAdmin(actor);
+  try {
+    return busDto(await updateBusRecord(actor.userId, input, clock.now()));
+  } catch (error) {
+    fleetFailure(error);
+  }
+}
+
+export async function retireBus(
+  actor: FleetActor,
+  id: string,
+  clock: Clock = systemClock,
+) {
+  requireAdmin(actor);
+  try {
+    return busDto(await retireBusRecord(actor.userId, id, clock.now()));
+  } catch (error) {
+    fleetFailure(error);
+  }
+}
+
 export async function listStops(actor: FleetActor) {
   requireAdmin(actor);
   return (await listActiveStopsRecord()).map(stopDto);
@@ -78,17 +158,29 @@ export async function listStops(actor: FleetActor) {
 
 export async function createStop(actor: FleetActor, input: CreateStopInput) {
   requireAdmin(actor);
-  return stopDto(await createStopRecord(input));
+  try {
+    return stopDto(await createStopRecord(input));
+  } catch (error) {
+    fleetFailure(error);
+  }
 }
 
 export async function updateStop(actor: FleetActor, input: UpdateStopInput) {
   requireAdmin(actor);
-  return stopDto(await updateStopRecord(input));
+  try {
+    return stopDto(await updateStopRecord(input));
+  } catch (error) {
+    fleetFailure(error);
+  }
 }
 
 export async function retireStop(actor: FleetActor, id: string) {
   requireAdmin(actor);
-  return retireStopRecord(id);
+  try {
+    return await retireStopRecord(id);
+  } catch (error) {
+    fleetFailure(error);
+  }
 }
 
 export async function listRoutes(actor: FleetActor) {

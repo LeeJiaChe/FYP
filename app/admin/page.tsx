@@ -10,6 +10,8 @@ import LiveMonitoringTab from "@/components/admin/LiveMonitoringTab";
 import BusesTab from "@/components/admin/BusesTab";
 import RoutesTab from "@/components/admin/RoutesTab";
 import TripsTab from "@/components/admin/TripsTab";
+import StopsTab from "@/components/admin/StopsTab";
+import DriversTab from "@/components/admin/DriversTab";
 import AppealsTab from "@/components/admin/AppealsTab";
 import AnalyticsTab from "@/components/admin/AnalyticsTab";
 
@@ -20,13 +22,14 @@ import {
   Calendar,
   CreditCard,
   BarChart3,
+  UserRound,
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const { user } = useAuth();
   const { trips, fetchTrips } = useTrips();
   const [activeTab, setActiveTab] = useState<
-    "live" | "buses" | "routes" | "trips" | "appeals" | "analytics"
+    "live" | "stops" | "buses" | "routes" | "trips" | "drivers" | "appeals" | "analytics"
   >("live");
 
   // Realtime Live Seat Monitoring state
@@ -55,6 +58,7 @@ export default function AdminDashboard() {
   });
 
   const [showRouteModal, setShowRouteModal] = useState(false);
+  const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
   const [newRoute, setNewRoute] = useState({
     name: "",
     routeStops: [
@@ -64,6 +68,7 @@ export default function AdminDashboard() {
   });
 
   const [showTripModal, setShowTripModal] = useState(false);
+  const [editingTripId, setEditingTripId] = useState<string | null>(null);
   const [newTrip, setNewTrip] = useState({
     routeId: "",
     busId: "",
@@ -225,14 +230,15 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
     try {
       const res = await fetch("/api/admin/routes", {
-        method: "POST",
+        method: editingRouteId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newRoute.name, stops: newRoute.routeStops }),
+        body: JSON.stringify({ ...(editingRouteId ? { id: editingRouteId } : {}), name: newRoute.name, stops: newRoute.routeStops }),
       });
 
       if (res.ok) {
-        toast.success("Route created successfully");
+        toast.success(editingRouteId ? "Route updated; existing Trip snapshots are unchanged" : "Route created successfully");
         setShowRouteModal(false);
+        setEditingRouteId(null);
         setNewRoute({
           name: "",
           routeStops: [
@@ -252,23 +258,27 @@ export default function AdminDashboard() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const payload = {
-        ...newTrip,
-        driverId: newTrip.driverId || undefined,
+      const payload = editingTripId ? {
+        driverId: newTrip.driverId || null,
         departureTime: newTrip.departureTime
           ? new Date(newTrip.departureTime).toISOString()
           : "",
+      } : {
+        ...newTrip,
+        driverId: newTrip.driverId || undefined,
+        departureTime: newTrip.departureTime ? new Date(newTrip.departureTime).toISOString() : "",
       };
 
-      const res = await fetch("/api/trips", {
-        method: "POST",
+      const res = await fetch(editingTripId ? `/api/trips/${editingTripId}` : "/api/trips", {
+        method: editingTripId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       if (res.ok) {
-        toast.success("Trip scheduled successfully");
+        toast.success(editingTripId ? "Trip schedule updated" : "Trip scheduled successfully");
         setShowTripModal(false);
+        setEditingTripId(null);
         setNewTrip({
           routeId: "",
           busId: "",
@@ -281,6 +291,69 @@ export default function AdminDashboard() {
         toast.error(`Failed to schedule trip: ${errData.error?.message || errData.error || res.status}`);
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
+  }
+
+  async function mutateSimple(url: string, method: string, body?: unknown) {
+    const res = await fetch(url, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || data.error || "Operation failed");
+    return data;
+  }
+
+  async function handleCreateStop(existing?: any) {
+    const code = window.prompt("Stable stop code", existing?.code ?? "");
+    if (code === null) return;
+    const name = window.prompt("Display name", existing?.name ?? "");
+    if (name === null) return;
+    const latitude = Number(window.prompt("Latitude (-90 to 90)", String(existing?.latitude ?? "3.215")));
+    const longitude = Number(window.prompt("Longitude (-180 to 180)", String(existing?.longitude ?? "101.728")));
+    try {
+      await mutateSimple("/api/admin/stops", existing ? "PATCH" : "POST", { ...(existing ? { id: existing.id } : {}), code, name, latitude, longitude });
+      toast.success(existing ? "Stop updated" : "Stop created");
+      fetchStops();
+    } catch (error: any) { toast.error(error.message); }
+  }
+
+  async function handleDeactivateStop(stop: any) {
+    if (!window.confirm(`Deactivate ${stop.code}? Historical Trip snapshots remain readable.`)) return;
+    try { await mutateSimple(`/api/admin/stops?id=${stop.id}`, "DELETE"); toast.success("Stop deactivated"); fetchStops(); fetchRoutes(); }
+    catch (error: any) { toast.error(error.message); }
+  }
+
+  async function handleDeactivateRoute(route: any) {
+    if (!window.confirm(`Deactivate ${route.name}? Existing Trips are not rewritten.`)) return;
+    try { await mutateSimple(`/api/admin/routes?id=${route.id}`, "DELETE"); toast.success("Route deactivated"); fetchRoutes(); }
+    catch (error: any) { toast.error(error.message); }
+  }
+
+  async function handleRetireBus(bus: any) {
+    if (!window.confirm(`Retire ${bus.plateNumber}? Future NOT_STARTED Trips will be cancelled.`)) return;
+    try { await mutateSimple(`/api/admin/buses?id=${bus.id}`, "DELETE"); toast.success("Bus retired"); fetchBuses(); fetchTrips(); }
+    catch (error: any) { toast.error(error.message); }
+  }
+
+  async function handleDriver(existing?: any) {
+    const name = window.prompt("Driver name", existing?.name ?? "");
+    if (name === null) return;
+    const email = window.prompt("Driver email", existing?.email ?? "");
+    if (email === null) return;
+    const password = existing ? undefined : window.prompt("Temporary password (8+ chars, upper/lower/number)");
+    if (!existing && password === null) return;
+    try {
+      await mutateSimple("/api/admin/drivers", existing ? "PATCH" : "POST", { ...(existing ? { id: existing.id } : { password }), name, email });
+      toast.success(existing ? "Driver updated" : "Driver created"); fetchDrivers();
+    } catch (error: any) { toast.error(error.message); }
+  }
+
+  async function handleCancelTrip(trip: any) {
+    const reason = window.prompt("Cancellation reason (required)");
+    if (!reason) return;
+    try { await mutateSimple(`/api/trips/${trip.id}`, "DELETE", { reason }); toast.success("Trip cancelled"); fetchTrips(); }
+    catch (error: any) { toast.error(error.message); }
   }
 
 
@@ -328,9 +401,11 @@ export default function AdminDashboard() {
             {(
               [
                 "live",
+                "stops",
                 "buses",
                 "routes",
                 "trips",
+                "drivers",
                 "appeals",
                 "analytics",
               ] as const
@@ -343,16 +418,20 @@ export default function AdminDashboard() {
                   />
                 ),
                 buses: <Bus className="w-4 h-4" />,
+                stops: <MapPin className="w-4 h-4" />,
                 routes: <MapPin className="w-4 h-4" />,
                 trips: <Calendar className="w-4 h-4" />,
+                drivers: <UserRound className="w-4 h-4" />,
                 appeals: <CreditCard className="w-4 h-4" />,
                 analytics: <BarChart3 className="w-4 h-4" />,
               };
               const labels: Record<string, string> = {
                 live: "Live Fleet",
                 buses: "Buses",
+                stops: "Stops",
                 routes: "Routes",
                 trips: "Timetable",
+                drivers: "Drivers",
                 appeals: "Appeals",
                 analytics: "Analytics",
               };
@@ -399,21 +478,27 @@ export default function AdminDashboard() {
 
         {/* TAB 2: BUSES CRUD */}
         {activeTab === "buses" && (
-          <BusesTab buses={buses} onOpenModal={() => { setEditingBusId(null); setNewBus({ plateNumber: "", seatedCapacity: 20, standingCapacity: 8, status: "ACTIVE" }); setShowBusModal(true); }} onEditBus={(bus) => { setEditingBusId(bus.id); setNewBus({ plateNumber: bus.plateNumber, seatedCapacity: bus.seatedCapacity, standingCapacity: bus.standingCapacity, status: bus.status }); setShowBusModal(true); }} />
+          <BusesTab buses={buses} onOpenModal={() => { setEditingBusId(null); setNewBus({ plateNumber: "", seatedCapacity: 20, standingCapacity: 8, status: "ACTIVE" }); setShowBusModal(true); }} onEditBus={(bus) => { setEditingBusId(bus.id); setNewBus({ plateNumber: bus.plateNumber, seatedCapacity: bus.seatedCapacity, standingCapacity: bus.standingCapacity, status: bus.status }); setShowBusModal(true); }} onRetireBus={handleRetireBus} />
         )}
+
+        {activeTab === "stops" && <StopsTab stops={stops} onCreate={() => handleCreateStop()} onEdit={handleCreateStop} onDeactivate={handleDeactivateStop} />}
 
         {/* TAB 3: ROUTES CRUD */}
         {activeTab === "routes" && (
           <RoutesTab
             routes={routes}
-            onOpenModal={() => setShowRouteModal(true)}
+            onOpenModal={() => { setEditingRouteId(null); setNewRoute({ name: "", routeStops: [{ stopId: "", travelDurationToNextMinutes: 10 }, { stopId: "", travelDurationToNextMinutes: null }] }); setShowRouteModal(true); }}
+            onEditRoute={(route) => { setEditingRouteId(route.id); setNewRoute({ name: route.name, routeStops: route.routeStops.map((item: any) => ({ stopId: item.stop.id, travelDurationToNextMinutes: item.travelDurationToNextMinutes })) }); setShowRouteModal(true); }}
+            onDeactivateRoute={handleDeactivateRoute}
           />
         )}
 
         {/* TAB 4: TIMETABLE & TRIPS */}
         {activeTab === "trips" && (
-          <TripsTab trips={trips} onOpenModal={() => setShowTripModal(true)} />
+          <TripsTab trips={trips} onOpenModal={() => { setEditingTripId(null); setNewTrip({ routeId: "", busId: "", driverId: "", departureTime: "" }); setShowTripModal(true); }} onEditTrip={(trip) => { setEditingTripId(trip.id); setNewTrip({ routeId: trip.routeId, busId: trip.busId, driverId: trip.driverId || "", departureTime: new Date(trip.departureTime).toISOString().slice(0, 16) }); setShowTripModal(true); }} onCancelTrip={handleCancelTrip} />
         )}
+
+        {activeTab === "drivers" && <DriversTab drivers={drivers} onCreate={() => handleDriver()} onEdit={handleDriver} />}
 
         {/* TAB 5: PENALTY APPEALS */}
         {activeTab === "appeals" && (
@@ -466,6 +551,16 @@ export default function AdminDashboard() {
                   className="input-field"
                 />
               </div>
+              {editingBusId && (
+                <div>
+                  <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Fleet Status</label>
+                  <select value={newBus.status} onChange={(e) => setNewBus({ ...newBus, status: e.target.value })} className="input-field">
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="MAINTENANCE">MAINTENANCE</option>
+                  </select>
+                  <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>Maintenance or retirement cancels future NOT_STARTED Trips through the central cancellation workflow.</p>
+                </div>
+              )}
               <div>
                 <label
                   className="block text-xs font-bold mb-1.5"
@@ -517,7 +612,7 @@ export default function AdminDashboard() {
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary text-xs">
-                  Create Bus
+                  {editingBusId ? "Save Bus" : "Create Bus"}
                 </button>
               </div>
             </form>
@@ -533,7 +628,7 @@ export default function AdminDashboard() {
               className="text-lg font-bold"
               style={{ color: "var(--text-primary)" }}
             >
-              Add New Route
+              {editingRouteId ? "Edit Route" : "Add New Route"}
             </h2>
             <form onSubmit={handleCreateRoute} className="space-y-4">
               <div>
@@ -651,7 +746,7 @@ export default function AdminDashboard() {
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary text-xs">
-                  Create Route
+                  {editingRouteId ? "Save Route" : "Create Route"}
                 </button>
               </div>
             </form>
@@ -667,7 +762,7 @@ export default function AdminDashboard() {
               className="text-lg font-bold"
               style={{ color: "var(--text-primary)" }}
             >
-              Schedule New Trip
+              {editingTripId ? "Reschedule / Reassign Trip" : "Schedule New Trip"}
             </h2>
             <form onSubmit={handleCreateTrip} className="space-y-4">
               {[
@@ -681,7 +776,7 @@ export default function AdminDashboard() {
                 {
                   label: "Bus",
                   key: "busId",
-                  opts: buses.map((b: any) => ({
+                  opts: buses.filter((b: any) => b.status === "ACTIVE").map((b: any) => ({
                     v: b.id,
                     l: `${b.plateNumber} (${b.seatedCapacity} seated, ${b.standingCapacity} standing)`,
                   })),
@@ -708,6 +803,7 @@ export default function AdminDashboard() {
                   </label>
                   <select
                     required={req}
+                    disabled={Boolean(editingTripId && (key === "routeId" || key === "busId"))}
                     value={(newTrip as any)[key]}
                     onChange={(e) =>
                       setNewTrip({ ...newTrip, [key]: e.target.value })
@@ -755,7 +851,7 @@ export default function AdminDashboard() {
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary text-xs">
-                  Schedule Trip
+                  {editingTripId ? "Save Schedule" : "Schedule Trip"}
                 </button>
               </div>
             </form>

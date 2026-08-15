@@ -1,6 +1,6 @@
 # Phase 6 — No-show, Credit, Restriction, Penalty, Appeal, and Reconciliation
 
-Status: **Implemented on `architecture-v2`; GPS/Phase 7 not started**
+Status: **Implemented on `architecture-v2`; Phase 7 implemented separately; GPS/Phase 8 not started**
 
 Date: 2026-08-15
 

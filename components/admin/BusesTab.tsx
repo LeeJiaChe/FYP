@@ -1,14 +1,15 @@
 "use client";
 
-import { Plus, Edit } from "lucide-react";
+import { Plus, Edit, Trash2 } from "lucide-react";
 
 interface BusesTabProps {
   buses: any[];
   onOpenModal: () => void;
   onEditBus: (bus: any) => void;
+  onRetireBus: (bus: any) => void;
 }
 
-export default function BusesTab({ buses, onOpenModal, onEditBus }: BusesTabProps) {
+export default function BusesTab({ buses, onOpenModal, onEditBus, onRetireBus }: BusesTabProps) {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
@@ -50,6 +51,11 @@ export default function BusesTab({ buses, onOpenModal, onEditBus }: BusesTabProp
               >
                 <Edit className="w-3 h-3" /> Edit
               </button>
+              {b.status !== "RETIRED" && (
+                <button onClick={() => onRetireBus(b)} className="btn-ghost flex items-center gap-1 text-[11px] px-2 py-1">
+                  <Trash2 className="w-3 h-3" /> Retire
+                </button>
+              )}
             </div>
           </div>
         ))}

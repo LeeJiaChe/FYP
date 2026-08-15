@@ -28,7 +28,12 @@ export interface Trip {
   id: string;
   routeId: string;
   busId: string;
-  driverId: string;
+  driverId?: string | null;
+  routeName?: string;
+  busPlateNumber?: string;
+  driverName?: string;
+  seatedCapacity?: number;
+  standingCapacity?: number;
   departureTime: string;
   estimatedArrivalTime: string;
   status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
@@ -43,6 +48,11 @@ export interface Trip {
   // Stats added by API
   stats?: {
     totalSeats: number;
+    confirmedReserved?: number;
+    boardedReserved?: number;
+    noShow?: number;
+    walkInBoarded?: number;
+    waitlistWaiting?: number;
     legacyAvailableSeats?: number;
   };
 
@@ -58,8 +68,6 @@ export interface Trip {
   }>;
   
   // For frontend use sometimes
-  routeName?: string;
-  busPlateNumber?: string;
   routeStops?: string[];
 }
 

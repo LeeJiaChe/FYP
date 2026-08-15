@@ -4,6 +4,7 @@ import { Prisma, type CheckInMethod } from "@prisma/client";
 
 import { evaluateBoardingEligibility } from "../domain/boarding-policy";
 import { assertTripTransition } from "@/features/trips/public";
+import { cancelTripInTransaction } from "@/features/trips/server";
 import { processNoShowsAtTripStopInTransaction } from "@/features/penalties/server";
 import type { ProductPolicy } from "@/shared/config/policies";
 import { prisma } from "@/shared/db/prisma.server";
@@ -447,40 +448,20 @@ export async function progressTripRecord(
 
     if (input.action === "CANCEL") {
       try {
-        assertTripTransition(trip.status, "CANCELLED", input.reason);
+        const result = await cancelTripInTransaction(transaction, {
+          tripId,
+          actorId: liveActor.id,
+          reason: input.reason,
+          now,
+          allowAssignedDriver: true,
+        });
+        return {
+          trip: result.trip,
+          autoAlighted: { reserved: 0, walkIn: 0 },
+        };
       } catch {
         throw new BoardingPersistenceError("ILLEGAL_TRIP_TRANSITION");
       }
-      await transaction.tripStatusHistory.create({
-        data: {
-          tripId,
-          fromStatus: trip.status,
-          toStatus: "CANCELLED",
-          actorId: liveActor.id,
-          reason: input.reason,
-          occurredAt: now,
-        },
-      });
-      if (trip.status !== "DEPARTED") {
-        await transaction.reservedSeatSegment.deleteMany({ where: { tripId } });
-        await transaction.booking.updateMany({
-          where: { tripId, status: "CONFIRMED", checkedInAt: null },
-          data: { status: "CANCELLED" },
-        });
-      }
-      await transaction.waitlistEntry.updateMany({
-        where: { tripId, status: "WAITING" },
-        data: { status: "CANCELLED" },
-      });
-      await transaction.walkInIntent.updateMany({
-        where: { tripId, status: "PENDING" },
-        data: { status: "CANCELLED" },
-      });
-      const updated = await transaction.trip.update({
-        where: { id: tripId },
-        data: { status: "CANCELLED", delayReason: input.reason },
-      });
-      return { trip: updated, autoAlighted: { reserved: 0, walkIn: 0 } };
     }
 
     if (input.action === "START_BOARDING") {

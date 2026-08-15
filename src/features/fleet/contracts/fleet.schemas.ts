@@ -29,7 +29,27 @@ export const updateRouteSchema = createRouteSchema.partial().extend({
   id: z.string().uuid(),
 });
 
+const plateNumberSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(24)
+  .transform((plateNumber) => plateNumber.toUpperCase());
+
+export const createBusSchema = z.object({
+  plateNumber: plateNumberSchema,
+  seatedCapacity: z.number().int().positive(),
+  standingCapacity: z.number().int().nonnegative(),
+  status: z.enum(["ACTIVE", "MAINTENANCE", "RETIRED"]).default("ACTIVE"),
+});
+
+export const updateBusSchema = createBusSchema.partial().extend({
+  id: uuidSchema,
+});
+
 export type CreateStopInput = z.infer<typeof createStopSchema>;
 export type UpdateStopInput = z.infer<typeof updateStopSchema>;
 export type CreateRouteInput = z.infer<typeof createRouteSchema>;
 export type UpdateRouteInput = z.infer<typeof updateRouteSchema>;
+export type CreateBusInput = z.infer<typeof createBusSchema>;
+export type UpdateBusInput = z.infer<typeof updateBusSchema>;

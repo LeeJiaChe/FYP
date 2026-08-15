@@ -1,190 +1,51 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
-import { createBusSchema, updateBusSchema } from "@/lib/validations";
+import {
+  createBus,
+  createBusSchema,
+  listBuses,
+  retireBus,
+  updateBus,
+  updateBusSchema,
+} from "@/features/fleet/server";
+import { unauthenticated } from "@/shared/application/application-error";
+import { handleRoute, parseJsonBody } from "@/shared/http/handle-route.server";
+import { uuidSchema } from "@/shared/types/uuid";
 
-export async function GET() {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized. Admin access required." }, { status: 403 });
-    }
-
-    const buses = await prisma.bus.findMany({
-      where: { deletedAt: null },
-      orderBy: { plateNumber: "asc" },
-      include: {
-        _count: { select: { trips: true } },
-      },
-    });
-    return NextResponse.json({ buses });
-  } catch (err: any) {
-    console.error("[admin/buses GET] Error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+async function actor() {
+  const user = await getUserFromToken();
+  if (!user) throw unauthenticated();
+  return { userId: user.userId, role: user.role };
 }
 
-export async function POST(req: Request) {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized. Admin role required." }, { status: 403 });
-    }
-
-    const body = await req.json();
-    const validated = createBusSchema.parse(body);
-
-    const bus = await prisma.bus.create({
-      data: validated,
-    });
-
-    return NextResponse.json({ success: true, bus });
-  } catch (err: any) {
-    if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || "Validation error";
-      return NextResponse.json({ error: msg }, { status: 400 });
-    }
-    console.error("[admin/buses POST] Error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+export async function GET(request: Request) {
+  return handleRoute(request, async () => ({
+    body: { buses: await listBuses(await actor()) },
+  }));
 }
 
-export async function PATCH(req: Request) {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
-    const body = await req.json();
-    const { id, plateNumber, seatedCapacity, standingCapacity, status } =
-      updateBusSchema.parse(body);
-
-    const updatedBus = await prisma.$transaction(async (tx) => {
-      const bus = await tx.bus.update({
-        where: { id },
-        data: {
-          ...(plateNumber ? { plateNumber } : {}),
-          ...(seatedCapacity === undefined ? {} : { seatedCapacity }),
-          ...(standingCapacity === undefined ? {} : { standingCapacity }),
-          ...(status ? { status } : {}),
-        },
-      });
-
-      // If bus status changed to RETIRED or MAINTENANCE, cancel upcoming unstarted trips
-      if (status === "RETIRED" || status === "MAINTENANCE") {
-        const upcomingTrips = await tx.trip.findMany({
-          where: {
-            busId: id,
-            status: { in: ["NOT_STARTED", "BOARDING"] },
-          },
-          include: {
-            bookings: {
-              where: { status: "CONFIRMED" },
-            },
-            waitlistEntries: { where: { status: "WAITING" } },
-          },
-        });
-
-        for (const trip of upcomingTrips) {
-          await tx.tripStatusHistory.create({
-            data: {
-              tripId: trip.id,
-              fromStatus: trip.status,
-              toStatus: "CANCELLED",
-              actorId: user.userId,
-              reason: `Bus ${bus.plateNumber} status updated to ${status}`,
-            },
-          });
-          // Cancel trip
-          await tx.trip.update({
-            where: { id: trip.id },
-            data: {
-              status: "CANCELLED",
-              delayReason: `Bus ${bus.plateNumber} status updated to ${status}`,
-            },
-          });
-
-          // Cancel bookings for trip
-          const studentIds = Array.from(new Set([
-            ...trip.bookings.map((booking) => booking.studentId),
-            ...trip.waitlistEntries.map((entry) => entry.studentId),
-          ]));
-
-          await tx.reservedSeatSegment.deleteMany({ where: { tripId: trip.id } });
-          await tx.booking.updateMany({
-            where: { tripId: trip.id, status: "CONFIRMED" },
-            data: { status: "CANCELLED" },
-          });
-          await tx.waitlistEntry.updateMany({
-            where: { tripId: trip.id, status: "WAITING" },
-            data: { status: "CANCELLED" },
-          });
-          await tx.walkInIntent.updateMany({
-            where: { tripId: trip.id, status: "PENDING" },
-            data: { status: "CANCELLED" },
-          });
-
-          // Release seats
-          await tx.seat.updateMany({
-            where: { tripId: trip.id },
-            data: { status: "AVAILABLE" },
-          });
-
-          // Notify students
-          if (studentIds.length > 0) {
-            await tx.notification.createMany({
-              data: studentIds.map((userId) => ({
-                userId,
-                type: "CANCELLED",
-                message: `Trip cancelled due to bus maintenance/retirement (${bus.plateNumber}).`,
-              })),
-            });
-          }
-        }
-      }
-
-      return bus;
-    });
-
-    return NextResponse.json({ success: true, bus: updatedBus });
-  } catch (err: any) {
-    if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || "Validation error";
-      return NextResponse.json({ error: msg }, { status: 400 });
-    }
-    console.error("[admin/buses PATCH] Error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+export async function POST(request: Request) {
+  return handleRoute(request, async () => ({
+    body: {
+      success: true,
+      bus: await createBus(await actor(), await parseJsonBody(request, createBusSchema)),
+    },
+    status: 201,
+  }));
 }
 
-export async function DELETE(req: Request) {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
+export async function PATCH(request: Request) {
+  return handleRoute(request, async () => ({
+    body: {
+      success: true,
+      bus: await updateBus(await actor(), await parseJsonBody(request, updateBusSchema)),
+    },
+  }));
+}
 
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-    if (!id) return NextResponse.json({ error: "Bus ID required" }, { status: 400 });
-
-    const activeTripsCount = await prisma.trip.count({
-      where: { busId: id, status: { in: ["NOT_STARTED", "BOARDING", "DEPARTED"] } },
-    });
-
-    if (activeTripsCount > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete bus assigned to ${activeTripsCount} active or upcoming trip(s). Reassign or cancel trips first.` },
-        { status: 400 }
-      );
-    }
-
-    // Soft delete per Q-006 to preserve historical references
-    await prisma.bus.update({ where: { id }, data: { deletedAt: new Date(), status: "RETIRED" } });
-    return NextResponse.json({ success: true });
-  } catch (err: any) {
-    console.error("[admin/buses DELETE] Error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+export async function DELETE(request: Request) {
+  return handleRoute(request, async () => {
+    const id = uuidSchema.parse(new URL(request.url).searchParams.get("id"));
+    await retireBus(await actor(), id);
+    return { body: { success: true } };
+  });
 }

@@ -1,13 +1,15 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Edit, Plus, Trash2 } from "lucide-react";
 
 interface RoutesTabProps {
   routes: any[];
   onOpenModal: () => void;
+  onEditRoute: (route: any) => void;
+  onDeactivateRoute: (route: any) => void;
 }
 
-export default function RoutesTab({ routes, onOpenModal }: RoutesTabProps) {
+export default function RoutesTab({ routes, onOpenModal, onEditRoute, onDeactivateRoute }: RoutesTabProps) {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
@@ -43,6 +45,17 @@ export default function RoutesTab({ routes, onOpenModal }: RoutesTabProps) {
               ))}
             </div>
             <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>{r.routeStops?.length || 0} ordered stops</p>
+            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              Changes apply only to Trips created after the edit; existing snapshots are preserved.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => onEditRoute(r)} className="btn-ghost flex items-center gap-1 text-[11px]">
+                <Edit className="w-3 h-3" /> Edit
+              </button>
+              <button onClick={() => onDeactivateRoute(r)} className="btn-ghost flex items-center gap-1 text-[11px]">
+                <Trash2 className="w-3 h-3" /> Deactivate
+              </button>
+            </div>
           </div>
         ))}
       </div>

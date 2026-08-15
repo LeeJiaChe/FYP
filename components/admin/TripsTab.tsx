@@ -1,13 +1,15 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { CalendarClock, Plus, XCircle } from "lucide-react";
 
 interface TripsTabProps {
   trips: any[];
   onOpenModal: () => void;
+  onEditTrip: (trip: any) => void;
+  onCancelTrip: (trip: any) => void;
 }
 
-export default function TripsTab({ trips, onOpenModal }: TripsTabProps) {
+export default function TripsTab({ trips, onOpenModal, onEditTrip, onCancelTrip }: TripsTabProps) {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
@@ -43,13 +45,24 @@ export default function TripsTab({ trips, onOpenModal }: TripsTabProps) {
                 Driver: <span style={{ color: "var(--text-primary)" }}>{t.driverName || "Unassigned"}</span> • Departure:{" "}
                 <span className="font-semibold" style={{ color: "#4ade80" }}>{new Date(t.departureTime).toLocaleString()}</span>
               </p>
+              <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                Arrival: {new Date(t.estimatedArrivalTime).toLocaleString()} • Snapshot: {t.seatedCapacity} seated + {t.standingCapacity} standing
+              </p>
+              <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                Reserved {t.stats?.confirmedReserved ?? 0} • Boarded {t.stats?.boardedReserved ?? 0} • Walk-in {t.stats?.walkInBoarded ?? 0} • Waiting {t.stats?.waitlistWaiting ?? 0} • No-show {t.stats?.noShow ?? 0}
+              </p>
             </div>
-            <span
-              className="px-3 py-1 text-xs font-bold rounded-xl border uppercase"
-              style={{ background: "var(--bg-surface)", color: "var(--text-secondary)", borderColor: "var(--border)" }}
-            >
-              Status: {t.status}
-            </span>
+            <div className="flex flex-col gap-2 items-end">
+              <span className="px-3 py-1 text-xs font-bold rounded-xl border uppercase" style={{ background: "var(--bg-surface)", color: "var(--text-secondary)", borderColor: "var(--border)" }}>
+                Status: {t.status}{t.delayMinutes ? ` • +${t.delayMinutes} min` : ""}
+              </span>
+              {t.status === "NOT_STARTED" && (
+                <button onClick={() => onEditTrip(t)} className="btn-ghost flex items-center gap-1 text-[11px]"><CalendarClock className="w-3 h-3" /> Reschedule / Driver</button>
+              )}
+              {!["ARRIVED", "CANCELLED"].includes(t.status) && (
+                <button onClick={() => onCancelTrip(t)} className="btn-ghost flex items-center gap-1 text-[11px]"><XCircle className="w-3 h-3" /> Cancel Trip</button>
+              )}
+            </div>
           </div>
         ))}
       </div>

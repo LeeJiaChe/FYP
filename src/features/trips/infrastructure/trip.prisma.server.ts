@@ -2,13 +2,15 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { buildTripSnapshot } from "../domain/build-trip-snapshot";
 import type {
   ListTripsQuery,
   ScheduleTripInput,
+  UpdateScheduledTripInput,
 } from "../contracts/trip.schemas";
+import { canEditSchedule } from "../domain/scheduling-policy";
 import { prisma } from "@/shared/db/prisma.server";
 
 export type TripPersistenceFailureCode =
@@ -17,7 +19,11 @@ export type TripPersistenceFailureCode =
   | "DRIVER_NOT_VALID"
   | "BUS_SCHEDULE_CONFLICT"
   | "DRIVER_SCHEDULE_CONFLICT"
-  | "INVENTORY_COUNT_MISMATCH";
+  | "INVENTORY_COUNT_MISMATCH"
+  | "TRIP_NOT_FOUND"
+  | "TRIP_NOT_CANCELLABLE"
+  | "TRIP_NOT_EDITABLE"
+  | "ACTOR_FORBIDDEN";
 
 export class TripPersistenceError extends Error {
   constructor(readonly code: TripPersistenceFailureCode) {
@@ -33,6 +39,191 @@ async function lockScheduleKey(
   await transaction.$executeRaw`
     SELECT pg_advisory_xact_lock(hashtext(${key}))
   `;
+}
+
+export interface CancelTripTransactionInput {
+  readonly tripId: string;
+  readonly actorId: string;
+  readonly reason: string;
+  readonly now: Date;
+  readonly allowedStatuses?: readonly ("NOT_STARTED" | "BOARDING" | "DEPARTED")[];
+  readonly allowAssignedDriver?: boolean;
+}
+
+export async function cancelTripInTransaction(
+  transaction: Prisma.TransactionClient,
+  input: CancelTripTransactionInput,
+) {
+  const rows = await transaction.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM "Trip" WHERE "id" = ${input.tripId} FOR UPDATE
+  `;
+  if (rows.length !== 1) throw new TripPersistenceError("TRIP_NOT_FOUND");
+  const trip = await transaction.trip.findUniqueOrThrow({
+    where: { id: input.tripId },
+    include: {
+      bookings: {
+        where: { status: "CONFIRMED" },
+        select: { studentId: true },
+      },
+      waitlistEntries: {
+        where: { status: "WAITING" },
+        select: { studentId: true },
+      },
+      walkInIntents: {
+        where: { status: "PENDING" },
+        select: { studentId: true },
+      },
+    },
+  });
+  const actor = await transaction.user.findUnique({
+    where: { id: input.actorId },
+    select: { role: true },
+  });
+  if (
+    actor?.role !== "ADMIN" &&
+    !(input.allowAssignedDriver && actor?.role === "DRIVER" && trip.driverId === input.actorId)
+  ) {
+    throw new TripPersistenceError("ACTOR_FORBIDDEN");
+  }
+  if (trip.status === "CANCELLED") {
+    return { trip, alreadyCancelled: true, affectedStudents: 0 };
+  }
+  if (
+    trip.status === "ARRIVED" ||
+    (input.allowedStatuses && !input.allowedStatuses.includes(trip.status as "NOT_STARTED" | "BOARDING" | "DEPARTED"))
+  ) {
+    throw new TripPersistenceError("TRIP_NOT_CANCELLABLE");
+  }
+
+  const reason = input.reason.trim();
+  if (!reason) throw new TripPersistenceError("TRIP_NOT_CANCELLABLE");
+  const studentIds = [
+    ...trip.bookings.map((record) => record.studentId),
+    ...trip.waitlistEntries.map((record) => record.studentId),
+    ...trip.walkInIntents.map((record) => record.studentId),
+  ].filter((value, index, values) => values.indexOf(value) === index);
+
+  await transaction.reservedSeatSegment.deleteMany({ where: { tripId: trip.id } });
+  await transaction.booking.updateMany({
+    where: { tripId: trip.id, status: "CONFIRMED" },
+    data: { status: "CANCELLED" },
+  });
+  await transaction.waitlistEntry.updateMany({
+    where: { tripId: trip.id, status: "WAITING" },
+    data: { status: "CANCELLED" },
+  });
+  await transaction.walkInIntent.updateMany({
+    where: { tripId: trip.id, status: "PENDING" },
+    data: { status: "CANCELLED" },
+  });
+  await transaction.tripStatusHistory.create({
+    data: {
+      tripId: trip.id,
+      fromStatus: trip.status,
+      toStatus: "CANCELLED",
+      actorId: input.actorId,
+      reason,
+      occurredAt: input.now,
+    },
+  });
+  const updated = await transaction.trip.update({
+    where: { id: trip.id },
+    data: { status: "CANCELLED", delayReason: reason },
+  });
+  if (studentIds.length > 0) {
+    await transaction.notification.createMany({
+      data: studentIds.map((userId) => ({
+        userId,
+        type: "CANCELLED" as const,
+        message: `Trip cancelled: ${reason}`,
+        deduplicationKey: `trip-cancelled:${trip.id}:${userId}`,
+      })),
+      skipDuplicates: true,
+    });
+  }
+  return { trip: updated, alreadyCancelled: false, affectedStudents: studentIds.length };
+}
+
+export async function cancelTripRecord(input: CancelTripTransactionInput) {
+  return prisma.$transaction((transaction) => cancelTripInTransaction(transaction, input));
+}
+
+export async function updateScheduledTripRecord(
+  tripId: string,
+  input: UpdateScheduledTripInput,
+  now: Date,
+) {
+  return prisma.$transaction(async (transaction) => {
+    await lockScheduleKey(transaction, `trip:${tripId}`);
+    const trip = await transaction.trip.findUnique({
+      where: { id: tripId },
+      include: {
+        tripStops: { orderBy: { position: "asc" } },
+        _count: {
+          select: {
+            bookings: true,
+            waitlistEntries: true,
+            walkInIntents: true,
+            walkInJourneys: true,
+          },
+        },
+      },
+    });
+    if (!trip) throw new TripPersistenceError("TRIP_NOT_FOUND");
+    if (!canEditSchedule(trip.status, trip._count)) {
+      throw new TripPersistenceError("TRIP_NOT_EDITABLE");
+    }
+
+    const departureTime = input.departureTime
+      ? new Date(input.departureTime)
+      : trip.departureTime;
+    if (departureTime <= now) throw new TripPersistenceError("TRIP_NOT_EDITABLE");
+    const driverId = input.driverId === undefined ? trip.driverId : input.driverId;
+    await lockScheduleKey(transaction, `bus:${trip.busId}`);
+    if (driverId) {
+      await lockScheduleKey(transaction, `driver:${driverId}`);
+      const driver = await transaction.user.findUnique({
+        where: { id: driverId },
+        select: { role: true },
+      });
+      if (driver?.role !== "DRIVER") throw new TripPersistenceError("DRIVER_NOT_VALID");
+    }
+    const durationMs = trip.estimatedArrivalTime.getTime() - trip.departureTime.getTime();
+    const estimatedArrivalTime = new Date(departureTime.getTime() + durationMs);
+    const overlapWhere = {
+      id: { not: trip.id },
+      status: { not: "CANCELLED" as const },
+      departureTime: { lt: estimatedArrivalTime },
+      estimatedArrivalTime: { gt: departureTime },
+    };
+    if (await transaction.trip.findFirst({ where: { ...overlapWhere, busId: trip.busId }, select: { id: true } })) {
+      throw new TripPersistenceError("BUS_SCHEDULE_CONFLICT");
+    }
+    if (driverId && await transaction.trip.findFirst({ where: { ...overlapWhere, driverId }, select: { id: true } })) {
+      throw new TripPersistenceError("DRIVER_SCHEDULE_CONFLICT");
+    }
+
+    const shiftMs = departureTime.getTime() - trip.departureTime.getTime();
+    for (const stop of trip.tripStops) {
+      await transaction.tripStop.update({
+        where: { id: stop.id },
+        data: {
+          plannedArrival: new Date(stop.plannedArrival.getTime() + shiftMs),
+          plannedDeparture: new Date(stop.plannedDeparture.getTime() + shiftMs),
+          boardingDeadline: new Date(stop.boardingDeadline.getTime() + shiftMs),
+        },
+      });
+    }
+    return transaction.trip.update({
+      where: { id: trip.id },
+      data: {
+        departureTime,
+        estimatedArrivalTime,
+        boardingDeadline: new Date(trip.boardingDeadline.getTime() + shiftMs),
+        driverId,
+      },
+    });
+  });
 }
 
 export async function createScheduledTripRecord(
@@ -221,9 +412,10 @@ export async function listTripRecords(
       },
       bus: true,
       driver: { select: { id: true, name: true, email: true } },
-      seats: { select: { id: true, seatNumber: true, status: true } },
       tripStops: { orderBy: { position: "asc" } },
-      _count: { select: { bookings: true } },
+      bookings: { select: { status: true, checkedInAt: true } },
+      waitlistEntries: { select: { status: true } },
+      walkInJourneys: { select: { status: true } },
     },
     orderBy: { departureTime: "asc" },
   });

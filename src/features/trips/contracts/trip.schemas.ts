@@ -23,5 +23,21 @@ export const listTripsQuerySchema = z.object({
 
 export const tripIdSchema = uuidSchema;
 
+export const cancelTripSchema = z.object({
+  reason: z.string().trim().min(3).max(240),
+});
+
+export const updateScheduledTripSchema = z
+  .object({
+    departureTime: parseableDatetime.optional(),
+    driverId: z.string().uuid().nullable().optional(),
+  })
+  .refine(
+    (input) => input.departureTime !== undefined || input.driverId !== undefined,
+    "At least one schedulable field is required",
+  );
+
 export type ScheduleTripInput = z.infer<typeof scheduleTripSchema>;
 export type ListTripsQuery = z.infer<typeof listTripsQuerySchema>;
+export type CancelTripInput = z.infer<typeof cancelTripSchema>;
+export type UpdateScheduledTripInput = z.infer<typeof updateScheduledTripSchema>;
