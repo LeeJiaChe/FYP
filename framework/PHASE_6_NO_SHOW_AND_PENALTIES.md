@@ -156,6 +156,8 @@ applied the complete forward migration history and passed all 43 integration
 scenarios, including the 12 Phase 6 scenarios above. The same run passed Prisma
 generation, Architecture v2 lint, strict typecheck, all unit/specification files,
 the dependency-policy scan, and the production build.
+The following documentation-only evidence commit changes no executable or schema
+content; CI is observed again on the final branch head for completeness.
 
 ## Remaining boundary
 
