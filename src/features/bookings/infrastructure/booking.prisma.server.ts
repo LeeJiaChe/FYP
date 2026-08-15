@@ -15,6 +15,7 @@ import {
 } from "../domain/journey-segments";
 import {
   assertReservationEligibility,
+  canPromoteWaitlistEntry,
   canCancelReservedBooking,
   canTransitionReservedBookingToCancelled,
   ReservationPolicyError,
@@ -71,7 +72,6 @@ async function loadJourney(
         id: true,
         role: true,
         creditScore: true,
-        isBookingRestricted: true,
       },
     }),
     transaction.trip.findUnique({
@@ -105,7 +105,6 @@ async function loadJourney(
         tripStatus: trip.status,
         boardingPlannedDeparture: boarding.plannedDeparture,
         studentCredit: student.creditScore,
-        studentRestricted: student.isBookingRestricted,
         now,
       },
       policy,
@@ -340,7 +339,7 @@ export async function joinWaitlistRecord(
   }
 }
 
-async function promoteCompatibleWaitlist(
+export async function promoteCompatibleWaitlistInTransaction(
   transaction: Transaction,
   tripId: string,
   now: Date,
@@ -354,7 +353,48 @@ async function promoteCompatibleWaitlist(
 
   for (const entry of entries) {
     try {
-      const journey = await loadJourney(transaction, entry.studentId, entry, now, policy);
+      const [student, trip] = await Promise.all([
+        transaction.user.findUnique({
+          where: { id: entry.studentId },
+          select: { id: true, role: true, creditScore: true },
+        }),
+        transaction.trip.findUnique({
+          where: { id: tripId },
+          include: {
+            route: { select: { name: true } },
+            tripStops: { orderBy: { position: "asc" } },
+            tripSegments: { orderBy: { position: "asc" } },
+          },
+        }),
+      ]);
+      if (student?.role !== "STUDENT" || !trip) continue;
+      const boarding = trip.tripStops.find(
+        (stop) => stop.id === entry.boardingTripStopId,
+      );
+      const dropOff = trip.tripStops.find(
+        (stop) => stop.id === entry.dropOffTripStopId,
+      );
+      if (
+        !boarding ||
+        !dropOff ||
+        !canPromoteWaitlistEntry(
+          {
+            tripStatus: trip.status,
+            boardingActualDeparture: boarding.actualDeparture,
+            boardingPassedAt: boarding.passedAt,
+            studentCredit: student.creditScore,
+          },
+          policy,
+        )
+      ) {
+        continue;
+      }
+      const segments = deriveJourneySegments(
+        boarding,
+        dropOff,
+        trip.tripSegments,
+      );
+      const journey = { trip, boarding, dropOff, segments };
       const existingBooking = await transaction.booking.findFirst({
         where: { studentId: entry.studentId, tripId, status: "CONFIRMED" },
         select: { id: true },
@@ -441,7 +481,7 @@ export async function cancelReservedBookingRecord(
         message: "Your reserved journey has been cancelled.",
       },
     });
-    const promoted = await promoteCompatibleWaitlist(
+    const promoted = await promoteCompatibleWaitlistInTransaction(
       transaction,
       booking.tripId,
       now,
@@ -491,34 +531,4 @@ export async function listStudentReservationRecords(studentId: string) {
     }),
   ]);
   return { bookings, waitlist };
-}
-
-export async function releaseNoShowReservationRecord(
-  bookingId: string,
-  now: Date,
-  policy: ProductPolicy,
-) {
-  return prisma.$transaction(async (transaction) => {
-    const initial = await transaction.booking.findUnique({
-      where: { id: bookingId },
-      select: { tripId: true },
-    });
-    if (!initial) throw new BookingPersistenceError("BOOKING_NOT_FOUND");
-    await lockTrip(transaction, initial.tripId);
-    const changed = await transaction.booking.updateMany({
-      where: { id: bookingId, status: "CONFIRMED", checkedInAt: null },
-      data: { status: "NO_SHOW" },
-    });
-    if (changed.count !== 1) {
-      throw new BookingPersistenceError("BOOKING_NOT_CANCELLABLE");
-    }
-    await transaction.reservedSeatSegment.deleteMany({ where: { bookingId } });
-    const promoted = await promoteCompatibleWaitlist(
-      transaction,
-      initial.tripId,
-      now,
-      policy,
-    );
-    return { tripId: initial.tripId, promoted };
-  });
 }

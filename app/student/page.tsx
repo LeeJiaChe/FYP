@@ -16,6 +16,7 @@ import TrackBusTab from "@/components/student/TrackBusTab";
 import PenaltiesTab from "@/components/student/PenaltiesTab";
 import { useAuth } from "@/hooks/useAuth";
 import { useTrips } from "@/hooks/useTrips";
+import { productPolicy } from "@/shared/config/policies";
 
 import { Bus, Ticket, Navigation, CreditCard, X, AlertCircle } from "lucide-react";
 
@@ -326,7 +327,10 @@ export default function StudentDashboard() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {/* Restricted Warning Banner */}
         <RestrictedBanner
-          isBookingRestricted={user?.isBookingRestricted}
+          isBookingRestricted={
+            (user?.creditScore ?? productPolicy.initialCredit) <
+            productPolicy.bookingRestrictionBelowCredit
+          }
           onViewPenalties={() => setActiveTab("penalties")}
         />
 
@@ -410,7 +414,10 @@ export default function StudentDashboard() {
             routes={routes}
             trips={trips}
             loadingTrips={loadingTrips}
-            isBookingRestricted={user?.isBookingRestricted}
+            isBookingRestricted={
+              (user?.creditScore ?? productPolicy.initialCredit) <
+              productPolicy.bookingRestrictionBelowCredit
+            }
             onRefresh={fetchTrips}
             onOpenSeatModal={openSeatBookingModal}
             onTrackTrip={(t) => {

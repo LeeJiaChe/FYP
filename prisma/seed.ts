@@ -181,7 +181,6 @@ async function main() {
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
         creditScore: 35,
-        isBookingRestricted: true,
       },
       {
         studentId: "24WAB01237",
@@ -321,6 +320,7 @@ async function main() {
     [setapakInbound.id, bus2.id, driver2.id, 4],
     [danauOutbound.id, bus2.id, driver2.id, 26],
     [danauInbound.id, bus1.id, driver1.id, 29],
+    [setapakInbound.id, bus2.id, driver2.id, -3],
   ] as const;
   const demoTrips = [];
   for (const [routeId, busId, driverId, hoursFromNow] of tripInputs) {
@@ -423,11 +423,70 @@ async function main() {
     },
   });
 
+  const historicalTrip = await prisma.trip.findUniqueOrThrow({
+    where: { id: demoTrips[4]!.id },
+    include: {
+      tripStops: { orderBy: { position: "asc" } },
+      tripSeats: { orderBy: { seatNumber: "asc" } },
+    },
+  });
+  const historicalBoardingStop = historicalTrip.tripStops[0]!;
+  const historicalDropOffStop = historicalTrip.tripStops[2]!;
+  const historicalProgressAt = new Date(now.getTime() - 2 * 60 * 60 * 1_000);
+  await prisma.tripStop.updateMany({
+    where: { tripId: historicalTrip.id },
+    data: {
+      actualArrival: historicalProgressAt,
+      actualDeparture: historicalProgressAt,
+      passedAt: historicalProgressAt,
+    },
+  });
+  await prisma.trip.update({
+    where: { id: historicalTrip.id },
+    data: { status: "ARRIVED" },
+  });
+  const historicalNoShow = await prisma.booking.create({
+    data: {
+      studentId: student2.id,
+      tripId: historicalTrip.id,
+      tripSeatId: historicalTrip.tripSeats[0]!.id,
+      boardingTripStopId: historicalBoardingStop.id,
+      dropOffTripStopId: historicalDropOffStop.id,
+      status: "NO_SHOW",
+    },
+  });
+  const historicalPenalty = await prisma.penalty.create({
+    data: {
+      bookingId: historicalNoShow.id,
+      studentId: student2.id,
+      type: "RESERVED_NO_SHOW",
+      creditPointsDeducted: productPolicy.noShowPenaltyPoints,
+      reason: `Reserved journey no-show at ${historicalBoardingStop.stopName}`,
+      status: "APPEALED",
+    },
+  });
+  await prisma.penaltyAppeal.create({
+    data: {
+      penaltyId: historicalPenalty.id,
+      studentId: student2.id,
+      reason: "Demo appeal: medical emergency prevented timely cancellation.",
+      status: "PENDING",
+    },
+  });
+  await prisma.notification.create({
+    data: {
+      userId: student2.id,
+      type: "PENALTY_ISSUED",
+      deduplicationKey: `penalty-issued:${historicalPenalty.id}`,
+      message: `A reserved no-show penalty deducted ${productPolicy.noShowPenaltyPoints} credit points for ${historicalBoardingStop.stopName}.`,
+    },
+  });
+
   console.log(
-    "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 4 complete Trip snapshots.",
+    "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 5 complete Trip snapshots.",
   );
   console.log(
-    "Phase 5 demo: reserved adjacent-seat reuse, one unallocated A-C waiter, and one non-capacity-bearing A-C Walk-in intent.",
+    "Phase 6 demo: reserved adjacent-seat reuse, one Walk-in intent, and one pending no-show penalty appeal.",
   );
 }
 

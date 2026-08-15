@@ -11,7 +11,6 @@ import {
   findJourneyAvailabilityRecord,
   joinWaitlistRecord,
   listStudentReservationRecords,
-  releaseNoShowReservationRecord,
 } from "../infrastructure/booking.prisma.server";
 import {
   conflict,
@@ -187,7 +186,6 @@ export async function listMyReservations(actor: BookingActor) {
       checkInMethod: booking.checkInMethod,
       actualAlightedAt: booking.actualAlightedAt,
       alightingMethod: booking.alightingMethod,
-      qrTokenIssuedAt: booking.qrTokenIssuedAt,
       createdAt: booking.createdAt,
       trip: {
         id: booking.trip.id,
@@ -218,14 +216,4 @@ export async function listMyReservations(actor: BookingActor) {
       },
     })),
   };
-}
-
-export async function releaseNoShowReservation(
-  bookingId: string,
-  clock: Clock = systemClock,
-  policy: ProductPolicy = productPolicy,
-) {
-  return translate(() =>
-    releaseNoShowReservationRecord(bookingId, clock.now(), policy),
-  );
 }

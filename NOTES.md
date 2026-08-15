@@ -82,8 +82,10 @@ short decision index, not evidence that the current implementation is complete.
     inventory. Phase 4 persists reserved From/To journeys and a separate
     journey-aware waitlist. Phase 5 implements explicit dynamic passes,
     assigned-driver boarding, transactionally locked standing admission,
-    operational alighting evidence, and Trip progress. Legacy Seat/device code,
-    penalty/no-show migration, and GPS telemetry remain later work.
+    operational alighting evidence, and Trip progress. Phase 6 implements
+    progress-based reserved no-shows, bounded credit, derived restriction,
+    penalties, appeals, waitlist release/promotion, and retry-safe reconciliation.
+    Legacy Seat/device code and GPS telemetry remain later work.
 
 17. **Waitlist order:** Promotion is oldest-compatible-first FIFO. A temporarily
     incompatible entry may be skipped but keeps its original priority.

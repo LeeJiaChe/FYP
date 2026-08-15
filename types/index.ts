@@ -77,15 +77,13 @@ export interface Booking {
 
 export interface Penalty {
   id: string;
-  userId: string;
-  tripId: string | null;
+  bookingId: string;
+  studentId: string;
+  type: "RESERVED_NO_SHOW";
   reason: string;
-  pointsDeducted: number;
-  status: "ACTIVE" | "APPEALED" | "RESOLVED";
+  creditPointsDeducted: number;
+  status: "ACTIVE" | "APPEALED" | "OVERTURNED" | "UPHELD";
   createdAt: string;
-  
-  // Relations
-  trip?: Trip;
 }
 
 export interface Notification {

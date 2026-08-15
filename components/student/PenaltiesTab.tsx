@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, AlertCircle } from "lucide-react";
+import { productPolicy } from "@/shared/config/policies";
 
 interface PenaltiesTabProps {
   user?: any;
@@ -30,8 +31,9 @@ export default function PenaltiesTab({
             Credit Score & Penalty Record
           </h2>
           <p className="section-subtitle">
-            Each unexcused no-show deducts 15 credit points. Scores below 40
-            restrict future booking.
+            Each reserved no-show deducts up to {productPolicy.noShowPenaltyPoints} credit
+            points. Scores below {productPolicy.bookingRestrictionBelowCredit} restrict
+            future booking.
           </p>
         </div>
 
@@ -51,21 +53,24 @@ export default function PenaltiesTab({
           <span
             className="text-4xl font-extrabold block"
             style={{
-              color: currentCreditScore < 40 ? "#f87171" : "#4ade80",
+              color:
+                currentCreditScore < productPolicy.bookingRestrictionBelowCredit
+                  ? "#f87171"
+                  : "#4ade80",
             }}
           >
             {currentCreditScore}
           </span>
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            / 100
+            / {productPolicy.initialCredit}
           </span>
           <div className="mt-2 progress-bar">
             <div
               className="progress-fill"
               style={{
-                width: `${currentCreditScore}%`,
+                width: `${(currentCreditScore / productPolicy.initialCredit) * 100}%`,
                 background:
-                  currentCreditScore < 40
+                  currentCreditScore < productPolicy.bookingRestrictionBelowCredit
                     ? "linear-gradient(90deg, #ef4444, #f87171)"
                     : "linear-gradient(90deg, var(--accent-primary), #4ade80)",
               }}

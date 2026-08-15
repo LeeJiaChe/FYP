@@ -1,5 +1,7 @@
 "use client";
 
+import { productPolicy } from "@/shared/config/policies";
+
 import { Navigation, Ticket } from "lucide-react";
 import BusLocationTracker from "@/components/BusLocationTracker";
 
@@ -203,7 +205,10 @@ export default function TrackBusTab({
             {trackedTrip.status === "NOT_STARTED" && (
               <button
                 onClick={() => onOpenSeatModal(trackedTrip.id)}
-                disabled={!!user?.isBookingRestricted}
+                disabled={
+                  (user?.creditScore ?? productPolicy.initialCredit) <
+                  productPolicy.bookingRestrictionBelowCredit
+                }
                 className="btn-primary w-full text-xs flex items-center justify-center gap-2 mt-2"
               >
                 <Ticket className="w-4 h-4" />

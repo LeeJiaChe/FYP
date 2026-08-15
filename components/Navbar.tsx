@@ -20,6 +20,7 @@ import {
   Gift,
 } from "lucide-react";
 import { useTheme, THEMES } from "@/lib/theme";
+import { productPolicy } from "@/shared/config/policies";
 
 interface User {
   id: string;
@@ -156,14 +157,16 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
               <div
                 className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border"
                 style={
-                  user.isBookingRestricted || (user.creditScore ?? 100) < 40
+                  (user.creditScore ?? productPolicy.initialCredit) <
+                  productPolicy.bookingRestrictionBelowCredit
                     ? { background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)", color: "#f87171" }
                     : { background: "rgba(34,197,94,0.1)", borderColor: "rgba(34,197,94,0.3)", color: "#4ade80" }
                 }
               >
                 <CreditCard className="w-3.5 h-3.5" />
-                <span>{user.creditScore ?? 100} pts</span>
-                {user.isBookingRestricted && (
+                <span>{user.creditScore ?? productPolicy.initialCredit} pts</span>
+                {(user.creditScore ?? productPolicy.initialCredit) <
+                  productPolicy.bookingRestrictionBelowCredit && (
                   <span className="ml-1 bg-rose-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">RESTRICTED</span>
                 )}
               </div>

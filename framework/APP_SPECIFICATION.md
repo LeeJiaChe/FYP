@@ -98,15 +98,18 @@ an internal capacity concept and is not a required user-facing wizard step.
 The Prisma schema remained unchanged through Phase 2. Phase 3 implemented
 `Stop`, normalized `RouteStop`, Trip capacity snapshots, `TripStop`,
 `TripSegment`, and `TripSeat`. Phase 4 implements reserved journey `Booking`,
-`ReservedSeatSegment`, and separate `WaitlistEntry`; walk-in and location models
-remain normative targets for later phases.
+`ReservedSeatSegment`, and separate `WaitlistEntry`. Phase 5 implements walk-in,
+boarding, alighting, and Trip progress. Phase 6 implements reserved no-show,
+credit, restriction, penalties, appeals, and reconciliation. Location telemetry
+remains a normative target for a later phase.
 
 ### 5.1 Identity and fleet
 
 #### `User`
 
 - UUID primary key, optional unique student ID, unique email, name, password
-  hash, role, credit score, booking restriction, session version, timestamps.
+  hash, role, credit score, session version, and timestamps. Booking restriction
+  is derived from credit score and is not separately persisted.
 - Student email input is trimmed, normalized to lowercase, and must use the
   `@student.tarc.edu.my` domain. Do not impose a stricter local-part or student-
   number pattern until TAR UMT provides an authoritative format.
@@ -334,12 +337,15 @@ Booking for the same Trip and journey.
   trigger journey-aware waitlist promotion.
 - Booking, waitlist, walk-in intent, admitted journey, boarding, and alighting
   histories must be represented honestly rather than collapsed into one status.
-- No-show detection is relative to the passenger's boarding TripStop deadline,
-  not a single route-origin deadline.
+- A no-show requires a confirmed reserved Booking with no `checkedInAt` and
+  actual departure/passed evidence at that passenger's boarding TripStop.
+  Planned time or a route-origin deadline alone is insufficient.
 - No-show processing, penalty creation, credit deduction, restriction changes,
   and notifications must be retry-safe and transactionally consistent.
-- Students may appeal penalties; administrators approve or reject with an
-  optional comment. Credit restoration uses the current locked student record.
+- Walk-in intent/journeys never receive reserved no-show penalties.
+- Students may appeal their own penalty once; administrators approve or reject
+  a pending appeal. Approval restores the points recorded by the Penalty using
+  the current locked student record and caps credit at 100.
 
 Default policy values are centralized and configurable: booking opens seven days
 before the passenger's boarding-stop planned departure; reserved cancellation
@@ -550,7 +556,8 @@ typed errors, and the owning application use case.
   processes remains an implementation/deployment decision, not an unresolved
   product rule.
 
-Phases 3 through 5 now implement topology/inventory, reserved journeys/waitlist,
-and boarding/walk-in/alighting/Trip progress respectively. Penalty/no-show,
-telemetry, and later legacy cleanup remain implementation work. Later discoveries
-may still require an ADR, but must not silently alter these product rules.
+Phases 3 through 6 now implement topology/inventory, reserved journeys/waitlist,
+boarding/walk-in/alighting/Trip progress, and reserved no-show/credit/penalties/
+appeals respectively. Telemetry and later legacy cleanup remain implementation
+work. Later discoveries may still require an ADR, but must not silently alter
+these product rules.

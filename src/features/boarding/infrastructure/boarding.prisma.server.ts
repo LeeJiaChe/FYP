@@ -4,6 +4,7 @@ import { Prisma, type CheckInMethod } from "@prisma/client";
 
 import { evaluateBoardingEligibility } from "../domain/boarding-policy";
 import { assertTripTransition } from "@/features/trips/public";
+import { processNoShowsAtTripStopInTransaction } from "@/features/penalties/server";
 import type { ProductPolicy } from "@/shared/config/policies";
 import { prisma } from "@/shared/db/prisma.server";
 import { deriveJourneySegments } from "@/shared/domain/journey-segments";
@@ -546,6 +547,13 @@ export async function progressTripRecord(
       data: { actualDeparture: now, passedAt: now },
     });
     const autoAlighted = await autoCompleteAtStop(transaction, tripId, current.id, now);
+    const noShows = await processNoShowsAtTripStopInTransaction(
+      transaction,
+      tripId,
+      current.id,
+      now,
+      policy,
+    );
     const isFinal = current.position === trip.tripStops.length - 1;
     const nextStatus = isFinal ? "ARRIVED" : "DEPARTED";
     if (nextStatus !== trip.status) {
@@ -568,7 +576,15 @@ export async function progressTripRecord(
       where: { id: tripId },
       data: { status: nextStatus },
     });
-    return { trip: updated, currentTripStopId: current.id, autoAlighted };
+    return {
+      trip: updated,
+      currentTripStopId: current.id,
+      autoAlighted,
+      noShows: {
+        processed: noShows.processed.length,
+        promoted: noShows.promoted.length,
+      },
+    };
   });
 }
 

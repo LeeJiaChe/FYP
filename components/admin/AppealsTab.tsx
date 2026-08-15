@@ -39,7 +39,7 @@ export default function AppealsTab({
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b" style={{ borderColor: "var(--border)" }}>
                 <div>
                   <span className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{a.studentName}</span>
-                  <span className="text-xs ml-2" style={{ color: "var(--text-muted)" }}>({a.studentId} • {a.studentEmail})</span>
+                  <span className="text-xs ml-2" style={{ color: "var(--text-muted)" }}>({a.studentId || "Student ID unavailable"})</span>
                 </div>
                 <span
                   className="px-3 py-1 rounded-full text-xs font-extrabold"
@@ -58,6 +58,10 @@ export default function AppealsTab({
               <div className="text-xs space-y-1" style={{ color: "var(--text-secondary)" }}>
                 <div><span className="font-semibold" style={{ color: "var(--text-muted)" }}>Penalty Reason:</span> {a.penaltyReason} (-{a.creditPointsDeducted} pts)</div>
                 <div><span className="font-semibold" style={{ color: "var(--text-muted)" }}>Student Explanation:</span> &quot;{a.appealReason}&quot;</div>
+                <div>
+                  <span className="font-semibold" style={{ color: "var(--text-muted)" }}>Journey:</span>{" "}
+                  {a.journey.routeName} — {a.journey.boardingStopName} to {a.journey.dropOffStopName}, Seat {a.journey.seatNumber}
+                </div>
               </div>
 
               {a.status === "PENDING" && (

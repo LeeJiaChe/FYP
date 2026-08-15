@@ -2,12 +2,11 @@
 
 > **Final Year Project (FYP)** — A responsive web application for directional journey search, segment-aware reserved seating, non-guaranteed walk-in boarding, live simulated-GPS location, and transport operations.
 
-> **Architecture v2 status:** The approved target below is not yet fully
-> implemented. Reserved journeys and journey-aware waitlist are now migrated.
-> The current prototype still contains legacy boarding/device Seat status, PWA
-> artifacts, schedule-interpolated location, and seat-device simulation that are
-> scheduled for migration/removal. See the linked audit before treating current
-> behavior as product truth.
+> **Architecture v2 status:** Phases 3–6 now implement directional topology,
+> reserved journeys/waitlist, boarding/walk-in/alighting/Trip progress, and the
+> progress-based no-show/credit/penalty/appeal workflow. The prototype still
+> contains temporary legacy Seat/device and PWA artifacts plus
+> schedule-interpolated location; GPS telemetry and later cleanup remain pending.
 
 ---
 

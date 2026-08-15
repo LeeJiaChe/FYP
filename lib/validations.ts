@@ -32,13 +32,3 @@ export const createBusSchema = z.object({
 export const updateBusSchema = createBusSchema.partial().extend({
   id: z.string().min(1, "Bus ID required"),
 });
-
-
-export const submitAppealSchema = z.object({
-  reason: z.string().min(10, "Please provide a detailed explanation (at least 10 characters)"),
-});
-
-export const reviewAppealSchema = z.object({
-  status: z.enum(["APPROVED", "REJECTED"]),
-  adminComment: z.string().optional(),
-});

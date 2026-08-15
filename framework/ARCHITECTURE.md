@@ -556,15 +556,15 @@ admins do not manually enter each stop time.
 
 | Current model/field | Decision | Architecture v2 treatment |
 |---|---|---|
-| `User` | KEEP + MODIFY | Preserve identity/credit/session fields; add relations to waitlist, walk-in, and location-source audit records only as required. |
+| `User` | KEEP + MODIFY | Preserve identity/credit/session fields. Booking restriction is derived from constrained `creditScore`; do not persist a redundant boolean. |
 | `Bus` | MODIFY | Rename `capacity` to `seatedCapacity`; add configurable `standingCapacity`; retain status and soft deletion. |
 | `Route` | MODIFY | Keep identity/name/deletion; replace JSON `stops` with `Stop` + ordered `RouteStop`. |
 | `Trip` | MODIFY | Keep schedule/bus/route/driver/lifecycle; add capacity snapshots, TripStops/TripSegments, and progress evidence; replace one origin-only boarding deadline with per-TripStop deadlines. |
 | `Seat` | REPLACE | Migrate to `TripSeat`; remove scalar status and one-to-one Booking relation. Availability comes from segment claims. |
 | `Booking` | MODIFY (breaking) | Reserved journeys only; persist boarding/drop-off TripStops, allow the same TripSeat on non-overlapping journeys, remove waitlist fields, and separate boarded/alighted state. |
-| `Penalty` | KEEP + MODIFY | Add unique booking guarantee and align with revised no-show lifecycle. |
-| `PenaltyAppeal` | KEEP | Preserve concept; tighten transactional review and indexes. |
-| `Notification` | KEEP + MODIFY | Preserve in-app notifications; add only approved reserved/walk-in/location event types. |
+| `Penalty` | KEEP + MODIFY | One unique reserved-no-show consequence per Booking, recording actual points deducted for exact restoration. |
+| `PenaltyAppeal` | KEEP + MODIFY | One appeal per Penalty; transactional, lock-safe review with minimal privacy-bounded projections. |
+| `Notification` | KEEP + MODIFY | Preserve in-app notifications; nullable deduplication keys protect retry-sensitive penalty/appeal effects. |
 | `DeviceStatusLog` | DELETE | Seat-device monitoring is removed from product scope. |
 | `SeatStatus` | DELETE | A whole-trip scalar cannot express segment-aware availability. |
 | `BookingStatus` | REPLACE values | Separate reserved Booking, WaitlistEntry, WalkInIntent, and WalkInJourney lifecycles. |
@@ -580,8 +580,10 @@ No schema change was performed in Phase 0, Phase 1, or Phase 2. Phase 3 implemen
 topology/inventory, Phase 4 implements reserved Booking/ReservedSeatSegment/
 WaitlistEntry, and Phase 5 implements WalkInIntent/WalkInJourney/
 StandingSegmentClaim plus boarding, alighting, and Trip progress evidence through
-forward PostgreSQL migrations. TripLocationSample and later cleanup rows remain
-target decisions until their phases.
+forward PostgreSQL migrations. Phase 6 implements reserved no-show, constrained
+credit, derived restriction, Penalty/PenaltyAppeal concurrency, and retry-safe
+reconciliation. TripLocationSample and later cleanup rows remain target decisions
+until their phases.
 
 ## 10. Authentication and security
 

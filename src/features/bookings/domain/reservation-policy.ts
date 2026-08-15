@@ -11,7 +11,6 @@ export interface ReservationEligibility {
   readonly tripStatus: string;
   readonly boardingPlannedDeparture: Date;
   readonly studentCredit: number;
-  readonly studentRestricted: boolean;
   readonly now: Date;
 }
 
@@ -19,7 +18,7 @@ export function assertReservationEligibility(
   input: ReservationEligibility,
   policy: ProductPolicy,
 ): void {
-  if (input.studentRestricted || input.studentCredit < policy.bookingRestrictionBelowCredit) {
+  if (input.studentCredit < policy.bookingRestrictionBelowCredit) {
     throw new ReservationPolicyError("RESTRICTED");
   }
   if (input.tripStatus !== "NOT_STARTED") {
@@ -34,6 +33,26 @@ export function assertReservationEligibility(
   if (now >= departure) {
     throw new ReservationPolicyError("TOO_LATE");
   }
+}
+
+export interface WaitlistPromotionEligibility {
+  readonly tripStatus: string;
+  readonly boardingActualDeparture: Date | null;
+  readonly boardingPassedAt: Date | null;
+  readonly studentCredit: number;
+}
+
+export function canPromoteWaitlistEntry(
+  input: WaitlistPromotionEligibility,
+  policy: ProductPolicy,
+): boolean {
+  return (
+    input.studentCredit >= policy.bookingRestrictionBelowCredit &&
+    input.tripStatus !== "ARRIVED" &&
+    input.tripStatus !== "CANCELLED" &&
+    input.boardingActualDeparture === null &&
+    input.boardingPassedAt === null
+  );
 }
 
 export function canCancelReservedBooking(

@@ -2,6 +2,7 @@ import React from "react";
 import { User, Save } from "lucide-react";
 import { SettingCard, Alert } from "./SettingUI";
 import { useSettings } from "./SettingsContext";
+import { productPolicy } from "@/shared/config/policies";
 
 export function ProfileTab() {
   const {
@@ -105,22 +106,23 @@ export function ProfileTab() {
           >
             <div className="flex justify-between items-center mb-2">
               <span className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>Credit Score</span>
-              <span className="text-lg font-extrabold" style={{ color: (user?.creditScore ?? 100) < 40 ? "#f87171" : "#4ade80" }}>
-                {user?.creditScore ?? 100} / 100
+              <span className="text-lg font-extrabold" style={{ color: (user?.creditScore ?? productPolicy.initialCredit) < productPolicy.bookingRestrictionBelowCredit ? "#f87171" : "#4ade80" }}>
+                {user?.creditScore ?? productPolicy.initialCredit} / {productPolicy.initialCredit}
               </span>
             </div>
             <div className="progress-bar">
               <div
                 className="progress-fill"
                 style={{
-                  width: `${user?.creditScore ?? 100}%`,
-                  background: (user?.creditScore ?? 100) < 40
+                  width: `${user?.creditScore ?? productPolicy.initialCredit}%`,
+                  background: (user?.creditScore ?? productPolicy.initialCredit) < productPolicy.bookingRestrictionBelowCredit
                     ? "linear-gradient(90deg, #ef4444, #f87171)"
                     : "linear-gradient(90deg, var(--accent-primary), #4ade80)",
                 }}
               />
             </div>
-            {user?.isBookingRestricted && (
+            {(user?.creditScore ?? productPolicy.initialCredit) <
+              productPolicy.bookingRestrictionBelowCredit && (
               <p className="text-[11px] mt-2 font-semibold" style={{ color: "#f87171" }}>
                 ⚠ Booking privileges currently restricted.
               </p>

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isBookingRestricted } from "@/features/penalties/public";
+import { productPolicy } from "@/shared/config/policies";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -16,7 +18,7 @@ export async function GET() {
       role: user.role,
       studentId: user.studentId,
       creditScore: user.creditScore,
-      isBookingRestricted: user.isBookingRestricted,
+      isBookingRestricted: isBookingRestricted(user.creditScore, productPolicy),
     },
   });
 }

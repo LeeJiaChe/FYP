@@ -63,7 +63,7 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
 
 /**
  * Full DB lookup — use only when you need live fields like
- * creditScore or isBookingRestricted that are NOT stored in the JWT.
+ * creditScore or other live account fields that are NOT stored in the JWT.
  */
 export async function getCurrentUser() {
   const cookieStore = await cookies();

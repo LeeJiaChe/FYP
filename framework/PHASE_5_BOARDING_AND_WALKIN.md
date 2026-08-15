@@ -1,6 +1,6 @@
 # Phase 5 — Passes, Walk-in Admission, Boarding, Alighting, and Trip Progress
 
-Status: **Implemented on `architecture-v2`; Phase 6 not started**
+Status: **Implemented on `architecture-v2`; Phase 6 subsequently implemented**
 
 Date: 2026-08-15
 
@@ -164,13 +164,13 @@ Trip transitions.
 - `Seat`, `Seat.status`, seat-device models, and old admin/device surfaces remain
   temporary until the approved later cleanup. They are never consulted for
   reserved availability, standing capacity, or boarding eligibility.
-- `Booking.qrTokenIssuedAt` and the legacy penalty/no-show routes remain for the
-  ordered migration. Phase 6 must centralize no-show state, credit deduction,
-  restrictions, and appeals using the passenger's boarding TripStop.
+- Phase 6 removes `Booking.qrTokenIssuedAt` and replaces the legacy penalty/no-show
+  routes with one progress-aware, retry-safe implementation using the passenger's
+  boarding TripStop.
 - The GPS/schedule-interpolation replacement remains a later telemetry phase.
 - Self-service account deletion remains disabled and frontend settings cleanup
   remains later scope.
 
-Phase 5 stops here. The recommended Phase 6 task is the idempotent no-show,
-credit, restriction, penalty, and appeal migration; it must reuse Trip progress
-and must not duplicate boarding transitions.
+Phase 5 remains bounded to boarding and journey operations. Phase 6 subsequently
+implements idempotent no-show, credit, restriction, penalty, and appeal behavior
+without changing Phase 5 planned-capacity semantics.

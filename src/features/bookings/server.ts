@@ -4,7 +4,6 @@ import {
   cancelReservedBooking as cancelReservedBookingUseCase,
   createReservedBooking as createReservedBookingUseCase,
   joinJourneyWaitlist as joinJourneyWaitlistUseCase,
-  releaseNoShowReservation as releaseNoShowReservationUseCase,
 } from "./application/reservations";
 import { notifyRealtime } from "@/lib/realtime-client";
 
@@ -58,14 +57,4 @@ export async function cancelReservedBooking(
   return result;
 }
 
-export async function releaseNoShowReservation(
-  ...args: Parameters<typeof releaseNoShowReservationUseCase>
-) {
-  const result = await releaseNoShowReservationUseCase(...args);
-  await notifyRealtime(`trip:${result.tripId}`, "seat-update", {
-    tripId: result.tripId,
-    promotedCount: result.promoted.length,
-    type: "RESERVED_JOURNEY_RELEASED",
-  });
-  return result;
-}
+export { promoteCompatibleWaitlistInTransaction } from "./infrastructure/booking.prisma.server";

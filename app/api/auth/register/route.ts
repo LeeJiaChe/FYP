@@ -4,6 +4,7 @@ import { hashPassword, signToken, COOKIE_NAME } from "@/lib/auth";
 import { registerSchema } from "@/lib/validations";
 import { registerRateLimiter } from "@/lib/rate-limit";
 import { productPolicy } from "@/shared/config/policies";
+import { isBookingRestricted } from "@/features/penalties/public";
 
 export async function POST(req: Request) {
   try {
@@ -41,7 +42,6 @@ export async function POST(req: Request) {
         passwordHash,
         role: "STUDENT",
         creditScore: productPolicy.initialCredit,
-        isBookingRestricted: false,
       },
     });
 
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         role: user.role,
         studentId: user.studentId,
         creditScore: user.creditScore,
-        isBookingRestricted: user.isBookingRestricted,
+        isBookingRestricted: isBookingRestricted(user.creditScore, productPolicy),
       },
     });
 
