@@ -127,8 +127,18 @@ serialized Bus/Driver conflicts, cancellation effects and retry idempotency,
 safe rescheduling, structural-edit rejection, terminal Trips, authorization,
 privacy, and historical reads after retirement.
 
-Final command and PostgreSQL 16/CI evidence is recorded in the Phase 7 completion
-report after the branch is pushed.
+GitHub Actions run `31860557091` on PostgreSQL 16 applied the complete forward
+migration history and passed all 50 integration tests across 11 suites, including
+all seven grouped Phase 7 scenarios above. The same run passed Prisma generation,
+Architecture v2 lint, strict typecheck, all 59 unit/specification tests, all 10
+dependency-policy tests, and the production Next.js build. Local verification
+also passed `npm run verify`, `npx prisma validate`, and `git diff --check`.
+
+The local sandbox cannot bind a PostgreSQL socket/port or the Turbopack helper
+port, so local integration/build attempts failed closed for environment reasons;
+the successful CI run is the required real PostgreSQL 16 and production-build
+evidence. This documentation-only evidence commit changes no executable or
+schema content.
 
 ## Phase 8 boundary
 
