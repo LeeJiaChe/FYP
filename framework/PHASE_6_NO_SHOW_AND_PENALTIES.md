@@ -144,9 +144,18 @@ ownership/duplication, concurrent approval, exact/capped restoration, rejection,
 and durable notification deduplication.
 
 Local PostgreSQL is unavailable in the workspace, so the fail-closed integration
-runner cannot execute locally without `TEST_DATABASE_URL`. Final PostgreSQL test
-counts, migration evidence, production build result, and GitHub Actions run are
-recorded in the Phase 6 completion report after the pushed CI run.
+runner correctly refuses to execute without `TEST_DATABASE_URL`. Local checks
+pass Prisma validation, Architecture v2 lint, strict typecheck, all 17
+unit/specification files, the dependency-policy scan, and whitespace validation.
+The local Next production build reaches Turbopack but is environment-blocked
+because the sandbox forbids the CSS worker from binding a port.
+
+GitHub Actions run `31857340625` completed successfully for implementation commit
+`4ef8362b417a7c050362912dd784046dddf57e33`. Its clean PostgreSQL 16 service
+applied the complete forward migration history and passed all 43 integration
+scenarios, including the 12 Phase 6 scenarios above. The same run passed Prisma
+generation, Architecture v2 lint, strict typecheck, all unit/specification files,
+the dependency-policy scan, and the production build.
 
 ## Remaining boundary
 
