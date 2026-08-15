@@ -217,10 +217,15 @@ describe("Phase 7 PostgreSQL fleet and scheduling", () => {
         tripSeatId: trip.tripSeats[0]!.id,
         boardingTripStopId: trip.tripStops[0]!.id,
         dropOffTripStopId: trip.tripStops[2]!.id,
-        reservedSeatSegments: {
-          create: trip.tripSegments.map((segment) => ({ tripId: trip.id, tripSeatId: trip.tripSeats[0]!.id, tripSegmentId: segment.id })),
-        },
       },
+    });
+    await prisma.reservedSeatSegment.createMany({
+      data: trip.tripSegments.map((segment) => ({
+        bookingId: booking.id,
+        tripId: trip.id,
+        tripSeatId: trip.tripSeats[0]!.id,
+        tripSegmentId: segment.id,
+      })),
     });
     await prisma.waitlistEntry.create({ data: { studentId: studentB.id, tripId: trip.id, boardingTripStopId: trip.tripStops[0]!.id, dropOffTripStopId: trip.tripStops[2]!.id } });
     await prisma.walkInIntent.create({ data: { studentId: studentC.id, tripId: trip.id, boardingTripStopId: trip.tripStops[0]!.id, dropOffTripStopId: trip.tripStops[1]!.id, expiresAt: value.departure } });
