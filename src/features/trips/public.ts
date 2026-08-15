@@ -7,3 +7,4 @@ export {
   hasPassengerState,
   intervalsOverlap,
 } from "./domain/scheduling-policy";
+export { currentOperationalSegmentPosition } from "./domain/operational-segment";

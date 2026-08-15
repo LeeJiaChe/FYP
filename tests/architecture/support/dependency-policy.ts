@@ -270,6 +270,13 @@ export async function inspectArchitectureV2Source(
     "app/api/admin/stops/route.ts",
     "app/api/trips/route.ts",
     "app/api/trips/[id]/route.ts",
+    "app/api/trips/[id]/location/route.ts",
+    "app/api/location/ingest/route.ts",
+    "app/api/location/simulate/route.ts",
+    "app/api/admin/cron/location-retention/route.ts",
+    "app/api/realtime/subscription/route.ts",
+    "app/api/analytics/utilization/route.ts",
+    "app/api/analytics/no-show-rate/route.ts",
   ].map((file) => path.join(workspaceRoot, file));
   const results = await Promise.all(
     [...files, ...migratedRoutes].map(async (file) =>

@@ -100,8 +100,8 @@ The Prisma schema remained unchanged through Phase 2. Phase 3 implemented
 `TripSegment`, and `TripSeat`. Phase 4 implements reserved journey `Booking`,
 `ReservedSeatSegment`, and separate `WaitlistEntry`. Phase 5 implements walk-in,
 boarding, alighting, and Trip progress. Phase 6 implements reserved no-show,
-credit, restriction, penalties, appeals, and reconciliation. Location telemetry
-remains a normative target for a later phase.
+credit, restriction, penalties, appeals, and reconciliation. Phase 8 implements
+durable source-neutral location telemetry and removes obsolete Seat/device state.
 
 ### 5.1 Identity and fleet
 
@@ -261,7 +261,7 @@ remains a normative target for a later phase.
 
 - Trip, latitude, longitude, recorded time, source type, and optional accuracy,
   speed, and heading.
-- Source type distinguishes `SIMULATOR` from a future real `GPS` adapter.
+- Source type distinguishes `SIMULATED` from a future real `GPS` adapter.
 - `(tripId, recordedAt)` is indexed. Samples are retained for seven days and then
   removed by a retry-safe retention job.
 - Authorized APIs expose a source-neutral latest-location DTO. Student UI must

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { UserCheck, AlertTriangle, Armchair } from "lucide-react";
+import { UserCheck, Armchair } from "lucide-react";
 
 export interface SeatItem {
   id: string;
@@ -15,7 +15,6 @@ export interface SeatItem {
     checkedInAt?: string | null;
     checkInMethod?: string | null;
   } | null;
-  deviceHealth?: "OK" | "OFFLINE" | "ERROR";
 }
 
 interface SeatGridProps {
@@ -78,12 +77,6 @@ export default function SeatGrid({
           <span className="w-3.5 h-3.5 rounded-md bg-slate-700 inline-block"></span>
           <span className="text-slate-300">No-Show (Grey)</span>
         </div>
-        {mode !== "student" && (
-          <div className="flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-amber-300">IoT Offline/Error</span>
-          </div>
-        )}
       </div>
 
       {/* Bus Seat Layout Diagram */}
@@ -127,18 +120,6 @@ export default function SeatGrid({
                 >
                   <Armchair className="w-4 h-4 mb-0.5 opacity-80" />
                   <span>{seat.seatNumber}</span>
-
-                  {/* IoT Device Warning Flag (Admin & Driver only) */}
-                  {mode !== "student" &&
-                    seat.deviceHealth &&
-                    seat.deviceHealth !== "OK" && (
-                      <span
-                        title={`IoT Sensor Status: ${seat.deviceHealth}`}
-                        className="absolute -top-1.5 -right-1.5 p-0.5 bg-amber-500 text-slate-950 rounded-full shadow-md animate-bounce"
-                      >
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                      </span>
-                    )}
 
                   {/* Driver manual override indicator */}
                   {mode === "driver" && seat.status === "RESERVED" && (

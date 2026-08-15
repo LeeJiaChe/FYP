@@ -2,11 +2,11 @@
 
 > **Final Year Project (FYP)** — A responsive web application for directional journey search, segment-aware reserved seating, non-guaranteed walk-in boarding, live simulated-GPS location, and transport operations.
 
-> **Architecture v2 status:** Phases 3–6 now implement directional topology,
-> reserved journeys/waitlist, boarding/walk-in/alighting/Trip progress, and the
-> progress-based no-show/credit/penalty/appeal workflow. The prototype still
-> contains temporary legacy Seat/device and PWA artifacts plus
-> schedule-interpolated location; GPS telemetry and later cleanup remain pending.
+> **Architecture v2 status:** Phases 3–8 implement directional topology,
+> reserved journeys/waitlist, boarding/walk-in/alighting, progress-based
+> penalties, fleet administration, persisted simulated GPS telemetry,
+> authenticated realtime invalidation, and segment-weighted analytics. PWA
+> artifact and broad frontend cleanup remain Phase 9 work.
 
 ---
 
@@ -42,8 +42,8 @@
 
 ### ⚡ Real-Time Infrastructure
 - **Standalone Socket.io Service** — Decoupled from Next.js; runs on port `4000`
-- **Trip Rooms** — Clients subscribe to `trip:<id>` rooms for targeted push events
-- **Scheduled Jobs** — Retry-safe no-show, reminder, waitlist, and optional automatic-alighting triggers
+- **Authorized Trip Rooms** — Short-lived signed subscriptions authorize one `trip:<id>` room
+- **Scheduled Jobs** — Retry-safe no-show reconciliation, daily location retention, and one server-side GPS simulator tick every five seconds
 - **Responsive Website** — Mobile-browser friendly, without PWA installability, service workers, or offline caching
 
 ---
@@ -77,11 +77,10 @@ describes the existing runtime at a high level, not the completed Architecture v
        │ (server→realtime bridge)               │ (browser→realtime)
 ┌──────▼───────────────────────────────────────▼──────────────┐
 │           Standalone Realtime Service (port 4000)           │
-│           Node.js + Express + Socket.io + node-cron         │
+│               Node.js + Socket.io + node-cron               │
 │                                                             │
-│  POST /emit  →  broadcast to trip:<id> rooms                │
-│  Cron (1 min) → /api/admin/cron/no-show                     │
-│                  legacy device-health call (remove later)    │
+│  POST /emit  → authenticated validated room invalidations   │
+│  Jobs → no-show reconciliation, GPS simulator, retention    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -208,27 +207,28 @@ All accounts use the password: **`password123`**
 
 ## 🗄️ Database Schema Status
 
-Phase 3 implements topology/inventory and Phase 4 implements reserved journeys:
+Architecture v2 now uses normalized topology, journey allocation, and durable telemetry:
 
 ```
 Stop ── RouteStop ── Route ── Trip ── TripStop ── TripSegment
                               └──── TripSeat ── ReservedSeatSegment ── Booking
+                              └──── TripLocationSample
 
 User ──┬── Booking ───── Penalty ── PenaltyAppeal
        ├── WaitlistEntry
        ├── Notification
        └── Trip (as driver)
 
-Trip ──── Seat ──── DeviceStatusLog
+Trip ──── WalkInJourney ──── StandingSegmentClaim
 ```
 
 `Stop`, ordered `RouteStop`, `TripStop`, `TripSegment`, and `TripSeat` provide the
 directional Trip snapshot. `Booking`, `ReservedSeatSegment`, and `WaitlistEntry`
 provide segment-aware reservations. Phase 5 adds `WalkInIntent`, admitted
 `WalkInJourney`, segment standing claims, dynamic passes, assigned-driver
-boarding, alighting evidence, and Trip progress. `TripLocationSample` remains a
-later phase. `Seat.status` and device models are temporary compatibility and
-never determine reserved or standing availability. See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md),
+boarding, alighting evidence, and Trip progress. Phase 8 adds
+`TripLocationSample` and removes the obsolete Seat/device schema completely.
+See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md),
 [Phase 4 report](./framework/PHASE_4_RESERVED_JOURNEYS.md), and
 [Phase 5 report](./framework/PHASE_5_BOARDING_AND_WALKIN.md).
 
@@ -306,7 +306,7 @@ FYPBusSystem/
 ├── components/
 │   ├── admin/          # Admin-specific components
 │   ├── student/        # Student-specific components
-│   ├── BusLocationTracker.tsx # Schedule interpolation; scheduled for replacement
+│   ├── BusLocationTracker.tsx # Persisted telemetry view; no schedule fallback
 │   ├── DynamicQRModal.tsx
 │   ├── Navbar.tsx
 │   ├── PenaltyAppealModal.tsx

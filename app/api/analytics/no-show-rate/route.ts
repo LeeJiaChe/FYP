@@ -1,53 +1,17 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
+import { analyticsRangeSchema, routeNoShowRates } from "@/features/analytics/server";
+import { unauthenticated } from "@/shared/application/application-error";
+import { handleRoute } from "@/shared/http/handle-route.server";
 
-export async function GET() {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
-    const routes = await prisma.route.findMany({
-      include: {
-        trips: {
-          include: {
-            bookings: true,
-          },
-        },
-      },
+export async function GET(request: Request) {
+  return handleRoute(request, async () => {
+    const actor = await getUserFromToken();
+    if (!actor) throw unauthenticated();
+    const url = new URL(request.url);
+    const range = analyticsRangeSchema.parse({
+      from: url.searchParams.get("from") || undefined,
+      to: url.searchParams.get("to") || undefined,
     });
-
-    const noShowStats = routes.map((route) => {
-      let totalBookings = 0;
-      let totalNoShows = 0;
-      let totalCompleted = 0;
-
-      route.trips.forEach((trip) => {
-        trip.bookings.forEach((booking) => {
-          if (booking.status !== "CANCELLED") {
-            totalBookings++;
-            if (booking.status === "NO_SHOW") totalNoShows++;
-            if (booking.status === "COMPLETED") totalCompleted++;
-          }
-        });
-      });
-
-      const noShowRate = totalBookings > 0 ? Math.round((totalNoShows / totalBookings) * 100) : 0;
-
-      return {
-        routeName: route.name.split(":")[1]?.trim() || route.name,
-        fullRouteName: route.name,
-        totalBookings,
-        totalNoShows,
-        totalCompleted,
-        noShowRate,
-      };
-    });
-
-    return NextResponse.json({ data: noShowStats });
-  } catch (err: any) {
-    return NextResponse.json({ error: "Failed to compute no-show analytics" }, { status: 500 });
-  }
+    return { body: { data: await routeNoShowRates({ role: actor.role }, range) } };
+  });
 }

@@ -1,3 +1,5 @@
+import approvedDefaults from "./product-policy.defaults.json";
+
 export interface ProductPolicy {
   readonly bookingOpenLeadMs: number;
   readonly reservedCancellationLeadMs: number;
@@ -11,21 +13,7 @@ export interface ProductPolicy {
   readonly locationRetentionMs: number;
 }
 
-const MINUTE_MS = 60 * 1_000;
-const DAY_MS = 24 * 60 * MINUTE_MS;
-
-const defaultValues: ProductPolicy = {
-  bookingOpenLeadMs: 7 * DAY_MS,
-  reservedCancellationLeadMs: 30 * MINUTE_MS,
-  boardingOpenLeadMs: 15 * MINUTE_MS,
-  normalBoardingCloseGraceMs: 5 * MINUTE_MS,
-  qrTokenLifetimeSeconds: 60,
-  initialCredit: 100,
-  noShowPenaltyPoints: 15,
-  bookingRestrictionBelowCredit: 40,
-  gpsSimulatorIntervalMs: 5_000,
-  locationRetentionMs: 7 * DAY_MS,
-};
+const defaultValues: ProductPolicy = approvedDefaults;
 
 export function createProductPolicy(
   overrides: Partial<ProductPolicy> = {},

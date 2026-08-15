@@ -22,6 +22,7 @@ import {
 } from "@/shared/application/application-error";
 import { productPolicy } from "@/shared/config/policies";
 import { systemClock, type Clock } from "@/shared/time/clock";
+import { currentOperationalSegmentPosition } from "../domain/operational-segment";
 
 export interface TripActor {
   readonly userId: string;
@@ -113,6 +114,8 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
         position: stop.position,
         stopCode: stop.stopCode,
         stopName: stop.stopName,
+        latitude: stop.latitude.toNumber(),
+        longitude: stop.longitude.toNumber(),
         plannedArrival: stop.plannedArrival,
         plannedDeparture: stop.plannedDeparture,
         boardingDeadline: stop.boardingDeadline,
@@ -187,18 +190,36 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
     throw forbidden("Driver may view only assigned Trips");
   }
   const canViewManifest = actor.role === "ADMIN" || actor.role === "DRIVER";
+  const currentSegmentPosition = currentOperationalSegmentPosition(
+    trip.status,
+    trip.tripStops,
+  );
+  const currentSegment =
+    currentSegmentPosition === null
+      ? null
+      : trip.tripSegments.find(
+          (segment) => segment.position === currentSegmentPosition,
+        ) ?? null;
+  const allClaims = trip.tripSegments.flatMap(
+    (segment) => segment.reservedSeatSegments,
+  );
   const seats = trip.tripSeats.map((seat) => {
-    const visibleBookings = seat.bookings.filter(
-      (booking) => canViewManifest || booking.studentId === actor.userId,
+    const visibleClaims = allClaims.filter(
+      (claim) =>
+        claim.tripSeatId === seat.id &&
+        (canViewManifest || claim.booking.studentId === actor.userId),
     );
-    const primary = visibleBookings[0];
+    const currentClaim = currentSegment?.reservedSeatSegments.find(
+      (claim) => claim.tripSeatId === seat.id,
+    );
+    const primary = currentClaim?.booking ?? visibleClaims[0]?.booking;
     return {
       id: seat.id,
       seatNumber: seat.seatNumber,
-      // Compatibility visualization only; journey availability never reads it.
-      status: seat.bookings.some((booking) => booking.checkedInAt)
+      // This projection describes only the current/upcoming operational segment.
+      status: currentClaim?.booking.checkedInAt
         ? "CHECKED_IN"
-        : seat.bookings.length > 0
+        : currentClaim
           ? "RESERVED"
           : "AVAILABLE",
       booking: primary
@@ -211,13 +232,12 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
             checkInMethod: primary.checkInMethod,
           }
         : null,
-      journeys: visibleBookings.map((booking) => ({
+      journeys: visibleClaims.map(({ booking }) => ({
         bookingId: booking.id,
         boardingStopName: booking.boardingTripStop.stopName,
         dropOffStopName: booking.dropOffTripStop.stopName,
         status: booking.status,
       })),
-      deviceHealth: "OK" as const,
     };
   });
   return {
@@ -251,6 +271,22 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
     status: trip.status,
     delayMinutes: trip.delayMinutes,
     delayReason: trip.delayReason,
+    currentSegment: currentSegment
+      ? {
+          id: currentSegment.id,
+          position: currentSegment.position,
+          fromStopName: trip.tripStops[currentSegment.position]?.stopName,
+          toStopName: trip.tripStops[currentSegment.position + 1]?.stopName,
+        }
+      : null,
+    latestLocation: trip.locationSamples[0]
+      ? {
+          latitude: trip.locationSamples[0].latitude.toNumber(),
+          longitude: trip.locationSamples[0].longitude.toNumber(),
+          recordedAt: trip.locationSamples[0].recordedAt,
+          source: trip.locationSamples[0].source,
+        }
+      : null,
     seats,
     waitlist: canViewManifest
       ? trip.waitlistEntries
@@ -261,6 +297,8 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
       reservedSeats: seats.filter((seat) => seat.status === "RESERVED").length,
       checkedInSeats: seats.filter((seat) => seat.status === "CHECKED_IN").length,
       noShowSeats: 0,
+      standingPassengers: currentSegment?.standingClaims.length ?? 0,
+      standingCapacity: trip.standingCapacity,
     },
   };
 }

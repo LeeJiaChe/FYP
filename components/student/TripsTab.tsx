@@ -737,6 +737,7 @@ export default function TripsTab({
               tripId={liveMapTrip.id}
               routeName={liveMapTrip.routeName}
               stops={liveMapTrip.routeStops || []}
+              tripStops={liveMapTrip.tripStops || []}
               departureTime={liveMapTrip.departureTime}
               estimatedArrivalTime={liveMapTrip.estimatedArrivalTime}
               busPlateNumber={liveMapTrip.busPlateNumber}

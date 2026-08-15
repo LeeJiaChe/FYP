@@ -66,8 +66,8 @@ short decision index, not evidence that the current implementation is complete.
 
 13. **Seat devices:** Seat sensors, `DeviceStatusLog`, `DeviceSignal`, device-
     health simulation, device-health cron, and sensor dashboards are removed from
-    approved scope. Existing schema/code/UI/tests are scheduled for controlled
-    deletion; they are not deleted in Phase 0.
+    approved scope. Phase 8 deletes the obsolete active schema, code, UI, and
+    scheduler paths through a forward migration.
 
 14. **No payment:** The shuttle is free. Do not add fares, prices, payments,
     refunds, gateways, or paid-ticket concepts.
@@ -85,7 +85,8 @@ short decision index, not evidence that the current implementation is complete.
     operational alighting evidence, and Trip progress. Phase 6 implements
     progress-based reserved no-shows, bounded credit, derived restriction,
     penalties, appeals, waitlist release/promotion, and retry-safe reconciliation.
-    Legacy Seat/device code and GPS telemetry remain later work.
+    Phase 8 removes legacy Seat/device state and implements source-neutral GPS
+    telemetry, hardened realtime subscriptions, and truthful analytics.
 
 17. **Waitlist order:** Promotion is oldest-compatible-first FIFO. A temporarily
     incompatible entry may be skipped but keeps its original priority.

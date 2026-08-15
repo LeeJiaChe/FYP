@@ -352,20 +352,10 @@ export async function createScheduledTripRecord(
     const tripSeatInsert = await transaction.tripSeat.createMany({
       data: tripSeats,
     });
-    const legacySeatInsert = await transaction.seat.createMany({
-      data: tripSeats.map((seat) => ({
-        tripId: trip.id,
-        tripSeatId: seat.id,
-        seatNumber: seat.seatNumber,
-        status: "AVAILABLE" as const,
-      })),
-    });
-
     if (
       stopInsert.count !== snapshot.stops.length ||
       segmentInsert.count !== snapshot.stops.length - 1 ||
-      tripSeatInsert.count !== snapshot.seatedCapacity ||
-      legacySeatInsert.count !== snapshot.seatedCapacity
+      tripSeatInsert.count !== snapshot.seatedCapacity
     ) {
       throw new TripPersistenceError("INVENTORY_COUNT_MISMATCH");
     }
@@ -429,18 +419,25 @@ export async function findTripDetailRecord(tripId: string) {
       bus: { select: { plateNumber: true } },
       driver: { select: { id: true, name: true } },
       tripStops: { orderBy: { position: "asc" } },
-      tripSeats: {
-        orderBy: { seatNumber: "asc" },
+      tripSegments: {
+        orderBy: { position: "asc" },
         include: {
-          bookings: {
-            where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+          reservedSeatSegments: {
             include: {
-              student: { select: { id: true, name: true, studentId: true } },
-              boardingTripStop: { select: { stopName: true } },
-              dropOffTripStop: { select: { stopName: true } },
+              booking: {
+                include: {
+                  student: { select: { id: true, name: true, studentId: true } },
+                  boardingTripStop: { select: { stopName: true } },
+                  dropOffTripStop: { select: { stopName: true } },
+                },
+              },
             },
           },
+          standingClaims: true,
         },
+      },
+      tripSeats: {
+        orderBy: { seatNumber: "asc" },
       },
       waitlistEntries: {
         where: { status: "WAITING" },
@@ -453,6 +450,10 @@ export async function findTripDetailRecord(tripId: string) {
           boardingTripStopId: true,
           dropOffTripStopId: true,
         },
+      },
+      locationSamples: {
+        orderBy: { recordedAt: "desc" },
+        take: 1,
       },
     },
   });

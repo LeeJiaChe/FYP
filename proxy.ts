@@ -3,6 +3,10 @@ import type { NextRequest } from "next/server";
 import { assertSameOriginMutation } from "@/shared/http/origin-check";
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const TRUSTED_SERVICE_PATHS = new Set([
+  "/api/location/ingest",
+  "/api/location/simulate",
+]);
 
 async function verifyJWTEdge(
   token: string,
@@ -57,7 +61,8 @@ export async function proxy(request: NextRequest) {
   if (
     pathname.startsWith("/api/") &&
     MUTATION_METHODS.has(request.method) &&
-    !pathname.startsWith("/api/admin/cron/")
+    !pathname.startsWith("/api/admin/cron/") &&
+    !TRUSTED_SERVICE_PATHS.has(pathname)
   ) {
     try {
       assertSameOriginMutation(request);

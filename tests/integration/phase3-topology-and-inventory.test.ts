@@ -15,7 +15,6 @@ let stopIds: string[];
 let tripId: string;
 
 async function cleanPhase3Fixtures() {
-  await prisma.seat.deleteMany({ where: { trip: { routeId } } });
   await prisma.tripSeat.deleteMany({ where: { trip: { routeId } } });
   await prisma.tripSegment.deleteMany({ where: { trip: { routeId } } });
   await prisma.tripStop.deleteMany({ where: { trip: { routeId } } });
@@ -170,11 +169,6 @@ describe("Phase 3 Trip creation", () => {
     assert.deepEqual(
       trip.tripStops.map((stop) => stop.plannedDeparture.getTime() - departure.getTime()),
       [0, 7 * 60 * 1_000, 16 * 60 * 1_000],
-    );
-    assert.equal(
-      await prisma.seat.count({ where: { tripId, tripSeatId: { not: null } } }),
-      4,
-      "temporary legacy Seat mirrors must map one-to-one to TripSeat",
     );
   });
 

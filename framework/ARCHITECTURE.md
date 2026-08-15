@@ -560,20 +560,20 @@ admins do not manually enter each stop time.
 | `Bus` | MODIFY | Rename `capacity` to `seatedCapacity`; add configurable `standingCapacity`; retain status and soft deletion. |
 | `Route` | MODIFY | Keep identity/name/deletion; replace JSON `stops` with `Stop` + ordered `RouteStop`. |
 | `Trip` | MODIFY | Keep schedule/bus/route/driver/lifecycle; add capacity snapshots, TripStops/TripSegments, and progress evidence; replace one origin-only boarding deadline with per-TripStop deadlines. |
-| `Seat` | REPLACE | Migrate to `TripSeat`; remove scalar status and one-to-one Booking relation. Availability comes from segment claims. |
+| `Seat` | **DROPPED IN PHASE 8** | Replaced by `TripSeat`; availability comes from segment claims. |
 | `Booking` | MODIFY (breaking) | Reserved journeys only; persist boarding/drop-off TripStops, allow the same TripSeat on non-overlapping journeys, remove waitlist fields, and separate boarded/alighted state. |
 | `Penalty` | KEEP + MODIFY | One unique reserved-no-show consequence per Booking, recording actual points deducted for exact restoration. |
 | `PenaltyAppeal` | KEEP + MODIFY | One appeal per Penalty; transactional, lock-safe review with minimal privacy-bounded projections. |
 | `Notification` | KEEP + MODIFY | Preserve in-app notifications; nullable deduplication keys protect retry-sensitive penalty/appeal effects. |
-| `DeviceStatusLog` | DELETE | Seat-device monitoring is removed from product scope. |
-| `SeatStatus` | DELETE | A whole-trip scalar cannot express segment-aware availability. |
+| `DeviceStatusLog` | **DROPPED IN PHASE 8** | Seat-device monitoring is removed from product scope. |
+| `SeatStatus` | **DROPPED IN PHASE 8** | A whole-trip scalar cannot express segment-aware availability. |
 | `BookingStatus` | REPLACE values | Separate reserved Booking, WaitlistEntry, WalkInIntent, and WalkInJourney lifecycles. |
 | `CheckInMethod` | MODIFY | Generalize to an explicit boarding/alighting method without merging reserved and walk-in records. |
-| `DeviceSignal` | DELETE | No target consumer remains. |
+| `DeviceSignal` | **DROPPED IN PHASE 8** | No target consumer remains. |
 | `Stop`, `RouteStop`, `TripStop`, `TripSegment`, `TripSeat` | NEW | Directional topology, immutable trip snapshot, and per-trip inventory. |
 | `ReservedSeatSegment`, `WaitlistEntry` | NEW | Journey-aware guaranteed allocation and non-guaranteed queue. |
 | `WalkInIntent`, `WalkInJourney`, `StandingSegmentClaim` | NEW | Non-guaranteed pass separated from concurrency-safe admission. |
-| `TripLocationSample` | NEW | Simulator-first, replaceable GPS telemetry history/latest state. |
+| `TripLocationSample` | **IMPLEMENTED IN PHASE 8** | Simulator-first, replaceable GPS telemetry history/latest state. |
 | `TripStatusHistory` | NEW | Minimal append-only audit evidence for exceptional Trip lifecycle changes. |
 
 No schema change was performed in Phase 0, Phase 1, or Phase 2. Phase 3 implements

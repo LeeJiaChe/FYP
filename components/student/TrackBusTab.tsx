@@ -32,7 +32,7 @@ export default function TrackBusTab({
     <div className="space-y-5 animate-fade-in">
       <div>
         <h2 className="section-title text-xl">Real-Time Bus Tracker</h2>
-        <p className="section-subtitle">Live location & ETA for your bus</p>
+        <p className="section-subtitle">Persisted simulated GPS telemetry for your bus</p>
       </div>
 
       <div
@@ -81,6 +81,7 @@ export default function TrackBusTab({
               tripId={trackedTrip.id}
               routeName={trackedTrip.routeName}
               stops={trackedTrip.routeStops || DEFAULT_STOPS}
+              tripStops={trackedTrip.tripStops || []}
               departureTime={trackedTrip.departureTime}
               estimatedArrivalTime={trackedTrip.estimatedArrivalTime}
               busPlateNumber={trackedTrip.busPlateNumber}

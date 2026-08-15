@@ -43,7 +43,7 @@ export default function AnalyticsTab({
           style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
         >
           <h3 className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>
-            Route Seat Utilization Rate (%)
+            Seated Seat-Segment Utilization (%)
           </h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -60,7 +60,7 @@ export default function AnalyticsTab({
                     color: "var(--text-primary)",
                   }}
                 />
-                <Bar dataKey="utilizationRate" fill="var(--accent-primary)" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="seatedUtilizationRate" fill="var(--accent-primary)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

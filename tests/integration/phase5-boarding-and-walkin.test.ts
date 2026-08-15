@@ -185,7 +185,6 @@ function requireWalkInBoarded(
 }
 
 after(async () => {
-  await prisma.deviceStatusLog.deleteMany({ where: { seat: { tripId: { in: created.tripIds } } } });
   await prisma.notification.deleteMany({ where: { userId: { in: created.userIds } } });
   await prisma.penaltyAppeal.deleteMany({ where: { studentId: { in: created.userIds } } });
   await prisma.penalty.deleteMany({ where: { studentId: { in: created.userIds } } });
@@ -196,7 +195,6 @@ after(async () => {
   await prisma.reservedSeatSegment.deleteMany({ where: { tripId: { in: created.tripIds } } });
   await prisma.waitlistEntry.deleteMany({ where: { tripId: { in: created.tripIds } } });
   await prisma.booking.deleteMany({ where: { tripId: { in: created.tripIds } } });
-  await prisma.seat.deleteMany({ where: { tripId: { in: created.tripIds } } });
   await prisma.tripSeat.deleteMany({ where: { tripId: { in: created.tripIds } } });
   await prisma.tripSegment.deleteMany({ where: { tripId: { in: created.tripIds } } });
   await prisma.tripStop.deleteMany({ where: { tripId: { in: created.tripIds } } });

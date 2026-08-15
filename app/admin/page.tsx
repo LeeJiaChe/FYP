@@ -105,23 +105,28 @@ export default function AdminDashboard() {
 
     fetchTripDetails(selectedTripId);
 
-    const socketUrl =
-      process.env.NEXT_PUBLIC_REALTIME_URL || "http://localhost:4000";
-    const socket = io(socketUrl);
-
-    socket.emit("join-trip", selectedTripId);
-
-    socket.on("seat-update", () => {
-      fetchTripDetails(selectedTripId);
-    });
-
-    socket.on("trip-update", () => {
-      fetchTripDetails(selectedTripId);
+    let socket: ReturnType<typeof io> | null = null;
+    let disposed = false;
+    void fetch("/api/realtime/subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tripId: selectedTripId }),
+    }).then(async (response) => {
+      if (!response.ok || disposed) return;
+      const subscription = await response.json();
+      if (disposed) return;
+      const socketUrl =
+        process.env.NEXT_PUBLIC_REALTIME_URL || "http://localhost:4000";
+      socket = io(socketUrl, { auth: { token: subscription.token } });
+      socket.on("connect", () => fetchTripDetails(selectedTripId));
+      socket.on("occupancy.changed", () => fetchTripDetails(selectedTripId));
+      socket.on("trip.changed", () => fetchTripDetails(selectedTripId));
+      socket.on("location.changed", () => fetchTripDetails(selectedTripId));
     });
 
     return () => {
-      socket.emit("leave-trip", selectedTripId);
-      socket.disconnect();
+      disposed = true;
+      socket?.disconnect();
     };
   }, [selectedTripId]);
 

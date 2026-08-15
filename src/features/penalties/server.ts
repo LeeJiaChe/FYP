@@ -37,13 +37,16 @@ async function publishPenaltyChanges(result: {
   readonly tripId: string;
 }) {
   if (result.processed.length === 0 && result.promoted.length === 0) return;
-  await notifyRealtime(`trip:${result.tripId}`, "seat-update", {
-    tripId: result.tripId,
-    type: "NO_SHOW_RECONCILED",
+  await notifyRealtime(`trip:${result.tripId}`, "occupancy.changed", {
+    entityId: result.tripId,
+    changedAt: new Date().toISOString(),
+    reason: "NO_SHOW_RECONCILED",
   });
   for (const studentId of new Set(result.processed.map((item) => item.studentId))) {
-    await notifyRealtime(`user:${studentId}`, "notification-update", {
-      type: "PENALTY_ISSUED",
+    await notifyRealtime(`user:${studentId}`, "notification.changed", {
+      entityId: studentId,
+      changedAt: new Date().toISOString(),
+      reason: "PENALTY_ISSUED",
     });
   }
 }
@@ -79,6 +82,10 @@ export async function resolvePenaltyAppeal(
   ...args: Parameters<typeof resolvePenaltyAppealUseCase>
 ) {
   const result = await resolvePenaltyAppealUseCase(...args);
-  await notifyRealtime("admins", "appeal-update", { type: "APPEAL_RESOLVED" });
+  await notifyRealtime("admins", "notification.changed", {
+    entityId: result.appealId,
+    changedAt: new Date().toISOString(),
+    reason: "APPEAL_RESOLVED",
+  });
   return result;
 }

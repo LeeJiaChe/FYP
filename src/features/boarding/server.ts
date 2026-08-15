@@ -26,9 +26,10 @@ export {
 export const issueBoardingPass = issueSignedPass;
 
 async function publishTrip(result: { tripId: string }, type: string) {
-  await notifyRealtime(`trip:${result.tripId}`, "trip-update", {
-    tripId: result.tripId,
-    type,
+  await notifyRealtime(`trip:${result.tripId}`, "occupancy.changed", {
+    entityId: result.tripId,
+    changedAt: new Date().toISOString(),
+    reason: type,
   });
 }
 
@@ -60,10 +61,10 @@ export async function progressTrip(
   ...args: Parameters<typeof progressTripUseCase>
 ) {
   const result = await progressTripUseCase(...args);
-  await notifyRealtime(`trip:${result.trip.id}`, "trip-update", {
-    tripId: result.trip.id,
-    status: result.trip.status,
-    type: "TRIP_PROGRESS_CHANGED",
+  await notifyRealtime(`trip:${result.trip.id}`, "trip.changed", {
+    entityId: result.trip.id,
+    changedAt: new Date().toISOString(),
+    reason: "TRIP_PROGRESS_CHANGED",
   });
   return result;
 }

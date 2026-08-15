@@ -24,10 +24,10 @@ export async function createReservedBooking(
   ...args: Parameters<typeof createReservedBookingUseCase>
 ) {
   const booking = await createReservedBookingUseCase(...args);
-  await notifyRealtime(`trip:${booking.tripId}`, "seat-update", {
-    tripId: booking.tripId,
-    bookingId: booking.id,
-    type: "RESERVED_JOURNEY_CONFIRMED",
+  await notifyRealtime(`trip:${booking.tripId}`, "occupancy.changed", {
+    entityId: booking.tripId,
+    changedAt: new Date().toISOString(),
+    reason: "RESERVATION_CONFIRMED",
   });
   return booking;
 }
@@ -36,10 +36,10 @@ export async function joinJourneyWaitlist(
   ...args: Parameters<typeof joinJourneyWaitlistUseCase>
 ) {
   const entry = await joinJourneyWaitlistUseCase(...args);
-  await notifyRealtime(`trip:${entry.tripId}`, "seat-update", {
-    tripId: entry.tripId,
-    waitlistEntryId: entry.id,
-    type: "WAITLIST_JOINED",
+  await notifyRealtime(`trip:${entry.tripId}`, "occupancy.changed", {
+    entityId: entry.tripId,
+    changedAt: new Date().toISOString(),
+    reason: "WAITLIST_CHANGED",
   });
   return entry;
 }
@@ -48,11 +48,10 @@ export async function cancelReservedBooking(
   ...args: Parameters<typeof cancelReservedBookingUseCase>
 ) {
   const result = await cancelReservedBookingUseCase(...args);
-  await notifyRealtime(`trip:${result.tripId}`, "seat-update", {
-    tripId: result.tripId,
-    bookingId: result.bookingId,
-    promotedCount: result.promoted.length,
-    type: "RESERVED_JOURNEY_CANCELLED",
+  await notifyRealtime(`trip:${result.tripId}`, "occupancy.changed", {
+    entityId: result.tripId,
+    changedAt: new Date().toISOString(),
+    reason: "RESERVATION_CANCELLED",
   });
   return result;
 }

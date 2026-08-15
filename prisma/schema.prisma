@@ -27,13 +27,6 @@ enum TripStatus {
   CANCELLED
 }
 
-enum SeatStatus {
-  AVAILABLE
-  RESERVED
-  CHECKED_IN
-  NO_SHOW
-}
-
 enum BookingStatus {
   CONFIRMED
   CANCELLED
@@ -100,10 +93,9 @@ enum NotificationType {
   TRIP_DELAYED
 }
 
-enum DeviceSignal {
-  OK
-  OFFLINE
-  ERROR
+enum LocationSource {
+  SIMULATED
+  GPS
 }
 
 model User {
@@ -195,7 +187,6 @@ model Trip {
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 
-  seats           Seat[]
   tripSeats       TripSeat[]
   tripStops       TripStop[]
   tripSegments    TripSegment[]
@@ -204,6 +195,7 @@ model Trip {
   walkInIntents   WalkInIntent[]
   walkInJourneys  WalkInJourney[]
   statusHistory   TripStatusHistory[]
+  locationSamples TripLocationSample[]
 
   @@index([routeId])
   @@index([busId])
@@ -271,26 +263,11 @@ model TripSeat {
   tripId               String
   trip                 Trip                  @relation(fields: [tripId], references: [id], onDelete: Cascade)
   seatNumber           Int
-  legacySeat           Seat?                 @relation("LegacySeatInventory")
   bookings             Booking[]
   reservedSeatSegments ReservedSeatSegment[]
 
   @@unique([tripId, seatNumber])
   @@unique([tripId, id])
-}
-
-model Seat {
-  id         String            @id @default(uuid())
-  tripId     String
-  trip       Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  tripSeatId String?           @unique @db.Uuid
-  tripSeat   TripSeat?         @relation("LegacySeatInventory", fields: [tripSeatId], references: [id], onDelete: SetNull)
-  seatNumber Int
-  status     SeatStatus        @default(AVAILABLE)
-  deviceLogs DeviceStatusLog[]
-
-  @@unique([tripId, seatNumber])
-  @@index([tripId])
 }
 
 model Booking {
@@ -492,12 +469,16 @@ model Notification {
   @@index([userId, isRead])
 }
 
-model DeviceStatusLog {
-  id              String       @id @default(uuid())
-  seatId          String
-  seat            Seat         @relation(fields: [seatId], references: [id], onDelete: Cascade)
-  simulatedSignal DeviceSignal @default(OK)
-  recordedAt      DateTime     @default(now())
+model TripLocationSample {
+  id         String         @id @default(uuid()) @db.Uuid
+  tripId     String
+  trip       Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  latitude   Decimal        @db.Decimal(9, 6)
+  longitude  Decimal        @db.Decimal(9, 6)
+  recordedAt DateTime
+  receivedAt DateTime       @default(now())
+  source     LocationSource
 
-  @@index([seatId])
+  @@index([tripId, recordedAt])
+  @@index([recordedAt])
 }

@@ -81,7 +81,7 @@ export default function LiveMonitoringTab({
                   className="font-bold text-lg"
                   style={{ color: "var(--text-primary)" }}
                 >
-                  Live Seat Map — Bus {liveTripDetails.busPlateNumber}
+                  Current Segment Occupancy — Bus {liveTripDetails.busPlateNumber}
                 </h3>
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                   {liveTripDetails.routeName} • Departs:{" "}
@@ -89,6 +89,16 @@ export default function LiveMonitoringTab({
                     [],
                     { hour: "2-digit", minute: "2-digit" }
                   )}
+                </p>
+                <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
+                  {liveTripDetails.latestLocation
+                    ? `${liveTripDetails.latestLocation.source === "SIMULATED" ? "Simulated GPS / Prototype" : "GPS"} · ${new Date(liveTripDetails.latestLocation.recordedAt).toLocaleTimeString()}`
+                    : "No live telemetry received yet"}
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: "var(--accent-secondary)" }}>
+                  {liveTripDetails.currentSegment
+                    ? `${liveTripDetails.currentSegment.fromStopName} → ${liveTripDetails.currentSegment.toStopName}`
+                    : "No active segment"}
                 </p>
               </div>
               <span className="badge badge-emerald text-xs uppercase font-extrabold">
@@ -118,17 +128,17 @@ export default function LiveMonitoringTab({
               <div className="space-y-3">
                 {[
                   {
-                    label: "Total Capacity",
+                    label: "Seated capacity",
                     count: liveTripDetails.stats?.totalSeats || 0,
                     color: "var(--text-primary)",
                   },
                   {
-                    label: "Available (White)",
+                    label: "Free on current segment",
                     count: liveTripDetails.stats?.availableSeats || 0,
                     color: "#e2e8f0",
                   },
                   {
-                    label: "Reserved (Red)",
+                    label: "Reserved on current segment",
                     count: liveTripDetails.stats?.reservedSeats || 0,
                     color: "#ef4444",
                   },
@@ -138,9 +148,9 @@ export default function LiveMonitoringTab({
                     color: "#22c55e",
                   },
                   {
-                    label: "No-shows (Grey)",
-                    count: liveTripDetails.stats?.noShowSeats || 0,
-                    color: "#64748b",
+                    label: "Standing on current segment",
+                    count: `${liveTripDetails.stats?.standingPassengers || 0} / ${liveTripDetails.stats?.standingCapacity || 0}`,
+                    color: "#38bdf8",
                   },
                 ].map(({ label, count, color }) => (
                   <div key={label} className="flex justify-between items-center text-xs">
@@ -153,24 +163,6 @@ export default function LiveMonitoringTab({
               </div>
             </div>
 
-            {/* Offline Sensor Log Warning */}
-            {liveTripDetails.seats?.some((s: any) => s.deviceHealth === "OFFLINE" || s.deviceHealth === "ERROR") && (
-              <div
-                className="p-3.5 rounded-xl text-xs flex items-center gap-2.5"
-                style={{
-                  background: "rgba(245,158,11,0.1)",
-                  border: "1px solid rgba(245,158,11,0.3)",
-                  color: "#fbbf24",
-                }}
-              >
-                <Activity className="w-4 h-4 shrink-0" />
-                <span>
-                  Sensor Warning: Seat #
-                  {liveTripDetails.seats.find((s: any) => s.deviceHealth === "OFFLINE" || s.deviceHealth === "ERROR")?.seatNumber}{" "}
-                  reporting {liveTripDetails.seats.find((s: any) => s.deviceHealth !== "OK")?.deviceHealth} signal.
-                </span>
-              </div>
-            )}
           </div>
         </div>
       ) : (

@@ -9,7 +9,7 @@ import { productPolicy } from "../src/shared/config/policies";
 const prisma = new PrismaClient();
 
 async function resetDemoData() {
-  await prisma.deviceStatusLog.deleteMany();
+  await prisma.tripLocationSample.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.penaltyAppeal.deleteMany();
   await prisma.penalty.deleteMany();
@@ -20,7 +20,6 @@ async function resetDemoData() {
   await prisma.tripStatusHistory.deleteMany();
   await prisma.waitlistEntry.deleteMany();
   await prisma.booking.deleteMany();
-  await prisma.seat.deleteMany();
   await prisma.tripSeat.deleteMany();
   await prisma.tripSegment.deleteMany();
   await prisma.tripStop.deleteMany();
@@ -111,14 +110,6 @@ async function createDemoTrip(input: {
       seatNumber,
     }));
     await transaction.tripSeat.createMany({ data: tripSeats });
-    await transaction.seat.createMany({
-      data: tripSeats.map((seat) => ({
-        tripId: trip.id,
-        tripSeatId: seat.id,
-        seatNumber: seat.seatNumber,
-      })),
-    });
-
     return trip;
   });
 }
@@ -422,6 +413,16 @@ async function main() {
       expiresAt: new Date(stopA!.plannedDeparture.getTime() + productPolicy.bookingOpenLeadMs),
     },
   });
+  await prisma.tripLocationSample.create({
+    data: {
+      id: randomUUID(),
+      tripId: demonstrationTrip.id,
+      latitude: stopA!.latitude,
+      longitude: stopA!.longitude,
+      recordedAt: now,
+      source: "SIMULATED",
+    },
+  });
 
   const historicalTrip = await prisma.trip.findUniqueOrThrow({
     where: { id: demoTrips[4]!.id },
@@ -486,7 +487,7 @@ async function main() {
     "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 5 complete Trip snapshots.",
   );
   console.log(
-    "Phase 6 demo: reserved adjacent-seat reuse, one Walk-in intent, and one pending no-show penalty appeal.",
+    "Phase 8 demo: segment-aware journeys, one Walk-in intent, one penalty appeal, and one simulated GPS sample.",
   );
 }
 
