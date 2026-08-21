@@ -817,12 +817,14 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
               ].map(({ label, key, opts, ph, req }) => (
                 <div key={key}>
                   <label
+                    htmlFor={`trip-${key}`}
                     className="block text-xs font-bold mb-1.5"
                     style={{ color: "var(--text-secondary)" }}
                   >
                     {label}
                   </label>
                   <select
+                    id={`trip-${key}`}
                     required={req}
                     disabled={Boolean(editingTripId && (key === "routeId" || key === "busId"))}
                     value={(newTrip as any)[key]}
@@ -843,12 +845,14 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
 
               <div>
                 <label
+                  htmlFor="trip-departure-time"
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   Departure Time
                 </label>
                 <input
+                  id="trip-departure-time"
                   type="datetime-local"
                   required
                   value={newTrip.departureTime}

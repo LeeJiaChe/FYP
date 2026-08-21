@@ -68,7 +68,7 @@ test("admin exposes fleet, scheduling, monitoring, analytics and appeals", async
     await expect(page.getByRole("tab", { name: new RegExp(name.replace("/", "\\/")) })).toBeVisible();
   }
   await page.getByRole("tab", { name: "Timetable" }).click();
-  await page.getByRole("button", { name: /Schedule Trip/ }).click();
+  await page.getByRole("button", { name: /Schedule New Trip/ }).click();
   await expect(page.getByRole("dialog", { name: /Schedule Trip/ })).toBeVisible();
   await expect(page.getByLabel("Route")).toBeVisible();
   await expect(page.getByLabel("Bus")).toBeVisible();
@@ -83,5 +83,5 @@ test("persisted GPS is explicitly simulated and has an honest empty or freshness
   await page.getByRole("tab", { name: /Track Bus/ }).click();
   await page.getByLabel("Select Trip to Track:").selectOption({ index: 1 });
   await expect(page.getByText(/Simulated GPS \/ Prototype/)).toBeVisible();
-  await expect(page.getByText(/Last simulated location|No live telemetry received yet/)).toBeVisible();
+  await expect(page.getByText(/Latest sample|No live telemetry received yet/)).toBeVisible();
 });
