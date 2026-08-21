@@ -24,7 +24,7 @@ test("student reservation flow and Reserved Pass are journey truthful", async ({
   await expect(page.getByText(/Seat 1/).first()).toBeVisible();
   await page.getByRole("button", { name: /Reserved Pass/ }).first().click();
   await expect(page.getByRole("dialog", { name: /Reserved Boarding Pass/ })).toBeVisible();
-  await expect(page.getByText("Reserved Boarding")).toBeVisible();
+  await expect(page.getByText("Reserved Boarding", { exact: true })).toBeVisible();
 });
 
 test("waitlist, walk-in, penalty and appeal states use approved language", async ({ browser }) => {
@@ -69,7 +69,7 @@ test("admin exposes fleet, scheduling, monitoring, analytics and appeals", async
   }
   await page.getByRole("tab", { name: "Timetable" }).click();
   await page.getByRole("button", { name: /Schedule New Trip/ }).click();
-  await expect(page.getByRole("dialog", { name: /Schedule Trip/ })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Schedule New Trip" })).toBeVisible();
   await expect(page.getByLabel("Route")).toBeVisible();
   await expect(page.getByLabel("Bus")).toBeVisible();
   await expect(page.getByLabel("Driver")).toBeVisible();
