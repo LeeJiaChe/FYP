@@ -50,7 +50,7 @@ function mapPersistenceFailure(error: BookingPersistenceError): never {
     case "TOO_EARLY":
       throw conflict("The reserved booking window has not opened yet");
     case "TOO_LATE":
-      throw conflict("The passenger boarding stop has already reached departure");
+      throw conflict("Reservations have closed because boarding has started at this stop");
     case "SEAT_UNAVAILABLE":
     case "ALLOCATION_CONFLICT":
       throw conflict("Selected seat is no longer available for the complete journey");
@@ -63,7 +63,7 @@ function mapPersistenceFailure(error: BookingPersistenceError): never {
     case "BOOKING_NOT_CANCELLABLE":
       throw conflict("Reservation is not cancellable in its current state");
     case "CANCELLATION_CUTOFF":
-      throw conflict("The cancellation cutoff for the boarding stop has passed");
+      throw conflict("This reservation can no longer be cancelled because boarding has started at your boarding stop");
     case "ALLOCATION_INCOMPLETE":
       throw invariantViolation("The complete journey allocation could not be created");
   }

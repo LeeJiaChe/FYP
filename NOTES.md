@@ -96,11 +96,14 @@ short decision index, not evidence that the current implementation is complete.
     Post-departure emergency cancellation requires a reason and records
     TripStatusHistory.
 
-19. **Central policy:** Defaults are booking 7 days ahead, cancellation 30 minutes
-    before the boarding stop, boarding from 15 minutes before through 5 minutes
-    after that stop unless delayed, QR lifetime 60 seconds, initial credit 100,
-    no-show penalty 15, restriction below 40, GPS interval 5 seconds, and location
-    retention 7 days. One validated configuration module owns these values.
+19. **Central policy:** Booking opens 7 days before the passenger's planned
+    boarding-stop departure. New reservation and cancellation remain available
+    until operational boarding begins at that stop; planned-time delay alone
+    does not close them. QR boarding remains normally open from 15 minutes before
+    through 5 minutes after the planned stop time unless actual delayed operation
+    extends it. QR lifetime is 60 seconds, initial credit 100, no-show penalty 15,
+    restriction below 40, GPS interval 5 seconds, and location retention 7 days.
+    One validated configuration module owns the numeric values.
 
 20. **Identity and scanning:** Student email is trim/lowercase and limited to
     `@student.tarc.edu.my` without an invented local-part regex; student ID is

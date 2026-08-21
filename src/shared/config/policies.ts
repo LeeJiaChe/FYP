@@ -2,7 +2,6 @@ import approvedDefaults from "./product-policy.defaults.json";
 
 export interface ProductPolicy {
   readonly bookingOpenLeadMs: number;
-  readonly reservedCancellationLeadMs: number;
   readonly boardingOpenLeadMs: number;
   readonly normalBoardingCloseGraceMs: number;
   readonly qrTokenLifetimeSeconds: number;

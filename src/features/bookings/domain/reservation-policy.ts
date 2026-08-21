@@ -10,6 +10,9 @@ export class ReservationPolicyError extends Error {
 export interface ReservationEligibility {
   readonly tripStatus: string;
   readonly boardingPlannedDeparture: Date;
+  readonly boardingActualArrival: Date | null;
+  readonly boardingActualDeparture: Date | null;
+  readonly boardingPassedAt: Date | null;
   readonly studentCredit: number;
   readonly now: Date;
 }
@@ -21,7 +24,7 @@ export function assertReservationEligibility(
   if (input.studentCredit < policy.bookingRestrictionBelowCredit) {
     throw new ReservationPolicyError("RESTRICTED");
   }
-  if (input.tripStatus !== "NOT_STARTED") {
+  if (input.tripStatus === "ARRIVED" || input.tripStatus === "CANCELLED") {
     throw new ReservationPolicyError("NOT_BOOKABLE");
   }
 
@@ -30,13 +33,18 @@ export function assertReservationEligibility(
   if (now < departure - policy.bookingOpenLeadMs) {
     throw new ReservationPolicyError("TOO_EARLY");
   }
-  if (now >= departure) {
+  if (
+    input.boardingActualArrival !== null ||
+    input.boardingActualDeparture !== null ||
+    input.boardingPassedAt !== null
+  ) {
     throw new ReservationPolicyError("TOO_LATE");
   }
 }
 
 export interface WaitlistPromotionEligibility {
   readonly tripStatus: string;
+  readonly boardingActualArrival: Date | null;
   readonly boardingActualDeparture: Date | null;
   readonly boardingPassedAt: Date | null;
   readonly studentCredit: number;
@@ -50,19 +58,29 @@ export function canPromoteWaitlistEntry(
     input.studentCredit >= policy.bookingRestrictionBelowCredit &&
     input.tripStatus !== "ARRIVED" &&
     input.tripStatus !== "CANCELLED" &&
+    input.boardingActualArrival === null &&
     input.boardingActualDeparture === null &&
     input.boardingPassedAt === null
   );
 }
 
+export interface ReservedCancellationEligibility {
+  readonly bookingStatus: string;
+  readonly checkedInAt: Date | null;
+  readonly boardingActualArrival: Date | null;
+  readonly boardingActualDeparture: Date | null;
+  readonly boardingPassedAt: Date | null;
+}
+
 export function canCancelReservedBooking(
-  now: Date,
-  boardingPlannedDeparture: Date,
-  policy: ProductPolicy,
+  input: ReservedCancellationEligibility,
 ): boolean {
   return (
-    now.getTime() <
-    boardingPlannedDeparture.getTime() - policy.reservedCancellationLeadMs
+    input.bookingStatus === "CONFIRMED" &&
+    input.checkedInAt === null &&
+    input.boardingActualArrival === null &&
+    input.boardingActualDeparture === null &&
+    input.boardingPassedAt === null
   );
 }
 

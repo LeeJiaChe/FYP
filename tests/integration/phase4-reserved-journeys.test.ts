@@ -10,7 +10,9 @@ import {
 } from "../../src/features/bookings/application/reservations";
 import { scheduleTrip } from "../../src/features/trips/application/schedule-trip";
 import { ApplicationError } from "../../src/shared/application/application-error";
+import { createProductPolicy } from "../../src/shared/config/policies";
 import { prisma } from "../../src/shared/db/prisma.server";
+import { promoteCompatibleWaitlistInTransaction } from "../../src/features/bookings/infrastructure/booking.prisma.server";
 
 interface Scenario {
   readonly tripId: string;
@@ -125,6 +127,26 @@ async function reserve(
       dropOffTripStopId: scenario.stopIds[dropOffIndex]!,
     },
     clock(new Date(scenario.departure.getTime() - 60 * 60 * 1_000)),
+  );
+}
+
+async function reserveAt(
+  studentId: string,
+  scenario: Scenario,
+  seatIndex: number,
+  boardingIndex: number,
+  dropOffIndex: number,
+  instant: Date,
+) {
+  return createReservedBooking(
+    actor(studentId),
+    {
+      tripId: scenario.tripId,
+      tripSeatId: scenario.seatIds[seatIndex]!,
+      boardingTripStopId: scenario.stopIds[boardingIndex]!,
+      dropOffTripStopId: scenario.stopIds[dropOffIndex]!,
+    },
+    clock(instant),
   );
 }
 
@@ -389,6 +411,129 @@ describe("Phase 4 PostgreSQL reserved journey allocation", () => {
     assert.deepEqual(
       after.map((claim) => [claim.tripSeatId, claim.tripSegmentId]),
       before.map((claim) => [claim.tripSeatId, claim.tripSegmentId]),
+    );
+  });
+
+  it("allows delayed reservation after planned departure before actual arrival", async () => {
+    const scenario = await createScenario(1);
+    const student = await createStudent("Delayed Reservation");
+    const booking = await reserveAt(
+      student,
+      scenario,
+      0,
+      0,
+      2,
+      new Date(scenario.departure.getTime() + 45 * 60 * 1_000),
+    );
+    assert.equal(booking.status, "CONFIRMED");
+  });
+
+  it("allows a future intermediate-stop reservation after an earlier departure", async () => {
+    const scenario = await createScenario(1);
+    const student = await createStudent("Future Stop After Departure");
+    const departedAt = new Date(scenario.departure.getTime() + 2 * 60 * 1_000);
+    await prisma.$transaction([
+      prisma.trip.update({
+        where: { id: scenario.tripId },
+        data: { status: "DEPARTED" },
+      }),
+      prisma.tripStop.update({
+        where: { id: scenario.stopIds[0]! },
+        data: { actualArrival: scenario.departure, actualDeparture: departedAt },
+      }),
+    ]);
+
+    const booking = await reserveAt(
+      student,
+      scenario,
+      0,
+      1,
+      2,
+      new Date(scenario.departure.getTime() + 30 * 60 * 1_000),
+    );
+    assert.equal(booking.boardingTripStopId, scenario.stopIds[1]);
+  });
+
+  it("rejects a new reservation once the requested boarding stop has arrived", async () => {
+    const scenario = await createScenario(1);
+    const student = await createStudent("Arrived Stop Booking");
+    await prisma.tripStop.update({
+      where: { id: scenario.stopIds[0]! },
+      data: { actualArrival: scenario.departure },
+    });
+    await assert.rejects(
+      reserveAt(
+        student,
+        scenario,
+        0,
+        0,
+        2,
+        new Date(scenario.departure.getTime() + 30 * 60 * 1_000),
+      ),
+      (error) => error instanceof ApplicationError && error.code === "CONFLICT",
+    );
+  });
+
+  it("allows delayed cancellation before actual arrival", async () => {
+    const scenario = await createScenario(1);
+    const student = await createStudent("Delayed Cancellation");
+    const booking = await reserve(student, scenario, 0, 0, 2);
+    const cancelled = await cancelReservedBooking(
+      actor(student),
+      booking.id,
+      clock(new Date(scenario.departure.getTime() + 45 * 60 * 1_000)),
+    );
+    assert.equal(cancelled.bookingId, booking.id);
+    assert.equal(
+      (await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).status,
+      "CANCELLED",
+    );
+  });
+
+  it("rejects cancellation after actual arrival", async () => {
+    const scenario = await createScenario(1);
+    const student = await createStudent("Arrived Stop Cancellation");
+    const booking = await reserve(student, scenario, 0, 0, 2);
+    await prisma.tripStop.update({
+      where: { id: scenario.stopIds[0]! },
+      data: { actualArrival: scenario.departure },
+    });
+    await assert.rejects(
+      cancelReservedBooking(
+        actor(student),
+        booking.id,
+        clock(new Date(scenario.departure.getTime() + 45 * 60 * 1_000)),
+      ),
+      (error) => error instanceof ApplicationError && error.code === "CONFLICT",
+    );
+  });
+
+  it("does not promote a waiter after actual arrival at that boarding stop", async () => {
+    const scenario = await createScenario(1);
+    const [holder, waiter] = await Promise.all([
+      createStudent("Promotion Holder"),
+      createStudent("Promotion Closed Waiter"),
+    ]);
+    await reserve(holder, scenario, 0, 0, 2);
+    const entry = await join(waiter, scenario, 0, 2);
+    await prisma.tripStop.update({
+      where: { id: scenario.stopIds[0]! },
+      data: { actualArrival: scenario.departure },
+    });
+    await prisma.reservedSeatSegment.deleteMany({
+      where: { booking: { studentId: holder, tripId: scenario.tripId } },
+    });
+    await prisma.$transaction((transaction) =>
+      promoteCompatibleWaitlistInTransaction(
+        transaction,
+        scenario.tripId,
+        new Date(scenario.departure.getTime() + 1_000),
+        createProductPolicy(),
+      ),
+    );
+    assert.equal(
+      (await prisma.waitlistEntry.findUniqueOrThrow({ where: { id: entry.id } })).status,
+      "WAITING",
     );
   });
 });

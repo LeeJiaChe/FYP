@@ -187,6 +187,42 @@ async function main() {
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
       },
+      {
+        studentId: "24WAB01239",
+        name: "E2E Reservation Student",
+        email: "student6@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+      },
+      {
+        studentId: "24WAB01240",
+        name: "E2E Waitlist Student",
+        email: "student7@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+      },
+      {
+        studentId: "24WAB01241",
+        name: "E2E Walk-in Student",
+        email: "student8@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+      },
+      {
+        studentId: "24WAB01242",
+        name: "E2E Appeal Student",
+        email: "student9@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+        creditScore: 85,
+      },
+      {
+        studentId: "24WAB01243",
+        name: "E2E Boarding Student",
+        email: "student10@student.tarc.edu.my",
+        passwordHash: defaultPasswordHash,
+        role: "STUDENT",
+      },
     ],
   });
 
@@ -312,6 +348,7 @@ async function main() {
     [danauOutbound.id, bus2.id, driver2.id, 26],
     [danauInbound.id, bus1.id, driver1.id, 29],
     [setapakInbound.id, bus2.id, driver2.id, -3],
+    [danauOutbound.id, bus2.id, driver1.id, -1],
   ] as const;
   const demoTrips = [];
   for (const [routeId, busId, driverId, hoursFromNow] of tripInputs) {
@@ -323,8 +360,30 @@ async function main() {
     }));
   }
 
-  const [student1, student2, student3, student4, student5] = await Promise.all(
-    ["student1", "student2", "student3", "student4", "student5"].map((student) =>
+  const [
+    student1,
+    student2,
+    student3,
+    student4,
+    student5,
+    student6,
+    student7,
+    student8,
+    student9,
+    student10,
+  ] = await Promise.all(
+    [
+      "student1",
+      "student2",
+      "student3",
+      "student4",
+      "student5",
+      "student6",
+      "student7",
+      "student8",
+      "student9",
+      "student10",
+    ].map((student) =>
       prisma.user.findUniqueOrThrow({
         where: { email: `${student}@student.tarc.edu.my` },
       }),
@@ -424,6 +483,41 @@ async function main() {
     },
   });
 
+  // Deterministic Phase 9.5 browser-mutation fixtures. Preconditions are seeded;
+  // booking, waitlist, Walk-in, boarding, appeal resolution and scheduling are
+  // deliberately performed through the visible web workflows.
+  void student6;
+  void student7;
+  void student8;
+
+  const driverBoardingTrip = await prisma.trip.findUniqueOrThrow({
+    where: { id: demoTrips[5]!.id },
+    include: {
+      tripStops: { orderBy: { position: "asc" } },
+      tripSegments: { orderBy: { position: "asc" } },
+      tripSeats: { orderBy: { seatNumber: "asc" } },
+    },
+  });
+  const driverBooking = await prisma.booking.create({
+    data: {
+      studentId: student10.id,
+      tripId: driverBoardingTrip.id,
+      tripSeatId: driverBoardingTrip.tripSeats[0]!.id,
+      boardingTripStopId: driverBoardingTrip.tripStops[0]!.id,
+      dropOffTripStopId: driverBoardingTrip.tripStops[2]!.id,
+      status: "CONFIRMED",
+    },
+  });
+  await prisma.reservedSeatSegment.createMany({
+    data: driverBoardingTrip.tripSegments.map((segment) => ({
+      id: randomUUID(),
+      bookingId: driverBooking.id,
+      tripId: driverBoardingTrip.id,
+      tripSeatId: driverBoardingTrip.tripSeats[0]!.id,
+      tripSegmentId: segment.id,
+    })),
+  });
+
   const historicalTrip = await prisma.trip.findUniqueOrThrow({
     where: { id: demoTrips[4]!.id },
     include: {
@@ -483,8 +577,29 @@ async function main() {
     },
   });
 
+  const e2eNoShow = await prisma.booking.create({
+    data: {
+      studentId: student9.id,
+      tripId: historicalTrip.id,
+      tripSeatId: historicalTrip.tripSeats[1]!.id,
+      boardingTripStopId: historicalBoardingStop.id,
+      dropOffTripStopId: historicalDropOffStop.id,
+      status: "NO_SHOW",
+    },
+  });
+  await prisma.penalty.create({
+    data: {
+      bookingId: e2eNoShow.id,
+      studentId: student9.id,
+      type: "RESERVED_NO_SHOW",
+      creditPointsDeducted: productPolicy.noShowPenaltyPoints,
+      reason: `Reserved journey no-show at ${historicalBoardingStop.stopName}`,
+      status: "ACTIVE",
+    },
+  });
+
   console.log(
-    "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 5 complete Trip snapshots.",
+    "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 6 complete Trip snapshots.",
   );
   console.log(
     "Phase 8 demo: segment-aware journeys, one Walk-in intent, one penalty appeal, and one simulated GPS sample.",

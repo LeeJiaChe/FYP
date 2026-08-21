@@ -104,6 +104,9 @@ async function loadJourney(
       {
         tripStatus: trip.status,
         boardingPlannedDeparture: boarding.plannedDeparture,
+        boardingActualArrival: boarding.actualArrival,
+        boardingActualDeparture: boarding.actualDeparture,
+        boardingPassedAt: boarding.passedAt,
         studentCredit: student.creditScore,
         now,
       },
@@ -380,6 +383,7 @@ export async function promoteCompatibleWaitlistInTransaction(
         !canPromoteWaitlistEntry(
           {
             tripStatus: trip.status,
+            boardingActualArrival: boarding.actualArrival,
             boardingActualDeparture: boarding.actualDeparture,
             boardingPassedAt: boarding.passedAt,
             studentCredit: student.creditScore,
@@ -465,7 +469,13 @@ export async function cancelReservedBookingRecord(
     if (!canTransitionReservedBookingToCancelled(booking.status)) {
       throw new BookingPersistenceError("BOOKING_NOT_CANCELLABLE");
     }
-    if (!canCancelReservedBooking(now, booking.boardingTripStop.plannedDeparture, policy)) {
+    if (!canCancelReservedBooking({
+      bookingStatus: booking.status,
+      checkedInAt: booking.checkedInAt,
+      boardingActualArrival: booking.boardingTripStop.actualArrival,
+      boardingActualDeparture: booking.boardingTripStop.actualDeparture,
+      boardingPassedAt: booking.boardingTripStop.passedAt,
+    })) {
       throw new BookingPersistenceError("CANCELLATION_CUTOFF");
     }
 

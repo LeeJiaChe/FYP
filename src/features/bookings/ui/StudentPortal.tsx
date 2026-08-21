@@ -527,6 +527,11 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
               onSelectSeat={(seatId) => setSelectedSeatId(seatId)}
               mode="student"
             />
+            {tripSeats.length === 0 && (
+              <p className="mt-4 text-xs font-semibold text-amber-200">
+                No single seat is free across this complete journey.
+              </p>
+            )}
 
             <div
               className="mt-5 flex items-center justify-between pt-4 border-t"

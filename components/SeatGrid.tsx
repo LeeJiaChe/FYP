@@ -99,7 +99,10 @@ export default function SeatGrid({
 
             return (
               <div key={seat.id} className="contents">
-                <div
+                <button
+                  type="button"
+                  aria-label={`Seat ${seat.seatNumber}, ${seat.status.toLowerCase().replace("_", " ")}`}
+                  disabled={!interactive || (mode === "student" && seat.status !== "AVAILABLE")}
                   onMouseEnter={() => setHoveredSeat(seat)}
                   onMouseLeave={() => setHoveredSeat(null)}
                   onClick={() => {
@@ -114,7 +117,7 @@ export default function SeatGrid({
                       onManualCheckIn(seat);
                     }
                   }}
-                  className={`relative aspect-square rounded-2xl font-bold text-sm flex flex-col items-center justify-center transition-all duration-200 cursor-pointer select-none ${getSeatStyle(
+                  className={`relative aspect-square rounded-2xl font-bold text-sm flex flex-col items-center justify-center transition-all duration-200 cursor-pointer select-none disabled:opacity-100 ${getSeatStyle(
                     seat,
                   )} ${!interactive || (mode === "student" && seat.status !== "AVAILABLE") ? "cursor-default" : ""}`}
                 >
@@ -127,7 +130,7 @@ export default function SeatGrid({
                       <UserCheck className="w-2.5 h-2.5" /> Check-in
                     </span>
                   )}
-                </div>
+                </button>
 
                 {/* Insert Aisle gap after every 2nd seat in row of 4 */}
                 {(index + 1) % 2 === 0 && (index + 1) % 4 !== 0 && (

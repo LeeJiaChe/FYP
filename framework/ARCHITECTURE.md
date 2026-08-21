@@ -699,9 +699,8 @@ Tests must assert behavior, not source-code substrings. Phase 1 uses Node 20's
 built-in test runner with the existing TypeScript loader for unit, integration,
 and architecture suites. `npm test`, `npm run test:integration`, and
 `npm run test:architecture` are explicit scripts; CI runs lint, typecheck, unit,
-architecture, PostgreSQL integration tests, and a production build. Add
-`test:e2e` with the browser runner when migrated workflows exist rather than for
-script symmetry. Database tests use a dedicated PostgreSQL database and never
+architecture, PostgreSQL integration tests, a production build, and Playwright
+browser E2E for critical role workflows. Database tests use a dedicated PostgreSQL database and never
 mutate a developer's normal database.
 
 ## 14. Centralized operating-policy configuration
@@ -711,7 +710,8 @@ mutate a developer's normal database.
 | Policy | Default |
 |---|---:|
 | Booking opens | 7 days before boarding-stop planned departure |
-| Reserved cancellation cutoff | 30 minutes before boarding-stop planned departure |
+| Reserved booking closes | operational boarding begins at the passenger's boarding TripStop |
+| Reserved cancellation closes | operational boarding begins at the passenger's boarding TripStop |
 | Boarding opens | 15 minutes before boarding-stop planned departure |
 | Normal boarding closes | 5 minutes after boarding-stop planned departure |
 | Dynamic QR token lifetime | 60 seconds |
@@ -725,6 +725,14 @@ Operational delay metadata may extend the normal boarding-close window through
 one documented policy calculation. Domain policies receive the resolved values;
 they do not read environment variables, and Route Handlers/UI must not repeat the
 numbers.
+
+Planned time identifies the Trip, supports search/display, and determines the
+seven-day reservation opening. It does not close reservation or cancellation.
+For these operations, `TripStop.actualArrival` is the durable boarding-start
+boundary; `actualDeparture` and `passedAt` also close the stop. Consequently,
+a delayed intermediate-stop journey can remain reservable after an earlier stop
+has departed and after its own planned time has passed, provided the bus has not
+actually reached that passenger's boarding stop.
 
 ## 15. Architecture guardrails for future changes
 

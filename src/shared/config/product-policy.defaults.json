@@ -1,6 +1,5 @@
 {
   "bookingOpenLeadMs": 604800000,
-  "reservedCancellationLeadMs": 1800000,
   "boardingOpenLeadMs": 900000,
   "normalBoardingCloseGraceMs": 300000,
   "qrTokenLifetimeSeconds": 60,

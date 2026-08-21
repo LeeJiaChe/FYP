@@ -10,7 +10,6 @@ import { fixedClock } from "../../../src/shared/time/clock";
 describe("central product policy", () => {
   it("contains every approved default with explicit units", () => {
     assert.equal(productPolicy.bookingOpenLeadMs, 7 * 24 * 60 * 60 * 1_000);
-    assert.equal(productPolicy.reservedCancellationLeadMs, 30 * 60 * 1_000);
     assert.equal(productPolicy.boardingOpenLeadMs, 15 * 60 * 1_000);
     assert.equal(productPolicy.normalBoardingCloseGraceMs, 5 * 60 * 1_000);
     assert.equal(productPolicy.qrTokenLifetimeSeconds, 60);
