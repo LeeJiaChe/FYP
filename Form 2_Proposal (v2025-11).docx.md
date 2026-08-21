@@ -1,3 +1,10 @@
+> **Historical proposal snapshot (superseded):** This converted November 2025
+> proposal preserves the scope understood at that time. References below to IoT
+> seat devices, screenshot prevention, whole-trip seat matrices, timetable-only
+> cron logic, and “full E2E coverage” are not current product claims. The
+> canonical final behavior is defined by `framework/APP_SPECIFICATION.md` and
+> the Phase 8–10/final acceptance evidence.
+
 | Student Name | Lee Jia Che |  |  |
 | :---- | :---- | :---- | :---- |
 | **Programme** | RSW (Software Engineering) |  |  |
@@ -23,9 +30,3 @@
 | **Proposed Development Model:** Agile Incremental Development — iterative sprints with a working deliverable at the end of each phase, allowing continuous testing and refinement. <br><br> **Project Schedule:** <br><br> | **ACTIVITIES** | **EXPECTED OUTCOME** | **COMPLETION DATE** | | :---- | :---- | :---- | | Requirements gathering, system analysis, database schema & architecture design | Approved proposal, ERD, system architecture diagram | Sept 2025 | | Backend API development (Auth, Bookings, Trips, Penalties, Notifications, Admin CRUD) | Working REST API with Prisma/PostgreSQL, JWT auth, role-based access control | Oct 2025 | | Student Portal UI development (Booking wizard, dynamic QR pass, Waitlist, Credit score) | Functional Student dashboard with real-time notifications | Nov 2025 | | Driver Portal UI development (QR scanner, Trip lifecycle control, Live seat matrix) | Functional Driver dashboard with trip control | Nov 2025 | | Admin Portal UI development (Fleet CRUD, Analytics dashboard, Penalty & appeal review) | Functional Admin dashboard with Recharts analytics | Dec 2025 | | Real-time service integration (Socket.io, Cron, No-show automation, IoT simulation) | Live seat updates, automated penalty pipeline, device health simulation | Jan 2026 | | Security hardening (Rate limiting, token versioning, Zod validation, security audit) | Audit log completed, all critical/high vulnerabilities resolved | Feb 2026 | | End-to-end integration testing (Phase 4 E2E test suite) | Full E2E test coverage — 11/11 scenarios passed | Mar 2026 | | UI/UX audit & polish (Phase 5 — Tier 1 & 2 issues resolved) | 11 UX issues resolved, toast notifications, shared modal system | Apr 2026 | | Final documentation, FYP report writing, viva preparation & submission | Completed FYP2 report, demo-ready production system | May 2026 | |
 | **REFERENCES** |
 | Ismail, A., Rahman, M. F. A., & Hamid, N. A. (2020). Campus bus service management and student satisfaction: A review of Malaysian public universities. *Journal of Transport and Land Use*, 13(1), 541–558. https://doi.org/10.5198/jtlu.2020.1588 <br><br> Ministry of Higher Education Malaysia (MOHE). (2022). *Smart campus blueprint 2022–2025*. Putrajaya: Ministry of Higher Education Malaysia. <br><br> Next.js. (2024). *Next.js documentation* (Version 16). Vercel. https://nextjs.org/docs <br><br> Prisma. (2024). *Prisma ORM documentation*. Prisma Data, Inc. https://www.prisma.io/docs <br><br> Socket.IO. (2024). *Socket.IO documentation* (Version 4). https://socket.io/docs/v4 <br><br> United Nations. (2015). *Transforming our world: The 2030 agenda for sustainable development* (Resolution A/RES/70/1). United Nations. https://sdgs.un.org/2030agenda <br><br> Vercel. (2024). *App Router — Next.js documentation*. https://nextjs.org/docs/app |
-> **Historical proposal snapshot (superseded):** This converted November 2025
-> proposal preserves the scope understood at that time. References below to IoT
-> seat devices, screenshot prevention, whole-trip seat matrices, timetable-only
-> cron logic, and “full E2E coverage” are not current product claims. The
-> canonical final behavior is defined by `framework/APP_SPECIFICATION.md` and
-> the Phase 8–10/final acceptance evidence.
