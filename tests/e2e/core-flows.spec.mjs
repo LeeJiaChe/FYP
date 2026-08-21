@@ -70,7 +70,8 @@ test("fresh seed exposes the ten canonical directional routes without retired pl
   expect(location?.source).toBe("SIMULATED");
 });
 
-test("student creates a reserved journey and opens its Reserved Pass", async ({ page }) => {
+test("student creates a reserved journey and opens its Reserved Pass", async ({ browser }) => {
+  const page = await browser.newPage();
   await login(page, "student6@student.tarc.edu.my");
   await openJourney(page, "TAR UMT → Wangsa Maju Section 2");
   await page.getByRole("button", { name: /Seat \d+, available/ }).first().click();
@@ -82,10 +83,21 @@ test("student creates a reserved journey and opens its Reserved Pass", async ({ 
   await expect(
     bookingArticle.getByRole("heading", { name: "TAR UMT → Wangsa Maju Section 2" }),
   ).toBeVisible();
+
+  const driver = await browser.newPage();
+  await login(driver, "driver1@tarumt.edu.my");
+  const tripSelect = driver.getByLabel("Assigned Trip");
+  const option = tripSelect.locator("option").filter({ hasText: "TAR UMT → Wangsa Maju Section 2" });
+  await tripSelect.selectOption(await option.getAttribute("value"));
+  await driver.getByRole("button", { name: "Start boarding" }).click();
+  await expect(driver.getByText(/Current stop: TAR UMT Gate 7 \/ East Campus/)).toBeVisible();
+  await driver.close();
+
   await page.getByRole("button", { name: /Reserved Pass/ }).click();
   await expect(page.getByRole("dialog", { name: /Reserved Boarding Pass/ })).toBeVisible();
   await expect(page.getByText("Reserved Boarding", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy demo token" })).toBeVisible();
+  await page.close();
 });
 
 test("student joins a deterministic full-journey waitlist through the UI", async ({ page }) => {
@@ -114,7 +126,8 @@ test("assigned driver starts boarding and performs a real manual boarding mutati
   const option = tripSelect.locator("option").filter({ hasText: "TAR UMT → Wangsa Maju Section 2" });
   await tripSelect.selectOption(await option.getAttribute("value"));
   await expect(page.getByText("E2E Boarding Student")).toBeVisible();
-  await page.getByRole("button", { name: "Start boarding" }).click();
+  const startBoarding = page.getByRole("button", { name: "Start boarding" });
+  if (await startBoarding.isVisible()) await startBoarding.click();
   await expect(page.getByText(/Current stop: TAR UMT Gate 7 \/ East Campus/)).toBeVisible();
   const passenger = page
     .getByText(/E2E Boarding Student · RESERVED/)
