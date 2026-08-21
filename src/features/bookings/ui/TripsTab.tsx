@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   MapPin,
   Calendar,
@@ -56,6 +56,15 @@ export default function TripsTab({
   const [modalToStop, setModalToStop] = useState<string>("");
 
   const [liveMapTrip, setLiveMapTrip] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!selectedRouteForModal) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedRouteForModal(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedRouteForModal]);
 
   // Extract all unique campus stops for top filter bar
   const { allCampusStops, availableDates } = useMemo(() => {
@@ -241,6 +250,7 @@ export default function TripsTab({
               </button>
             )}
             <button
+              autoFocus
               onClick={onRefresh}
               className="btn-ghost text-xs flex items-center gap-1.5 shrink-0"
             >

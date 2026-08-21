@@ -22,7 +22,12 @@ module.exports = defineConfig({
     },
     {
       name: "mobile-chromium",
-      use: { ...devices["iPhone 13"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 320, height: 720 },
+        hasTouch: true,
+        isMobile: true,
+      },
       testMatch: /mobile\.spec\.mjs/,
     },
   ],

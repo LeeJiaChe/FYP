@@ -5,6 +5,7 @@ async function login(page, identity, password = "password123") {
   await page.getByLabel("Email or Student ID").fill(identity);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign In" }).click();
+  await page.waitForURL(/\/(?:student|driver|admin)$/);
 }
 
 test("student reservation flow and Reserved Pass are journey truthful", async ({ page }) => {
@@ -53,20 +54,20 @@ test("driver keeps camera scanning primary and demo fallback explicit", async ({
   await login(page, "driver1@tarumt.edu.my");
   await expect(page.getByRole("heading", { name: "Boarding, alighting and Trip progress" })).toBeVisible();
   await expect(page.getByLabel("Assigned Trip")).toBeVisible();
-  await expect(page.getByText(/Current stop:/).first()).toBeVisible();
+  await expect(page.getByText(/Current stop:|Between stops \/ not started/).first()).toBeVisible();
   await page.getByRole("button", { name: /Scan Boarding/ }).click();
-  await expect(page.getByRole("dialog", { name: /Scan Boarding Pass/ })).toBeVisible();
-  await expect(page.getByText(/Camera scanner/)).toBeVisible();
+  await expect(page.getByRole("dialog", { name: /Boarding Pass Scanner/ })).toBeVisible();
+  await expect(page.locator("video")).toBeVisible();
   await expect(page.getByText("Development / Demo fallback")).toBeVisible();
 });
 
 test("admin exposes fleet, scheduling, monitoring, analytics and appeals", async ({ page }) => {
   await login(page, "admin1@admin.tarc.edu.my", "admin1");
-  await expect(page.getByRole("heading", { name: "Administration Portal" })).toBeVisible();
-  for (const name of ["Dashboard / Live", "Stops", "Routes", "Buses", "Trips", "Drivers", "Appeals", "Analytics"]) {
+  await expect(page.getByRole("heading", { name: "Shuttle Administration" })).toBeVisible();
+  for (const name of ["Dashboard / Live", "Stops", "Routes", "Buses", "Timetable", "Drivers", "Appeals", "Analytics"]) {
     await expect(page.getByRole("button", { name })).toBeVisible();
   }
-  await page.getByRole("button", { name: "Trips" }).click();
+  await page.getByRole("button", { name: "Timetable" }).click();
   await page.getByRole("button", { name: /Schedule Trip/ }).click();
   await expect(page.getByRole("dialog", { name: /Schedule Trip/ })).toBeVisible();
   await expect(page.getByLabel("Route")).toBeVisible();

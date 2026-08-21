@@ -88,6 +88,18 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
   }, []);
 
   useEffect(() => {
+    if (!showBusModal && !showRouteModal && !showTripModal) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setShowBusModal(false);
+      setShowRouteModal(false);
+      setShowTripModal(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showBusModal, showRouteModal, showTripModal]);
+
+  useEffect(() => {
     if (activeTab === "analytics" && utilizationData.length === 0) {
       fetchAnalytics();
     }

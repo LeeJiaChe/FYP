@@ -64,6 +64,15 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
     fetchPenalties();
   }, []);
 
+  useEffect(() => {
+    if (!selectedTrip) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedTrip(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedTrip]);
+
   async function fetchRoutes() {
     try {
       const res = await fetch("/api/routes");
@@ -466,6 +475,7 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
         <div className="modal-overlay">
           <div role="dialog" aria-modal="true" aria-labelledby="seat-dialog-title" className="modal-content w-full max-w-2xl p-6 relative">
             <button
+              autoFocus
               onClick={() => setSelectedTrip(null)}
               aria-label="Close seat selection"
               className="absolute top-4 right-4 p-2 rounded-xl transition-all duration-200"
