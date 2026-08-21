@@ -1,6 +1,6 @@
 # Phase 10 — Release Readiness
 
-**Status:** Release-candidate evidence prepared; final PostgreSQL 16, browser, and GitHub Actions evidence is recorded after publication.
+**Status:** Release candidate verified by GitHub Actions on PostgreSQL 16 and Chromium.
 
 **Date:** 2026-08-22
 
@@ -66,7 +66,27 @@ A local clean `npm ci` attempt was **blocked by environment** because the sandbo
 
 ### Final CI evidence
 
-The verified release-candidate commit, GitHub Actions run, exact test counts, migration status, and seed outcome are recorded here after the first published candidate completes CI. The final documentation-only evidence commit is reported in the release handoff because a commit cannot contain its own SHA.
+Release-candidate commit `ab2a8541d9284842af36c8399e5f60030f59583c`
+passed GitHub Actions Verification run `32505205367` (job
+`96843704006`) from a clean checkout:
+
+- clean `npm ci` and Prisma client generation: PASS;
+- lint and typecheck: PASS;
+- unit/specification tests: **73 passed**;
+- architecture dependency tests: **10 passed**;
+- PostgreSQL 16 integration tests: **61 passed**;
+- all **6** migrations applied in order and Prisma reported the schema current;
+- normal Next.js production build: PASS;
+- clean browser database reset and deterministic seed: PASS;
+- Chromium browser E2E: **8 passed** in 47 seconds.
+
+The integration runner's deliberate clean-reset log includes PostgreSQL notices
+that `_prisma_migrations` did not yet exist before reset. They are expected
+first-run database messages, not failed steps. Every CI step concluded success;
+the failure-artifact upload was correctly skipped.
+
+The final documentation-only evidence commit and its final CI run are reported
+in the release handoff because a commit cannot contain its own SHA.
 
 ## Performance sanity review
 
