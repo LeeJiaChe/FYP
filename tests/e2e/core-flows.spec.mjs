@@ -34,7 +34,10 @@ test("student creates a reserved journey and opens its Reserved Pass", async ({ 
   await page.getByRole("button", { name: "Confirm Reserved Seat" }).click();
 
   await expect(page.getByText("RESERVED · CONFIRMED")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Demo: Danau Kota → TAR UMT" })).toBeVisible();
+  const bookingArticle = page.getByRole("article").filter({ hasText: "Demo: Danau Kota → TAR UMT" });
+  await expect(
+    bookingArticle.getByRole("heading", { name: "Demo: Danau Kota → TAR UMT" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: /Reserved Pass/ }).click();
   await expect(page.getByRole("dialog", { name: /Reserved Boarding Pass/ })).toBeVisible();
   await expect(page.getByText("Reserved Boarding", { exact: true })).toBeVisible();
@@ -83,11 +86,12 @@ test("student appeal submission and admin approval complete through visible work
   await login(student, "student9@student.tarc.edu.my");
   await student.getByRole("tab", { name: /Penalties & Appeals/ }).click();
   await expect(student.getByText("85", { exact: true })).toBeVisible();
-  await student.getByRole("button", { name: "Submit Appeal" }).click();
-  await student.getByLabel("Explanation / Medical Reason *").fill(
+  await student.getByRole("main").getByRole("button", { name: "Submit Appeal" }).click();
+  const appealDialog = student.getByRole("dialog", { name: "Appeal penalty" });
+  await appealDialog.getByLabel("Explanation / Medical Reason *").fill(
     "Phase 9.5 deterministic browser appeal for an operational exception.",
   );
-  await student.getByRole("button", { name: "Submit Appeal" }).click();
+  await appealDialog.getByRole("button", { name: "Submit Appeal" }).click();
   await expect(student.getByText("APPEALED", { exact: true })).toBeVisible();
   await student.close();
 
