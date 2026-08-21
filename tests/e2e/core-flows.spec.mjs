@@ -19,7 +19,7 @@ test("student reservation flow and Reserved Pass are journey truthful", async ({
   await expect(page.getByText(/Departure & Seat/)).toBeVisible();
 
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: /My Bookings/ }).click();
+  await page.getByRole("tab", { name: /My Bookings/ }).click();
   await expect(page.getByText(/RESERVED · CONFIRMED/).first()).toBeVisible();
   await expect(page.getByText(/Seat 1/).first()).toBeVisible();
   await page.getByRole("button", { name: /Reserved Pass/ }).first().click();
@@ -30,20 +30,20 @@ test("student reservation flow and Reserved Pass are journey truthful", async ({
 test("waitlist, walk-in, penalty and appeal states use approved language", async ({ browser }) => {
   const waiter = await browser.newPage();
   await login(waiter, "student5@student.tarc.edu.my");
-  await waiter.getByRole("button", { name: /My Bookings/ }).click();
+  await waiter.getByRole("tab", { name: /My Bookings/ }).click();
   await expect(waiter.getByText(/WAITLIST · WAITING/)).toBeVisible();
   await waiter.close();
 
   const walkIn = await browser.newPage();
   await login(walkIn, "student3@student.tarc.edu.my");
-  await walkIn.getByRole("button", { name: /My Bookings/ }).click();
+  await walkIn.getByRole("tab", { name: /My Bookings/ }).click();
   await expect(walkIn.getByText(/WALK-IN · PENDING/)).toBeVisible();
   await expect(walkIn.getByText("This pass does not guarantee boarding. Standing capacity is checked when scanned.")).toBeVisible();
   await walkIn.close();
 
   const penalized = await browser.newPage();
   await login(penalized, "student2@student.tarc.edu.my");
-  await penalized.getByRole("button", { name: /Penalties & Appeals/ }).click();
+  await penalized.getByRole("tab", { name: /Penalties & Appeals/ }).click();
   await expect(penalized.getByText("85", { exact: true })).toBeVisible();
   await expect(penalized.getByText("APPEALED", { exact: true })).toBeVisible();
   await expect(penalized.getByText(/medical emergency/)).toBeVisible();
@@ -65,22 +65,22 @@ test("admin exposes fleet, scheduling, monitoring, analytics and appeals", async
   await login(page, "admin1@admin.tarc.edu.my", "admin1");
   await expect(page.getByRole("heading", { name: "Shuttle Administration" })).toBeVisible();
   for (const name of ["Dashboard / Live", "Stops", "Routes", "Buses", "Timetable", "Drivers", "Appeals", "Analytics"]) {
-    await expect(page.getByRole("button", { name: new RegExp(name.replace("/", "\\/")) })).toBeVisible();
+    await expect(page.getByRole("tab", { name: new RegExp(name.replace("/", "\\/")) })).toBeVisible();
   }
-  await page.getByRole("button", { name: "Timetable" }).click();
+  await page.getByRole("tab", { name: "Timetable" }).click();
   await page.getByRole("button", { name: /Schedule Trip/ }).click();
   await expect(page.getByRole("dialog", { name: /Schedule Trip/ })).toBeVisible();
   await expect(page.getByLabel("Route")).toBeVisible();
   await expect(page.getByLabel("Bus")).toBeVisible();
   await expect(page.getByLabel("Driver")).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Appeals" }).click();
+  await page.getByRole("tab", { name: /Appeals/ }).click();
   await expect(page.getByText(/medical emergency/)).toBeVisible();
 });
 
 test("persisted GPS is explicitly simulated and has an honest empty or freshness state", async ({ page }) => {
   await login(page, "student1@student.tarc.edu.my");
-  await page.getByRole("button", { name: /Track Bus/ }).click();
+  await page.getByRole("tab", { name: /Track Bus/ }).click();
   await page.getByLabel("Select Trip to Track:").selectOption({ index: 1 });
   await expect(page.getByText(/Simulated GPS \/ Prototype/)).toBeVisible();
   await expect(page.getByText(/Last simulated location|No live telemetry received yet/)).toBeVisible();
