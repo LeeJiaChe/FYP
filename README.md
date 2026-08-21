@@ -50,6 +50,13 @@
 
 ## 🏗️ Architecture
 
+The complete product specification is maintained in
+[`framework/APP_SPECIFICATION.md`](./framework/APP_SPECIFICATION.md). The canonical
+boundary for the two separate individual FYP reports is maintained in
+[`framework/INDIVIDUAL_DOCUMENTATION_SCOPE.md`](./framework/INDIVIDUAL_DOCUMENTATION_SCOPE.md);
+it documents academic focus within this one integrated application rather than
+separate codebases or databases.
+
 The current-state audit and the normative target architecture are documented in
 [`framework/ARCHITECTURE_AUDIT_2026-08-14.md`](./framework/ARCHITECTURE_AUDIT_2026-08-14.md)
 and [`framework/ARCHITECTURE.md`](./framework/ARCHITECTURE.md). The diagram below

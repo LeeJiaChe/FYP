@@ -69,6 +69,12 @@ current FYP need and would make the system harder to explain and test.
 
 ## 4. Feature ownership
 
+The individual FYP report scopes are documented in
+`framework/INDIVIDUAL_DOCUMENTATION_SCOPE.md`. Those academic boundaries explain
+two perspectives on this integrated architecture; they do not split the runtime,
+database, portals, APIs, or technical feature folders and do not establish sole
+coding ownership.
+
 | Feature | Owns |
 |---|---|
 | `identity` | Registration, login/logout, password changes, session validation, current-user DTO, role policies |
