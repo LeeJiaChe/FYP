@@ -1,3 +1,9 @@
+const { loadEnvConfig } = require("@next/env");
+
+// This process runs outside Next.js, so load the same root .env files explicitly.
+// Existing process variables still take precedence, matching Next.js development.
+loadEnvConfig(process.cwd());
+
 const http = require("node:http");
 const { timingSafeEqual } = require("node:crypto");
 const jwt = require("jsonwebtoken");

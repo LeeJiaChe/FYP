@@ -9,7 +9,7 @@ import { DynamicQRModal, type DynamicPassDescriptor } from "@/features/boarding/
 import { PenaltyAppealModal, PenaltiesTab } from "@/features/penalties/ui";
 import RestrictedBanner from "@/components/student/RestrictedBanner";
 import NextTripBanner from "@/components/student/NextTripBanner";
-import Route36HighlightCard from "@/components/student/Route36HighlightCard";
+import FeaturedRouteCard from "@/components/student/FeaturedRouteCard";
 import TripsTab from "@/features/bookings/ui/TripsTab";
 import MyBookingsTab from "@/features/bookings/ui/MyBookingsTab";
 import { TrackBusTab } from "@/features/location/ui";
@@ -209,9 +209,9 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
       }
 
       setSelectedTrip(null);
-      fetchBookings();
-      fetchTrips();
+      await Promise.all([fetchBookings(), fetchTrips()]);
       setActiveTab("bookings");
+      toast.success("Reserved seat confirmed");
     } catch {
       setBookingError("Network error completing booking");
     } finally {
@@ -241,6 +241,7 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
       setSelectedTrip(null);
       await fetchBookings();
       setActiveTab("bookings");
+      toast.success("Added to the journey waitlist");
     } catch {
       setBookingError("Network error joining waitlist");
     } finally {
@@ -341,10 +342,9 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
           onViewQR={openReservedPass}
         />
 
-        {/* Route 3->6 Highlight Card */}
-        <Route36HighlightCard
+        <FeaturedRouteCard
           trips={trips}
-          onSelectRoute={() => {
+          onBrowseRoutes={() => {
             setActiveTab("trips");
           }}
         />

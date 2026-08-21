@@ -34,3 +34,15 @@ export function currentOperationalSegmentPosition(
 
   return 0;
 }
+
+export function operationalProgressLabel(
+  tripStatus: string,
+  currentStopName: string | null,
+): string {
+  if (tripStatus === "ARRIVED") return "Arrived at final stop";
+  if (tripStatus === "CANCELLED") return "Trip cancelled";
+  if (currentStopName) return `Current stop: ${currentStopName}`;
+  if (tripStatus === "DEPARTED") return "Between stops";
+  if (tripStatus === "BOARDING") return "Boarding in progress";
+  return "Trip not started";
+}

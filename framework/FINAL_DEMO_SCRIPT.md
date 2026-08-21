@@ -6,7 +6,7 @@ Reset and seed immediately before rehearsal. Use the accounts in
 | Time | Presenter focus | Demonstration |
 |---|---|---|
 | 0:00–0:40 | Shared | State the observed queue/uncertainty problem, one integrated system, and prototype limitations. |
-| 0:40–2:20 | Lee | Log in as `student6`; search From → To → Date → Departure, choose a journey-specific seat, confirm, and open Reserved Pass. Briefly explain adjacent segment reuse without opening the database. |
+| 0:40–2:20 | Lee | Log in as `student6`; search the source-based Wangsa Maju → TAR UMT Route by From → To → Date → Departure, choose a journey-specific seat, confirm, and open Reserved Pass. Briefly explain adjacent segment reuse without opening the database. |
 | 2:20–3:05 | Lee | Log in as `student7`; join the deterministic full-journey waitlist and show WAITING. |
 | 3:05–3:45 | Lee | Log in as `student8`; generate Walk-in Pass and read the non-guarantee statement aloud. |
 | 3:45–5:10 | Shared Driver portal | Log in as `driver1`; select assigned Trip, start boarding, show privacy-limited manifest, use camera if manually verified or manual fallback, then show expected alighting/progress. Wong explains assigned Trip/progress; Lee explains passenger processing. |
@@ -23,4 +23,4 @@ Reset and seed immediately before rehearsal. Use the accounts in
 - Do not say QR is encrypted or guarantee that it speeds boarding.
 - Do not describe Walk-in issuance as capacity reservation.
 - Do not claim the application, database, or Driver/Admin pages are split between two systems.
-- If realtime fails, refresh authoritative HTTP data; if camera fails, use the explicitly labelled demo fallback.
+- If realtime fails, refresh authoritative HTTP data. If camera recognition fails, use **Copy demo token** on the student pass and the explicitly labelled Driver fallback; it still invokes the real server verification workflow.

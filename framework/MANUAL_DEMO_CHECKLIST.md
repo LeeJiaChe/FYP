@@ -14,12 +14,12 @@ equivalent secure-context setup. Record browser version, date and outcome.
 ## Camera and fallback — current Chromium secure context
 
 - [ ] Grant camera permission and confirm the scanner video appears.
-- [ ] Confirm `BarcodeDetector` is available in the agreed demo browser.
-- [ ] Scan a valid Reserved or Walk-in QR with real camera hardware and confirm the expected server result.
+- [ ] Confirm the camera preview initializes even when native `BarcodeDetector` is unavailable.
+- [ ] Scan a valid Reserved or Walk-in QR with real camera hardware and confirm native detection or the maintained decoder fallback reaches the real server verification result.
 - [ ] Deny camera permission and confirm an understandable denied state appears.
 - [ ] Disable/unplug the camera and confirm an unavailable state appears.
 - [ ] Confirm invalid, expired, wrong-Trip, FULL and already-boarded results are understandable where fixtures allow.
-- [ ] Confirm token paste is secondary and labelled **Development / Demo fallback**.
+- [ ] Confirm the student pass exposes **Copy demo token** only as a clearly labelled Development / Demo aid, and the driver paste action remains secondary.
 
 No successful hardware-camera result is claimed until these items are checked.
 
@@ -35,12 +35,13 @@ No successful hardware-camera result is claimed until these items are checked.
 ## Demo integrity
 
 - [ ] Reset/reseed immediately before rehearsal and confirm documented accounts.
-- [ ] Every Route says **Demo schedule:** and no synthetic time is called official.
+- [ ] The catalogue shows ten directional source-based Routes, no retired ring/block placeholders, and no synthetic Trip time is called official.
 - [ ] GPS surfaces state **Simulated GPS / Prototype** and show freshness/no-data honestly.
 - [ ] Walk-in Pass states that boarding is not guaranteed.
 - [ ] Rehearse both individual module handoffs without claiming sole coding ownership.
 - [ ] Keep a fallback plan: manual boarding and normal HTTP refresh if camera or Socket.io is unavailable.
 
-Safari/Firefox camera support is not claimed because the final scanner target is
-current Chromium. Formal WCAG conformance and large-scale load testing are also
+The decoder is designed for current Chromium/Edge and Firefox-compatible camera
+APIs, but only browsers actually checked above may be claimed in the viva.
+Safari camera behavior, formal WCAG conformance and large-scale load testing are
 outside the verified evidence.

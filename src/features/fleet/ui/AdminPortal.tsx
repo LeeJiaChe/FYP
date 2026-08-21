@@ -661,7 +661,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 <input
                   type="text"
                   required
-                  placeholder="Route X: Main Gate <-> Destination"
+                  placeholder="Example: TAR UMT → Melati Utama"
                   value={newRoute.name}
                   onChange={(e) =>
                     setNewRoute({ ...newRoute, name: e.target.value })

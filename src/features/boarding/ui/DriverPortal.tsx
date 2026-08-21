@@ -9,6 +9,7 @@ import QRScannerModal from "./QRScannerModal";
 import { useCurrentUser } from "@/features/identity/ui";
 import { useTrips } from "@/features/trips/ui";
 import type { CurrentUser } from "@/shared/ui/current-user";
+import { operationalProgressLabel } from "@/features/trips/public";
 
 interface ManifestPassenger {
   recordId: string;
@@ -207,7 +208,7 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
                 <div>
                   <h2 className="font-bold text-lg">{manifest.trip.routeName}</h2>
                   <p className="text-xs text-slate-400"><Bus className="inline w-3 h-3" /> {manifest.trip.busPlateNumber} · {manifest.trip.status} · standing {manifest.trip.standingCapacity}</p>
-                  <p className="text-xs text-blue-300 mt-1"><MapPin className="inline w-3 h-3" /> {manifest.currentStop ? `Current stop: ${manifest.currentStop.name}` : "Between stops / not started"}</p>
+                  <p className="text-xs text-blue-300 mt-1"><MapPin className="inline w-3 h-3" /> {operationalProgressLabel(manifest.trip.status, manifest.currentStop?.name ?? null)}</p>
                   {manifest.trip.delayMinutes > 0 && <p className="text-xs text-amber-300">Delayed {manifest.trip.delayMinutes} min: {manifest.trip.delayReason}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2">

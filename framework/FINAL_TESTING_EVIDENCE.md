@@ -35,6 +35,9 @@ The suite demonstrates the listed behaviors; it does not mean “100% tested,”
 prove absence of every defect, replace actual camera/manual checks, or constitute
 large-scale performance/security testing. Final counts and clean-migration
 evidence are recorded in `PHASE_10_RELEASE_READINESS.md`. The Phase 10 release
-candidate passed 73 unit/specification tests, 10 architecture tests, 61 real
-PostgreSQL 16 integration tests, and 8 Chromium browser E2E tests after all six
-migrations were applied to clean isolated databases.
+candidate baseline passed 73 unit/specification tests, 10 architecture tests,
+61 real PostgreSQL 16 integration tests, and 8 Chromium browser E2E tests after
+all six migrations were applied to clean isolated databases. The final
+acceptance suite expands this to **77 unit/specification**, **11 architecture**,
+**61 integration**, and **10 browser E2E** assertions; its exact pushed SHA and
+Actions run are recorded in `FINAL_ACCEPTANCE_FIXES.md` and the final handoff.

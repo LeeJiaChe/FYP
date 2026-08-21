@@ -55,6 +55,12 @@ Changing a Route, Stop name, or Bus later must not rewrite the historical meanin
 **Are QR codes encrypted?**  
 No. Tokens are signed, purpose-specific and short-lived. The server still rereads durable state; a token alone never authorizes boarding.
 
+**What if the browser does not implement BarcodeDetector?**
+
+The camera still initializes. A maintained browser decoder processes frames and
+submits the decoded signed token to the same server verification endpoint; the
+security decision remains server-side.
+
 **Why one shared project but two reports?**  
 The real workflows depend on shared Trip/capacity/progress contracts. The university requires separate documentation focus, not artificial duplication of the application or database.
 

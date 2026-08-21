@@ -36,6 +36,13 @@ non-authoritative invalidations; missing events are recovered by HTTP refetch.
 The simulator uses the same source-neutral ingestion use case intended for a
 future physical GPS adapter.
 
+The standalone process loads root `.env` files through Next.js `@next/env`
+before validating secrets, so normal Windows/WSL development startup is simply
+`npm run realtime`. In the Driver browser, camera frames are decoded through
+native QR detection when available or the maintained `qr-scanner` worker
+fallback; either path submits the short-lived signed token to the same Next.js
+boarding endpoint for authoritative verification.
+
 ```mermaid
 flowchart LR
   Lee[Passenger Reservation & Boarding\nindividual documentation focus]

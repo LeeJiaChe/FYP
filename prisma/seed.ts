@@ -115,7 +115,7 @@ async function createDemoTrip(input: {
 }
 
 async function main() {
-  console.log("Resetting demo data for Architecture v2 Phase 3...");
+  console.log("Resetting final prototype demo data...");
   await resetDemoData();
 
   const adminPasswordHash = await bcrypt.hash("admin1", 10);
@@ -254,16 +254,27 @@ async function main() {
   ]);
   void bus3;
 
-  // Public stop names follow the TAR UMT DSA KL route page as checked on
-  // 2026-08-22. Coordinates, travel durations and relative Trip times below are
-  // synthetic prototype data and every Route is labelled "Demo schedule:".
+  // Route families and stop names below follow the current TAR UMT DSA
+  // Semester Bus Schedule (15-Jun-2026 to 20-Sep-2026, updated 06-Jul-2026)
+  // and Bus Routes page, rechecked on 2026-08-22. Coordinates, travel durations,
+  // vehicle assignments and relative Trip times are synthetic prototype data.
+  // PV15/PV16 are intentionally absent because the current schedule says they
+  // have not been pick-up/drop-off stops since 12-Jul-2022.
   const stopRecords = await Promise.all([
     prisma.stop.create({
       data: {
         code: "TAR_GATE_7",
-        name: "TAR UMT Gate 7",
+        name: "TAR UMT Gate 7 / East Campus",
         latitude: 3.215006,
         longitude: 101.726176,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "TARVILLA",
+        name: "Tarvilla",
+        latitude: 3.2111,
+        longitude: 101.7289,
       },
     }),
     prisma.stop.create({
@@ -276,10 +287,34 @@ async function main() {
     }),
     prisma.stop.create({
       data: {
+        code: "WANGSA_METROVIEW",
+        name: "Wangsa Metroview Bus Stop",
+        latitude: 3.2037,
+        longitude: 101.7208,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "HOSPITAL_ATM_TUANKU_MIZAN",
+        name: "Hospital ATM Tuanku Mizan",
+        latitude: 3.2077,
+        longitude: 101.7158,
+      },
+    }),
+    prisma.stop.create({
+      data: {
         code: "SETAPAK_CENTRAL",
         name: "Setapak Central",
         latitude: 3.200453,
         longitude: 101.717476,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "PV10",
+        name: "PV10",
+        latitude: 3.2141,
+        longitude: 101.7202,
       },
     }),
     prisma.stop.create({
@@ -292,6 +327,70 @@ async function main() {
     }),
     prisma.stop.create({
       data: {
+        code: "PV13",
+        name: "PV13",
+        latitude: 3.2178,
+        longitude: 101.7191,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "PV18",
+        name: "PV18",
+        latitude: 3.2094,
+        longitude: 101.7125,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "TERATAI_RESIDENCY",
+        name: "Teratai Residency",
+        latitude: 3.2077,
+        longitude: 101.711,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "PRIMA_SETAPAK",
+        name: "Prima Setapak",
+        latitude: 3.2046,
+        longitude: 101.7145,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "JALAN_GENTING_KELANG_BUS_STOP",
+        name: "Bus Stop Jalan Genting Kelang",
+        latitude: 3.202,
+        longitude: 101.7181,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "MELATI_UTAMA",
+        name: "Melati Utama",
+        latitude: 3.2235,
+        longitude: 101.7285,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "MELATI_LRT_JUNCTION",
+        name: "Junction near Melati LRT",
+        latitude: 3.2196,
+        longitude: 101.7219,
+      },
+    }),
+    prisma.stop.create({
+      data: {
+        code: "DANAU_KOTA_SUITE",
+        name: "Danau Kota Suite Apartments",
+        latitude: 3.2162,
+        longitude: 101.7167,
+      },
+    }),
+    prisma.stop.create({
+      data: {
         code: "WANGSA_MAJU_SECTION_2",
         name: "Wangsa Maju Section 2",
         latitude: 3.204933,
@@ -299,8 +398,25 @@ async function main() {
       },
     }),
   ]);
-  const [tarGate7, wangsaLrt, setapakCentral, pv12, wangsaMajuSection2] =
-    stopRecords;
+  const [
+    tarGate7,
+    tarvilla,
+    wangsaLrt,
+    wangsaMetroview,
+    hospitalMizan,
+    setapakCentral,
+    pv10,
+    pv12,
+    pv13,
+    pv18,
+    terataiResidency,
+    primaSetapak,
+    gentingKelangBusStop,
+    melatiUtama,
+    melatiLrtJunction,
+    danauKotaSuite,
+    wangsaMajuSection2,
+  ] = stopRecords;
 
   async function createRoute(
     name: string,
@@ -320,38 +436,105 @@ async function main() {
     });
   }
 
-  const [pvOutbound, pvInbound, wangsaOutbound, wangsaInbound] =
-    await Promise.all([
-      createRoute("Demo schedule: TAR UMT Gate 7 → PV12", [
-        { id: tarGate7.id, minutesToNext: 8 },
-        { id: setapakCentral.id, minutesToNext: 10 },
-        { id: pv12.id, minutesToNext: null },
-      ]),
-      createRoute("Demo schedule: PV12 → TAR UMT Gate 7", [
-        { id: pv12.id, minutesToNext: 10 },
-        { id: setapakCentral.id, minutesToNext: 8 },
-        { id: tarGate7.id, minutesToNext: null },
-      ]),
-      createRoute("Demo schedule: TAR UMT Gate 7 → Wangsa Maju Section 2", [
-        { id: tarGate7.id, minutesToNext: 7 },
-        { id: wangsaLrt.id, minutesToNext: 9 },
-        { id: wangsaMajuSection2.id, minutesToNext: null },
-      ]),
-      createRoute("Demo schedule: Wangsa Maju Section 2 → TAR UMT Gate 7", [
-        { id: wangsaMajuSection2.id, minutesToNext: 9 },
-        { id: wangsaLrt.id, minutesToNext: 7 },
-        { id: tarGate7.id, minutesToNext: null },
-      ]),
-    ]);
+  const [
+    wangsaInbound,
+    wangsaOutbound,
+    terataiInbound,
+    terataiOutbound,
+    gentingInbound,
+    gentingOutbound,
+    melatiInbound,
+    melatiOutbound,
+    pvInbound,
+    pvOutbound,
+  ] = await Promise.all([
+    createRoute("Wangsa Maju Section 2 → TAR UMT", [
+      { id: wangsaMajuSection2.id, minutesToNext: 4 },
+      { id: hospitalMizan.id, minutesToNext: 4 },
+      { id: wangsaMetroview.id, minutesToNext: 4 },
+      { id: wangsaLrt.id, minutesToNext: 7 },
+      { id: tarGate7.id, minutesToNext: null },
+    ]),
+    createRoute("TAR UMT → Wangsa Maju Section 2", [
+      { id: tarGate7.id, minutesToNext: 5 },
+      { id: tarvilla.id, minutesToNext: 4 },
+      { id: wangsaLrt.id, minutesToNext: 4 },
+      { id: wangsaMetroview.id, minutesToNext: 4 },
+      { id: wangsaMajuSection2.id, minutesToNext: null },
+    ]),
+    createRoute("Teratai Residency → TAR UMT", [
+      { id: pv18.id, minutesToNext: 4 },
+      { id: terataiResidency.id, minutesToNext: 5 },
+      { id: primaSetapak.id, minutesToNext: 5 },
+      { id: setapakCentral.id, minutesToNext: 7 },
+      { id: tarGate7.id, minutesToNext: null },
+    ]),
+    createRoute("TAR UMT → Teratai Residency", [
+      { id: tarGate7.id, minutesToNext: 7 },
+      { id: setapakCentral.id, minutesToNext: 5 },
+      { id: primaSetapak.id, minutesToNext: 5 },
+      { id: terataiResidency.id, minutesToNext: 4 },
+      { id: pv18.id, minutesToNext: null },
+    ]),
+    createRoute("Jalan Genting Klang → TAR UMT", [
+      { id: gentingKelangBusStop.id, minutesToNext: 5 },
+      { id: primaSetapak.id, minutesToNext: 5 },
+      { id: setapakCentral.id, minutesToNext: 7 },
+      { id: tarGate7.id, minutesToNext: null },
+    ]),
+    createRoute("TAR UMT → Jalan Genting Klang", [
+      { id: tarGate7.id, minutesToNext: 7 },
+      { id: setapakCentral.id, minutesToNext: 5 },
+      { id: primaSetapak.id, minutesToNext: 5 },
+      { id: gentingKelangBusStop.id, minutesToNext: null },
+    ]),
+    createRoute("Melati Utama → TAR UMT", [
+      { id: melatiUtama.id, minutesToNext: 5 },
+      { id: melatiLrtJunction.id, minutesToNext: 5 },
+      { id: danauKotaSuite.id, minutesToNext: 4 },
+      { id: pv10.id, minutesToNext: 7 },
+      { id: tarGate7.id, minutesToNext: null },
+    ]),
+    createRoute("TAR UMT → Melati Utama", [
+      { id: tarGate7.id, minutesToNext: 7 },
+      { id: pv10.id, minutesToNext: 4 },
+      { id: danauKotaSuite.id, minutesToNext: 5 },
+      { id: melatiLrtJunction.id, minutesToNext: 5 },
+      { id: melatiUtama.id, minutesToNext: null },
+    ]),
+    createRoute("PV10/PV12/PV13 corridor → TAR UMT", [
+      { id: pv13.id, minutesToNext: 4 },
+      { id: pv10.id, minutesToNext: 4 },
+      { id: pv12.id, minutesToNext: 5 },
+      { id: setapakCentral.id, minutesToNext: 7 },
+      { id: tarGate7.id, minutesToNext: null },
+    ]),
+    createRoute("TAR UMT → PV10/PV12/PV13 corridor", [
+      { id: tarGate7.id, minutesToNext: 7 },
+      { id: setapakCentral.id, minutesToNext: 5 },
+      { id: pv12.id, minutesToNext: 4 },
+      { id: pv10.id, minutesToNext: 4 },
+      { id: pv13.id, minutesToNext: null },
+    ]),
+  ]);
 
   const now = new Date();
+  // Relative offsets make these prototype Trips useful whenever the database is
+  // reseeded. They are not the published TAR UMT timetable.
   const tripInputs = [
     [pvOutbound.id, bus1.id, driver1.id, 2],
     [pvInbound.id, bus2.id, driver2.id, 4],
     [wangsaOutbound.id, bus2.id, driver2.id, 26],
     [wangsaInbound.id, bus1.id, driver1.id, 29],
     [pvInbound.id, bus2.id, driver2.id, -3],
-    [wangsaOutbound.id, bus2.id, driver1.id, -1],
+    [wangsaOutbound.id, bus2.id, driver1.id, 5 / 60],
+    [terataiInbound.id, bus2.id, driver1.id, 6],
+    [terataiOutbound.id, bus2.id, driver2.id, 8],
+    [gentingInbound.id, bus2.id, driver1.id, 10],
+    [gentingOutbound.id, bus2.id, driver2.id, 12],
+    [melatiInbound.id, bus2.id, driver1.id, 14],
+    [melatiOutbound.id, bus2.id, driver2.id, 16],
+    [wangsaInbound.id, bus2.id, driver2.id, -0.5],
   ] as const;
   const demoTrips = [];
   for (const [routeId, busId, driverId, hoursFromNow] of tripInputs) {
@@ -400,8 +583,11 @@ async function main() {
       tripSeats: { orderBy: { seatNumber: "asc" } },
     },
   });
-  const [stopA, stopB, stopC] = demonstrationTrip.tripStops;
-  const [segmentAB, segmentBC] = demonstrationTrip.tripSegments;
+  const stopA = demonstrationTrip.tripStops[0]!;
+  const stopB = demonstrationTrip.tripStops[1]!;
+  const stopC = demonstrationTrip.tripStops.at(-1)!;
+  const segmentAB = demonstrationTrip.tripSegments[0]!;
+  const remainingSegments = demonstrationTrip.tripSegments.slice(1);
   const [seat1, seat2] = demonstrationTrip.tripSeats;
 
   async function createReservedDemoJourney(input: {
@@ -439,21 +625,21 @@ async function main() {
     tripSeatId: seat1!.id,
     boardingTripStopId: stopA!.id,
     dropOffTripStopId: stopB!.id,
-    tripSegmentIds: [segmentAB!.id],
+    tripSegmentIds: [segmentAB.id],
   });
   await createReservedDemoJourney({
     studentId: student2.id,
     tripSeatId: seat1!.id,
     boardingTripStopId: stopB!.id,
     dropOffTripStopId: stopC!.id,
-    tripSegmentIds: [segmentBC!.id],
+    tripSegmentIds: remainingSegments.map((segment) => segment.id),
   });
   await createReservedDemoJourney({
     studentId: student4.id,
     tripSeatId: seat2!.id,
     boardingTripStopId: stopA!.id,
     dropOffTripStopId: stopC!.id,
-    tripSegmentIds: [segmentAB!.id, segmentBC!.id],
+    tripSegmentIds: demonstrationTrip.tripSegments.map((segment) => segment.id),
   });
   await prisma.waitlistEntry.create({
     data: {
@@ -507,7 +693,7 @@ async function main() {
       tripId: driverBoardingTrip.id,
       tripSeatId: driverBoardingTrip.tripSeats[0]!.id,
       boardingTripStopId: driverBoardingTrip.tripStops[0]!.id,
-      dropOffTripStopId: driverBoardingTrip.tripStops[2]!.id,
+      dropOffTripStopId: driverBoardingTrip.tripStops.at(-1)!.id,
       status: "CONFIRMED",
     },
   });
@@ -519,6 +705,36 @@ async function main() {
       tripSeatId: driverBoardingTrip.tripSeats[0]!.id,
       tripSegmentId: segment.id,
     })),
+  });
+
+  // One actively travelled prototype Trip is immediately available to the GPS
+  // simulator and tracking UI after every reset.
+  const gpsTrip = await prisma.trip.findUniqueOrThrow({
+    where: { id: demoTrips[12]!.id },
+    include: { tripStops: { orderBy: { position: "asc" } } },
+  });
+  const gpsStartedAt = new Date(now.getTime() - 5 * 60 * 1_000);
+  await prisma.tripStop.update({
+    where: { id: gpsTrip.tripStops[0]!.id },
+    data: {
+      actualArrival: gpsStartedAt,
+      actualDeparture: gpsStartedAt,
+      passedAt: gpsStartedAt,
+    },
+  });
+  await prisma.trip.update({
+    where: { id: gpsTrip.id },
+    data: { status: "DEPARTED" },
+  });
+  await prisma.tripLocationSample.create({
+    data: {
+      id: randomUUID(),
+      tripId: gpsTrip.id,
+      latitude: gpsTrip.tripStops[0]!.latitude,
+      longitude: gpsTrip.tripStops[0]!.longitude,
+      recordedAt: now,
+      source: "SIMULATED",
+    },
   });
 
   const historicalTrip = await prisma.trip.findUniqueOrThrow({
@@ -602,10 +818,10 @@ async function main() {
   });
 
   console.log(
-    "Seeded 5 publicly named Stops, 4 directional prototype Routes, 3 Buses, and 6 complete Trip snapshots.",
+    "Seeded 17 source-based Stops, 10 directional canonical Routes, 3 Buses, and 13 prototype Trip snapshots.",
   );
   console.log(
-    "Demo schedules and coordinates are synthetic prototype data, not official TAR UMT timetable/GPS records.",
+    "Route families and stop names are source-based; coordinates, travel durations, Trip times, assignments, and passenger records are prototype data.",
   );
 }
 

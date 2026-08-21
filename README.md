@@ -29,7 +29,7 @@
 - **Boarding Operations** — Validate Reserved and Walk-in passes, with authorized manual fallback
 - **Alighting Confirmation** — Exit QR where practical, driver manual fallback, and optional automatic completion after the planned stop is passed
 - **Trip Status Control** — `Not Started → Boarding → Departed → Arrived`, with terminal cancellation and separate delay metadata
-- **Live Seat Matrix** — Real-time seat occupancy view for the assigned trip
+- **Operational Manifest** — Journey-aware reserved and admitted-standing passenger state for the assigned Trip
 
 ### 🛡️ Admin Portal
 - **Fleet Management** — Buses have configurable seated and standing capacities
@@ -106,6 +106,7 @@ describes the existing runtime at a high level, not the completed Architecture v
 | Cron | `node-cron` (inside realtime service) |
 | Charts | Recharts 3 |
 | QR Codes | `qrcode` library |
+| QR Camera Decode | `qr-scanner` (native detector where available, worker fallback otherwise) |
 | Validation | Zod 4 |
 | Icons | Lucide React |
 
@@ -194,6 +195,10 @@ npm run dev
 npm run realtime
 ```
 
+The standalone process loads the repository's Next.js-style development `.env`
+files through `@next/env`; WSL/Windows users do not need to export every value
+in the shell. Secret validation remains fail-closed at 32 characters.
+
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
@@ -202,9 +207,10 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 See [`framework/DEMO_ACCOUNTS.md`](./framework/DEMO_ACCOUNTS.md). Those
 credentials and identities are **DEMO / DEVELOPMENT ONLY** and are recreated by
-reset/reseed. Routes are labelled **Demo schedule:**: public stop names are
-sourced from TAR UMT, while times, coordinates, durations, buses, capacities and
-passenger records are synthetic prototype data.
+reset/reseed. The ten directional Route records use source-based TAR UMT KL
+route-family and published stop names. Relative Trip times, coordinates, travel
+durations, buses, capacities and passenger records remain synthetic prototype
+data; no seeded timetable or coordinate is presented as an official record.
 
 ---
 
@@ -279,7 +285,7 @@ Implemented controls and honest limitations are recorded in
 
 - **JWT sessions** stored in HTTP-only cookies (`fyp_session`) — inaccessible to JavaScript
 - **QR tokens** have explicit Reserved/Walk-in/Alighting purposes and short expiry; rotation reduces replay risk but does not guarantee screenshot prevention
-- **QR scanning** uses the browser camera and native barcode detection where supported; token paste is visibly restricted to a development/demo fallback
+- **QR scanning** initializes the available browser camera; it uses native QR detection where supported and the maintained `qr-scanner` decoder fallback otherwise. Token paste/copy remains visibly restricted to development/demo use
 - **Internal jobs and realtime publication** authenticate bounded, validated requests in every environment
 - **Reserved concurrency** is enforced by unique seat/TripSegment claims in PostgreSQL transactions
 - **Walk-in concurrency** locks every requested TripSegment before capacity check and claim
@@ -312,7 +318,7 @@ See [`NOTES.md`](./NOTES.md) for a full list of assumptions and design decisions
 - Demo schedules, travel durations, coordinates, capacities, people and demand are synthetic.
 - Numbered seat labels and QR validation are proposed operational changes, not current TAR UMT practice.
 - TAR UMT SSO, production deployment approval, penetration testing, formal accessibility certification, large-scale load testing, backups and operational monitoring remain outside verified scope.
-- Camera scanning targets current Chromium in a secure context; complete the manual checklist on the actual demo laptop.
+- Camera scanning uses standard camera APIs with native-or-worker QR decode; current Chromium/Edge is the primary demo target and actual browser/hardware results must be recorded in the manual checklist.
 
 ---
 

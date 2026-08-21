@@ -5,14 +5,6 @@ import { productPolicy } from "@/shared/config/policies";
 import { Navigation, Ticket } from "lucide-react";
 import BusLocationTracker from "./BusLocationTracker";
 
-const DEFAULT_STOPS = [
-  "Main Gate",
-  "Block 3",
-  "Block 4",
-  "Block 5",
-  "Block 6 Terminal",
-];
-
 interface TrackBusTabProps {
   trips: any[];
   trackedTrip: any;
@@ -82,7 +74,7 @@ export default function TrackBusTab({
             <BusLocationTracker
               tripId={trackedTrip.id}
               routeName={trackedTrip.routeName}
-              stops={trackedTrip.routeStops || DEFAULT_STOPS}
+              stops={trackedTrip.routeStops || []}
               tripStops={trackedTrip.tripStops || []}
               departureTime={trackedTrip.departureTime}
               estimatedArrivalTime={trackedTrip.estimatedArrivalTime}
@@ -157,7 +149,7 @@ export default function TrackBusTab({
                 Route Stops
               </p>
               <div className="space-y-2">
-                {(trackedTrip.routeStops || DEFAULT_STOPS).map(
+                {(trackedTrip.routeStops || []).map(
                   (stop: string, i: number, arr: string[]) => (
                     <div key={i} className="flex items-center gap-3">
                       <div className="flex flex-col items-center">
@@ -201,6 +193,11 @@ export default function TrackBusTab({
                       </span>
                     </div>
                   )
+                )}
+                {(trackedTrip.routeStops || []).length === 0 && (
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    No snapshotted route stops are available for this Trip.
+                  </p>
                 )}
               </div>
             </div>

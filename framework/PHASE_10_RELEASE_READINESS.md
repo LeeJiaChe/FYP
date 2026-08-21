@@ -4,6 +4,10 @@
 
 **Date:** 2026-08-22
 
+> The accepted Phase 10 baseline below is historical release evidence. The
+> final acceptance corrections and their newer CI evidence are recorded in
+> `FINAL_ACCEPTANCE_FIXES.md`.
+
 ## Scope and product freeze
 
 Phase 10 reconciles release documentation, deterministic demo data, setup instructions, diagrams, and verification evidence. It does not change the approved business rules, split the shared application by academic report scope, add a Prisma migration, or merge `architecture-v2` into `master`.
@@ -14,7 +18,7 @@ Phase 10 reconciles release documentation, deterministic demo data, setup instru
 
 - The final seed uses a small deterministic dataset for Student, Driver, and Admin demonstrations.
 - Public stop and route-group names are limited to names verified on the TAR UMT Department of Student Affairs bus-route page.
-- Every seeded route is labelled `Demo schedule:`. Coordinates, topology, travel durations, and Trip times are synthetic prototype data and are not represented as an official TAR UMT timetable.
+- The baseline seed used four `Demo schedule:` routes. Final acceptance replaces this undersized catalogue with ten directional source-based Route identities; coordinates, travel durations, and relative Trip times remain synthetic prototype data and are not represented as an official TAR UMT timetable.
 - Demo credentials are isolated in `DEMO_ACCOUNTS.md` and explicitly marked development-only.
 - `.env.example` documents development/deployment variables separately from isolated test-database variables and contains no real secrets.
 - The README gives a fresh-clone path, including Prisma generation, ordered migrations, seeding, Next.js, realtime, simulator control, and verification commands.
@@ -108,7 +112,7 @@ No active product requirement or runtime dependency was found for the retired co
 
 ## Manual owner tasks
 
-Before the live assessment, the owner must complete the unchecked items in `MANUAL_DEMO_CHECKLIST.md` on the actual demo laptop and secure-origin Chromium browser. In particular, camera permission, `BarcodeDetector`, recognition using a real camera, narrow viewport sizes, browser zoom, keyboard navigation, and modal focus must not be claimed as manually verified until observed.
+Before the live assessment, the owner must complete the unchecked items in `MANUAL_DEMO_CHECKLIST.md` on the actual demo laptop and secure-origin browser. Camera permission, real-camera recognition through the native or fallback decoder, narrow viewport sizes, browser zoom, keyboard navigation, and modal focus must not be claimed as manually verified until observed.
 
 The owner should also rehearse `FINAL_DEMO_SCRIPT.md`, verify the projector/network/database environment, and approve the eventual merge to `master`.
 

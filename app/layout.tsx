@@ -4,8 +4,8 @@ import { ThemeProvider } from "@/lib/theme";
 import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
-  title: "TAR UMT Bus Booking & Real-Time Management System",
-  description: "Campus Bus Seat Booking, QR Boarding & Real-Time Fleet Occupancy System",
+  title: "TAR UMT Shuttle Management System",
+  description: "Journey reservation, QR boarding validation, fleet operations and simulated GPS tracking prototype",
   formatDetection: {
     telephone: false,
   },
@@ -23,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full theme-dark" data-theme="dark" suppressHydrationWarning>
+    <html lang="en" className="h-full theme-dark" data-theme="dark" data-theme-preference="system" suppressHydrationWarning>
       <body className="font-sans min-h-full flex flex-col antialiased">
         <ThemeProvider>
           {children}

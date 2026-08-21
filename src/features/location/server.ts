@@ -47,8 +47,10 @@ export async function ingestTrustedLocation(
 
 export async function simulateTrustedLocation(secret: string | null, tripId?: string) {
   trusted(secret);
-  const sample = await simulateLocationUseCase(tripId);
-  await publishLocation(sample);
+  const sample = tripId
+    ? await simulateLocationUseCase(tripId)
+    : await simulateLocationUseCase();
+  if (sample) await publishLocation(sample);
   return sample;
 }
 

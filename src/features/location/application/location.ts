@@ -60,11 +60,22 @@ export async function latestLocation(tripId: string, clock: Clock = systemClock)
 }
 
 export async function simulateLocation(
+  preferredTripId: string,
+  clock?: Clock,
+): Promise<Awaited<ReturnType<typeof ingestLocation>>>;
+export async function simulateLocation(
+  preferredTripId?: undefined,
+  clock?: Clock,
+): Promise<Awaited<ReturnType<typeof ingestLocation>> | null>;
+export async function simulateLocation(
   preferredTripId: string | undefined,
   clock: Clock = systemClock,
 ) {
   const trip = await findSimulatorTrip(preferredTripId);
-  if (!trip) throw notFound("No operational Trip is available to simulate");
+  if (!trip) {
+    if (preferredTripId) throw notFound("The requested operational Trip is unavailable");
+    return null;
+  }
   const position = currentOperationalSegmentPosition(trip.status, trip.tripStops);
   if (position === null) throw conflict("Trip has no current operational segment");
   const from = trip.tripStops[position];
@@ -100,4 +111,3 @@ export async function retainRecentLocations(clock: Clock = systemClock) {
   const result = await deleteLocationSamplesBefore(cutoff);
   return { deleted: result.count, cutoff };
 }
-

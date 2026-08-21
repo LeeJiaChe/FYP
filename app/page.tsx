@@ -45,15 +45,15 @@ export default async function HomePage() {
       {/* Hero Section */}
       <main className="flex-1 max-w-7xl mx-auto px-6 py-16 flex flex-col items-center justify-center text-center">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card border border-blue-500/30 text-blue-300 text-xs font-semibold mb-8 animate-bounce">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 live-dot"></span> Real-Time Campus Fleet Management
+          <span className="w-2 h-2 rounded-full bg-emerald-400 live-dot"></span> Integrated Campus Shuttle Prototype
         </div>
 
         <h1 className="text-4xl sm:text-6xl font-extrabold text-white tracking-tight leading-tight max-w-4xl">
-          Digital Campus Shuttle Booking & <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-sky-300">Live Seat Monitoring</span>
+          Journey-Based Shuttle Reservations & <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-sky-300">Live Operations</span>
         </h1>
 
         <p className="mt-6 text-lg text-slate-400 max-w-2xl leading-relaxed">
-          Reserve your bus seats online, board seamlessly with anti-fraud dynamic QR codes, and provide the transport department with real-time seat occupancy visibility.
+          Reserve a numbered seat for a specific journey, validate boarding with a short-lived signed QR Pass, and follow clearly labelled simulated GPS telemetry.
         </p>
 
         <div className="mt-10 flex flex-wrap justify-center gap-4">
@@ -77,9 +77,9 @@ export default async function HomePage() {
             <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center mb-4">
               <QrCode className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-bold text-white mb-2">Dynamic QR Boarding</h3>
+            <h3 className="text-lg font-bold text-white mb-2">Signed QR Validation</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Auto-refreshing 60-second encrypted JWT QR tokens prevent screenshot sharing and enable instant boarding scans.
+              Short-lived signed passes are checked against durable Booking or Walk-in records by the driver workflow. QR supports validation and records; it does not promise faster boarding.
             </p>
           </div>
 
@@ -87,9 +87,9 @@ export default async function HomePage() {
             <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-4">
               <Activity className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-bold text-white mb-2">Real-Time Seat Matrix</h3>
+            <h3 className="text-lg font-bold text-white mb-2">Journey-Aware Capacity</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Live Socket.io updates display seat occupancy (Available, Reserved, Checked-In, No-Show) and simulated IoT sensor health.
+              Seat availability is calculated from reserved journey segments, while standing capacity is claimed only when a Walk-in passenger is admitted.
             </p>
           </div>
 

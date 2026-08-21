@@ -4,11 +4,20 @@
 > never be deployed as production credentials, and are recreated whenever
 > `npm run db:seed` resets the demo database.
 
-The seed uses synthetic people, capacities, coordinates, and relative-time
-Trips. Route/stop labels are drawn from the current TAR UMT DSA KL route page,
-but every Route begins with **Demo schedule:** because its times, durations,
-coordinates, vehicle plates, and passenger records are prototype data—not an
-official timetable or university operational record.
+The seed uses synthetic people, capacities, coordinates, travel durations and
+relative-time Trips. It creates ten directional Route catalogue records across
+the five source-based TAR UMT KL families: Wangsa Maju, Teratai Residency,
+Jalan Genting Klang, Melati Utama and the PV10/PV12/PV13 corridor. Published
+stop names are source-based; route topology is limited to the verified subset.
+The relative Trip times, coordinates, vehicle assignments and passenger records
+are prototype data—not an official timetable, coordinate feed or university
+operational record. PV15 and PV16 are intentionally not active Stops because
+the current semester schedule states they are no longer boarding locations.
+
+The reset creates thirteen Trip snapshots. One assigned Trip is approximately
+five minutes from origin departure for an immediate boarding demonstration, and
+one separate Trip is already DEPARTED with a recent SIMULATED location sample
+for immediate live-tracking demonstration.
 
 ## Primary demonstration accounts
 

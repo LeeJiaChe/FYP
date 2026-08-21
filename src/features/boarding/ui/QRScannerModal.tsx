@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Camera, CheckCircle2, QrCode, RefreshCw } from "lucide-react";
 import Modal from "@/components/Modal";
+import {
+  startQrCamera,
+  verifyScannedPass,
+  type CameraScannerController,
+} from "./qr-camera";
 
 interface QRScannerModalProps {
   tripId: string;
@@ -10,18 +15,6 @@ interface QRScannerModalProps {
   onClose: () => void;
   onSuccess: () => void;
 }
-
-interface BarcodeDetection {
-  readonly rawValue: string;
-}
-
-interface BrowserBarcodeDetector {
-  detect(source: ImageBitmapSource): Promise<readonly BarcodeDetection[]>;
-}
-
-type BarcodeDetectorConstructor = new (options: {
-  formats: readonly string[];
-}) => BrowserBarcodeDetector;
 
 export default function QRScannerModal({
   tripId,
@@ -31,6 +24,8 @@ export default function QRScannerModal({
 }: QRScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scanningRef = useRef(false);
+  const acceptedRef = useRef(false);
+  const cameraRef = useRef<CameraScannerController | null>(null);
   const [tokenInput, setTokenInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ outcome?: string; passengerName?: string } | null>(null);
@@ -39,31 +34,32 @@ export default function QRScannerModal({
 
   async function handleScan(tokenToVerify?: string) {
     const token = tokenToVerify?.trim() || tokenInput.trim();
-    if (!token || scanningRef.current) return;
+    if (!token || scanningRef.current || acceptedRef.current) return;
     scanningRef.current = true;
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const endpoint =
-        mode === "BOARDING"
-          ? `/api/trips/${tripId}/scan`
-          : `/api/trips/${tripId}/alight`;
-      const body = mode === "BOARDING" ? { token } : { mode: "QR", token };
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      const { ok, data } = await verifyScannedPass({
+        fetcher: fetch,
+        tripId,
+        mode,
+        token,
       });
-      const data = await response.json();
-      if (!response.ok) {
+      if (!ok) {
         if (data.outcome === "FULL") {
           setError("FULL — standing capacity is unavailable for the complete journey.");
         } else {
-          setError(data.error?.message || data.error || "Pass validation failed");
+          setError(
+            (typeof data.error === "string" ? data.error : data.error?.message) ||
+              "Pass validation failed",
+          );
         }
       } else {
+        acceptedRef.current = true;
+        cameraRef.current?.stop();
+        setCameraStatus("Pass decoded and accepted.");
         setResult(data);
         onSuccess();
       }
@@ -71,53 +67,39 @@ export default function QRScannerModal({
       setError("Network error validating the pass");
     } finally {
       setLoading(false);
-      window.setTimeout(() => {
-        scanningRef.current = false;
-      }, 1_500);
+      if (!acceptedRef.current) {
+        window.setTimeout(() => {
+          scanningRef.current = false;
+        }, 1_500);
+      }
     }
   }
 
   useEffect(() => {
     let active = true;
-    let stream: MediaStream | null = null;
-    let frameTimer: number | null = null;
 
     async function startCamera() {
-      const Detector = (window as typeof window & {
-        BarcodeDetector?: BarcodeDetectorConstructor;
-      }).BarcodeDetector;
-      if (!Detector) {
-        setCameraStatus(
-          "This browser does not provide QR camera decoding. Use a current Chromium browser or the development/demo fallback.",
-        );
-        return;
-      }
+      if (!videoRef.current) return;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } },
-          audio: false,
+        const camera = await startQrCamera(videoRef.current, (token) => {
+          void handleScan(token);
         });
-        if (!active || !videoRef.current) return;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        if (!active) {
+          camera.stop();
+          camera.destroy();
+          return;
+        }
+        cameraRef.current = camera;
         setCameraStatus("Camera active — hold a pass QR inside the frame.");
-        const detector = new Detector({ formats: ["qr_code"] });
-
-        const detect = async () => {
-          if (!active || !videoRef.current) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            const value = codes[0]?.rawValue;
-            if (value) await handleScan(value);
-          } catch {
-            // A frame may be undecodable while the camera is moving. Continue.
-          }
-          frameTimer = window.setTimeout(detect, 250);
-        };
-        await detect();
-      } catch {
+      } catch (cameraError) {
+        if (!active) return;
+        const name = cameraError instanceof DOMException ? cameraError.name : "";
         setCameraStatus(
-          "Camera permission or secure-context access was unavailable. Use the labelled development/demo fallback if needed.",
+          name === "NotAllowedError"
+            ? "Camera permission was denied. Allow camera access and reopen the scanner, or use the labelled development/demo fallback."
+            : name === "NotFoundError"
+              ? "No usable camera was found. Connect a camera or use the labelled development/demo fallback."
+              : "Camera QR scanning is unavailable in this browser or context. Use the labelled development/demo fallback.",
         );
       }
     }
@@ -125,8 +107,9 @@ export default function QRScannerModal({
     void startCamera();
     return () => {
       active = false;
-      if (frameTimer !== null) window.clearTimeout(frameTimer);
-      stream?.getTracks().forEach((track) => track.stop());
+      cameraRef.current?.stop();
+      cameraRef.current?.destroy();
+      cameraRef.current = null;
     };
     // handleScan deliberately reads the latest component state; restarting the
     // camera for each fallback-token keystroke would make scanning unusable.
@@ -159,7 +142,7 @@ export default function QRScannerModal({
         <details className="border-t border-slate-800 pt-4">
           <summary className="cursor-pointer text-xs font-semibold text-amber-300">Development / Demo fallback: paste pass token</summary>
           <div className="space-y-3 mt-3">
-            <textarea rows={3} aria-label="Development token fallback" placeholder="Paste the signed JWT token from the displayed pass" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 font-mono" />
+            <textarea rows={3} aria-label="Development token fallback" placeholder="Paste the short-lived signed token copied from the displayed demo pass" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 font-mono" />
             <button onClick={() => void handleScan()} disabled={loading || !tokenInput.trim()} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 disabled:opacity-50">
               {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Validate fallback token"}
             </button>

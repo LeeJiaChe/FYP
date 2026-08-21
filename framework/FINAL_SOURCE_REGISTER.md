@@ -8,8 +8,8 @@ replacement for the students' separately prepared academic bibliographies.
 
 | Source | Supported claim | Boundary |
 |---|---|---|
-| [TAR UMT DSA — Bus Routes](https://www.tarc.edu.my/dsa/a/transportation/bus-routes/) | KL route groups include Wangsa Maju, Teratai Residency, Jalan Genting Klang, Melati Utama and PV10/PV12/PV13/PV15; public direction text names locations used by the final seed | Does not validate prototype times, durations, coordinates, buses, capacities or passenger workflows |
-| [TAR UMT DSA — Bus Schedule](https://www.tarc.edu.my/dsa/a/transportation/bus-schedule/) | TAR UMT publishes period-specific schedules and points users to current service updates | Seed uses relative synthetic times and does not reproduce or claim an official schedule |
+| [TAR UMT DSA — Bus Routes](https://www.tarc.edu.my/dsa/a/transportation/bus-routes/) | KL route groups include Wangsa Maju, Teratai Residency, Jalan Genting Klang, Melati Utama and the PV10/PV12/PV13/PV15 corridor; public direction text names locations used by the final seed | The route-family catalogue does not validate prototype times, coordinates, buses, capacities or passenger workflows |
+| [TAR UMT DSA — Bus Schedule](https://www.tarc.edu.my/dsa/a/transportation/bus-schedule/) and [current semester PDF](https://www.tarc.edu.my/files/dsa/BBAD7C71-1426-4561-A247-13707AEAF45A.pdf) | Current published period is 15-Jun-2026–20-Sep-2026, updated 06-Jul-2026. It supports the seeded names Wangsa Maju Section 2, Hospital ATM Tuanku Mizan, Wangsa Metroview bus stop, LRT Wangsa Maju, Tarvilla, Gate 7/East Campus, Melati Utama, Melati LRT junction, Danau Kota Suite Apartments, PV10/PV12, PV18, Teratai Residency, Prima Setapak and Setapak Central. It also states PV15/PV16 have not been pick-up/drop-off stops since 12-Jul-2022. | The seed uses relative synthetic Trip times and plausible prototype coordinates; it does not reproduce or claim an official timetable or GPS dataset |
 | [TAR UMT DSA — Latest update](https://www.tarc.edu.my/dsa/a/transportation/latest-update/) | DSA publishes channels for current shuttle updates | Does not prove internal dispatch, spreadsheet, identity or reservation practices |
 | [TAR UMT sustainable transportation](https://sustainability.tarc.edu.my/actions-initiatives/sustainable-transportation) | Public shuttle coverage includes the named KL residential/transit areas | General institutional context only |
 
@@ -55,9 +55,12 @@ observation and must not be promoted to official institutional policy.
 - Current-reality claims remain explicitly owner-observed.
 - No active documentation claims TAR UMT already operates the proposed
   reservation, no-show, credit, appeal, QR, or GPS system.
-- The final seed uses verified public location names but labels Routes as
-  **Demo schedule:**; its time, duration, coordinate, capacity and demand data
-  are prototype-only.
+- The final seed has ten directional source-based Route catalogue records across
+  the five current public families. Its relative Trip times, travel durations,
+  coordinates, bus assignments, capacity and demand data are prototype-only.
+- PV15 and PV16 remain part of an official route-family label on the route page,
+  but are not active seeded boarding Stops because the current semester schedule
+  explicitly supersedes that older operational detail.
 - No spreadsheet/internal dispatch claim is made.
 - Historical phase/audit references remain historical and are not converted
   into current academic sources.

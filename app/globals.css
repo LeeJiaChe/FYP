@@ -36,7 +36,7 @@
   --border-hover: rgba(99, 102, 241, 0.5);
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-muted: #64748b;
   --accent-primary: #4f46e5;
   --accent-secondary: #6366f1;
   --accent-glow: rgba(99, 102, 241, 0.2);
@@ -46,6 +46,53 @@
   --shadow-color: rgba(99, 102, 241, 0.12);
   --scrollbar-thumb: #cbd5e1;
 }
+
+/* Active UI still contains Tailwind slate utilities from the incremental
+   migration. Map those surface/text utilities to semantic tokens in light mode
+   so cards, forms, tables, portals and modals remain readable. Accent/action
+   backgrounds retain white foregrounds below. */
+[data-theme="light"] .bg-slate-950 { background-color: var(--bg-base); }
+[data-theme="light"] .bg-slate-900,
+[data-theme="light"] .bg-slate-900\/80 { background-color: var(--bg-surface); }
+[data-theme="light"] .bg-slate-800,
+[data-theme="light"] .bg-slate-800\/80 { background-color: #eef2ff; }
+[data-theme="light"] .border-slate-800,
+[data-theme="light"] .border-slate-700 { border-color: var(--border); }
+[data-theme="light"] .text-slate-100,
+[data-theme="light"] .text-white { color: var(--text-primary); }
+[data-theme="light"] .text-slate-200,
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-slate-400 { color: var(--text-secondary); }
+[data-theme="light"] .text-slate-500,
+[data-theme="light"] .text-slate-600 { color: var(--text-muted); }
+[data-theme="light"] .placeholder-slate-600::placeholder { color: var(--text-muted); }
+[data-theme="light"] .text-blue-300,
+[data-theme="light"] .text-blue-400 { color: #1d4ed8; }
+[data-theme="light"] .text-emerald-300,
+[data-theme="light"] .text-emerald-400 { color: #047857; }
+[data-theme="light"] .text-amber-200,
+[data-theme="light"] .text-amber-300,
+[data-theme="light"] .text-amber-400 { color: #92400e; }
+[data-theme="light"] .text-red-300,
+[data-theme="light"] .text-red-400 { color: #b91c1c; }
+[data-theme="light"] .text-purple-300,
+[data-theme="light"] .text-purple-400 { color: #7e22ce; }
+[data-theme="light"] [class*="bg-blue-"][class*="text-white"],
+[data-theme="light"] [class*="bg-indigo-"][class*="text-white"],
+[data-theme="light"] [class*="bg-emerald-"][class*="text-white"],
+[data-theme="light"] [class*="bg-cyan-"][class*="text-white"],
+[data-theme="light"] [class*="bg-amber-"][class*="text-white"],
+[data-theme="light"] [class*="bg-red-"][class*="text-white"],
+[data-theme="light"] [class*="bg-rose-"][class*="text-white"],
+[data-theme="light"] [class*="bg-gradient-"][class*="text-white"],
+[data-theme="light"] .btn-primary {
+  color: #ffffff;
+}
+[data-theme="light"] .badge-blue { color: #3730a3; }
+[data-theme="light"] .badge-green { color: #166534; }
+[data-theme="light"] .badge-amber { color: #92400e; }
+[data-theme="light"] .badge-red { color: #991b1b; }
+[data-theme="light"] .badge-purple { color: #6b21a8; }
 
 [data-theme="ocean"] {
   --bg-base: #020c18;
