@@ -106,7 +106,10 @@ test("student joins a deterministic full-journey waitlist through the UI", async
   await expect(page.getByText("No single seat is free across this complete journey.")).toBeVisible();
   await page.getByRole("button", { name: "Join Waitlist" }).click();
   await expect(page.getByText("WAITLIST · WAITING")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "TAR UMT → PV10/PV12/PV13 corridor" })).toBeVisible();
+  const waitlistArticle = page.getByRole("article").filter({ hasText: "WAITLIST · WAITING" });
+  await expect(
+    waitlistArticle.getByRole("heading", { name: "TAR UMT → PV10/PV12/PV13 corridor" }),
+  ).toBeVisible();
 });
 
 test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ page }) => {
