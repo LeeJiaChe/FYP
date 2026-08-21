@@ -1,4 +1,4 @@
-# 🚌 TAR UMT Shuttle — Campus Shuttle Booking & Live Operations System
+# 🚌 TAR UMT Kuala Lumpur Campus Shuttle Management System
 
 > **Final Year Project (FYP)** — A responsive web application for directional journey search, segment-aware reserved seating, non-guaranteed walk-in boarding, live simulated-GPS location, and transport operations.
 
@@ -119,23 +119,32 @@ describes the existing runtime at a high level, not the completed Architecture v
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Fresh-clone setup
 
 ### 1. Clone & Install
 
 ```bash
-git clone <repo-url>
-cd FYPBusSystem
-npm install
+git clone https://github.com/LeeJiaChe/FYP.git
+cd FYP
+git checkout architecture-v2
+npm ci
+npx prisma generate
 ```
 
 ### 2. Environment Variables
 
-Create a `.env` file in the project root:
+Copy the documented safe template and replace every secret placeholder with a
+distinct random value of at least 32 characters:
+
+```bash
+cp .env.example .env
+```
+
+Required server values are:
 
 ```env
-# Database
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fyp_bus?schema=public"
+# Durable PostgreSQL development database
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fyp_bus_system?schema=public"
 
 # Use separate, strong random secrets outside local development
 JWT_SECRET="replace-with-a-strong-session-secret"
@@ -153,11 +162,19 @@ CORS_ORIGIN="http://localhost:3000"
 NEXTJS_INTERNAL_URL="http://localhost:3000"
 ```
 
-### 3. Set Up the Database
+`TEST_DATABASE_URL` and `TEST_DATABASE_CONFIRM` are deliberately absent from
+normal development/production setup; they are opt-in fail-closed integration
+test settings described in `.env.example`.
+
+### 3. Set up and seed PostgreSQL
 
 ```bash
 # Apply the committed PostgreSQL migrations
 npx prisma migrate deploy
+
+# Confirm the schema and migration state
+npx prisma validate
+npx prisma migrate status
 
 # Seed with demo data (routes, buses, drivers, students)
 npm run db:seed
@@ -181,21 +198,13 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 🔑 Demo Accounts
+## 🔑 Demo accounts and data
 
-All accounts use the password: **`password123`**
-
-> Phase 3 reseeds students with normalized `@student.tarc.edu.my` addresses.
-> Admin and driver accounts use role-specific demo addresses.
-
-| Role | Email | Notes |
-|---|---|---|
-| Admin | `admin1@admin.tarc.edu.my` | Full admin portal access |
-| Driver | `driver1@tarumt.edu.my` | Assigned to even-numbered routes |
-| Driver | `driver2@tarumt.edu.my` | Assigned to odd-numbered routes |
-| Student | `student1@student.tarc.edu.my` | Credit score: 100 |
-| Student | `student2@student.tarc.edu.my` | Credit score: 85 |
-| Student | `student3@student.tarc.edu.my` | Credit score: 35 — booking restricted |
+See [`framework/DEMO_ACCOUNTS.md`](./framework/DEMO_ACCOUNTS.md). Those
+credentials and identities are **DEMO / DEVELOPMENT ONLY** and are recreated by
+reset/reseed. Routes are labelled **Demo schedule:**: public stop names are
+sourced from TAR UMT, while times, coordinates, durations, buses, capacities and
+passenger records are synthetic prototype data.
 
 ---
 
@@ -253,9 +262,10 @@ See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md),
 | `npm run lint` | Zero-warning Architecture v2/new-code ESLint gate |
 | `npm run lint:legacy` | Report the inherited full-repository lint baseline |
 | `npm run typecheck` | Run the strict TypeScript check |
-| `npm test` | Run pure unit/specification tests |
+| `npm test` / `npm run test:unit` | Run pure unit/specification tests |
 | `npm run test:architecture` | Enforce Architecture v2 dependency boundaries |
 | `npm run test:integration` | Run guarded tests against dedicated PostgreSQL (`*_test`) |
+| `npm run test:e2e` | Run Playwright browser tests against a prepared isolated environment |
 | `npm run verify` | Run the fast non-database Architecture v2 gate |
 
 ---
@@ -264,8 +274,8 @@ See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md),
 
 The Phase 2 shared security foundation is documented in
 [`framework/PHASE_2_SHARED_FOUNDATION.md`](./framework/PHASE_2_SHARED_FOUNDATION.md).
-The product-specific items below remain Architecture v2 requirements, not claims
-that the prototype already satisfies the full audit:
+Implemented controls and honest limitations are recorded in
+[`framework/FINAL_SECURITY_EVIDENCE.md`](./framework/FINAL_SECURITY_EVIDENCE.md).
 
 - **JWT sessions** stored in HTTP-only cookies (`fyp_session`) — inaccessible to JavaScript
 - **QR tokens** have explicit Reserved/Walk-in/Alighting purposes and short expiry; rotation reduces replay risk but does not guarantee screenshot prevention
@@ -284,6 +294,25 @@ See [`NOTES.md`](./NOTES.md) for a full list of assumptions and design decisions
 - Directional ordered Stops and journey-aware reserved/standing capacity
 - Reserved versus non-guaranteed Walk-in passes
 - GPS simulator telemetry, removed seat-device scope, and website-only delivery
+
+## 📚 Final release evidence
+
+- [Canonical product specification](./framework/APP_SPECIFICATION.md)
+- [Technical architecture](./framework/ARCHITECTURE.md)
+- [Individual documentation scope](./framework/INDIVIDUAL_DOCUMENTATION_SCOPE.md)
+- [Final ERD](./framework/FINAL_ERD.md) and [runtime architecture](./framework/FINAL_RUNTIME_ARCHITECTURE.md)
+- [Passenger sequences](./framework/FINAL_PASSENGER_SEQUENCES.md) and [fleet/GPS sequences](./framework/FINAL_FLEET_SEQUENCES.md)
+- [Security](./framework/FINAL_SECURITY_EVIDENCE.md), [concurrency](./framework/FINAL_CONCURRENCY_EVIDENCE.md), and [testing evidence](./framework/FINAL_TESTING_EVIDENCE.md)
+- [Demo script](./framework/FINAL_DEMO_SCRIPT.md), [manual checklist](./framework/MANUAL_DEMO_CHECKLIST.md), and [viva guide](./framework/FINAL_VIVA_GUIDE.md)
+- [Public/source claim register](./framework/FINAL_SOURCE_REGISTER.md)
+
+## ⚠️ Prototype limitations
+
+- GPS input is simulated and explicitly labelled; no physical GPS hardware is deployed.
+- Demo schedules, travel durations, coordinates, capacities, people and demand are synthetic.
+- Numbered seat labels and QR validation are proposed operational changes, not current TAR UMT practice.
+- TAR UMT SSO, production deployment approval, penetration testing, formal accessibility certification, large-scale load testing, backups and operational monitoring remain outside verified scope.
+- Camera scanning targets current Chromium in a secure context; complete the manual checklist on the actual demo laptop.
 
 ---
 

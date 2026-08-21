@@ -254,11 +254,14 @@ async function main() {
   ]);
   void bus3;
 
+  // Public stop names follow the TAR UMT DSA KL route page as checked on
+  // 2026-08-22. Coordinates, travel durations and relative Trip times below are
+  // synthetic prototype data and every Route is labelled "Demo schedule:".
   const stopRecords = await Promise.all([
     prisma.stop.create({
       data: {
-        code: "TAR_MAIN",
-        name: "TAR UMT Main Gate",
+        code: "TAR_GATE_7",
+        name: "TAR UMT Gate 7",
         latitude: 3.215006,
         longitude: 101.726176,
       },
@@ -266,7 +269,7 @@ async function main() {
     prisma.stop.create({
       data: {
         code: "WANGSA_LRT",
-        name: "Wangsa Maju LRT",
+        name: "LRT Wangsa Maju",
         latitude: 3.205721,
         longitude: 101.731796,
       },
@@ -281,22 +284,22 @@ async function main() {
     }),
     prisma.stop.create({
       data: {
-        code: "TAMAN_MELATI_LRT",
-        name: "Taman Melati LRT",
+        code: "PV12",
+        name: "PV12",
         latitude: 3.219505,
         longitude: 101.721043,
       },
     }),
     prisma.stop.create({
       data: {
-        code: "DANAU_KOTA",
-        name: "Danau Kota",
+        code: "WANGSA_MAJU_SECTION_2",
+        name: "Wangsa Maju Section 2",
         latitude: 3.204933,
         longitude: 101.714558,
       },
     }),
   ]);
-  const [tarMain, wangsaLrt, setapakCentral, tamanMelatiLrt, danauKota] =
+  const [tarGate7, wangsaLrt, setapakCentral, pv12, wangsaMajuSection2] =
     stopRecords;
 
   async function createRoute(
@@ -317,38 +320,38 @@ async function main() {
     });
   }
 
-  const [setapakOutbound, setapakInbound, danauOutbound, danauInbound] =
+  const [pvOutbound, pvInbound, wangsaOutbound, wangsaInbound] =
     await Promise.all([
-      createRoute("Demo: TAR UMT → Setapak Central", [
-        { id: tarMain.id, minutesToNext: 8 },
-        { id: wangsaLrt.id, minutesToNext: 10 },
-        { id: setapakCentral.id, minutesToNext: null },
-      ]),
-      createRoute("Demo: Setapak Central → TAR UMT", [
+      createRoute("Demo schedule: TAR UMT Gate 7 → PV12", [
+        { id: tarGate7.id, minutesToNext: 8 },
         { id: setapakCentral.id, minutesToNext: 10 },
-        { id: wangsaLrt.id, minutesToNext: 8 },
-        { id: tarMain.id, minutesToNext: null },
+        { id: pv12.id, minutesToNext: null },
       ]),
-      createRoute("Demo: TAR UMT → Danau Kota", [
-        { id: tarMain.id, minutesToNext: 7 },
-        { id: tamanMelatiLrt.id, minutesToNext: 9 },
-        { id: danauKota.id, minutesToNext: null },
+      createRoute("Demo schedule: PV12 → TAR UMT Gate 7", [
+        { id: pv12.id, minutesToNext: 10 },
+        { id: setapakCentral.id, minutesToNext: 8 },
+        { id: tarGate7.id, minutesToNext: null },
       ]),
-      createRoute("Demo: Danau Kota → TAR UMT", [
-        { id: danauKota.id, minutesToNext: 9 },
-        { id: tamanMelatiLrt.id, minutesToNext: 7 },
-        { id: tarMain.id, minutesToNext: null },
+      createRoute("Demo schedule: TAR UMT Gate 7 → Wangsa Maju Section 2", [
+        { id: tarGate7.id, minutesToNext: 7 },
+        { id: wangsaLrt.id, minutesToNext: 9 },
+        { id: wangsaMajuSection2.id, minutesToNext: null },
+      ]),
+      createRoute("Demo schedule: Wangsa Maju Section 2 → TAR UMT Gate 7", [
+        { id: wangsaMajuSection2.id, minutesToNext: 9 },
+        { id: wangsaLrt.id, minutesToNext: 7 },
+        { id: tarGate7.id, minutesToNext: null },
       ]),
     ]);
 
   const now = new Date();
   const tripInputs = [
-    [setapakOutbound.id, bus1.id, driver1.id, 2],
-    [setapakInbound.id, bus2.id, driver2.id, 4],
-    [danauOutbound.id, bus2.id, driver2.id, 26],
-    [danauInbound.id, bus1.id, driver1.id, 29],
-    [setapakInbound.id, bus2.id, driver2.id, -3],
-    [danauOutbound.id, bus2.id, driver1.id, -1],
+    [pvOutbound.id, bus1.id, driver1.id, 2],
+    [pvInbound.id, bus2.id, driver2.id, 4],
+    [wangsaOutbound.id, bus2.id, driver2.id, 26],
+    [wangsaInbound.id, bus1.id, driver1.id, 29],
+    [pvInbound.id, bus2.id, driver2.id, -3],
+    [wangsaOutbound.id, bus2.id, driver1.id, -1],
   ] as const;
   const demoTrips = [];
   for (const [routeId, busId, driverId, hoursFromNow] of tripInputs) {
@@ -599,10 +602,10 @@ async function main() {
   });
 
   console.log(
-    "Seeded 5 Stops, 4 directional demo Routes, 3 Buses, and 6 complete Trip snapshots.",
+    "Seeded 5 publicly named Stops, 4 directional prototype Routes, 3 Buses, and 6 complete Trip snapshots.",
   );
   console.log(
-    "Phase 8 demo: segment-aware journeys, one Walk-in intent, one penalty appeal, and one simulated GPS sample.",
+    "Demo schedules and coordinates are synthetic prototype data, not official TAR UMT timetable/GPS records.",
   );
 }
 

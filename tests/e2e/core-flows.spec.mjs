@@ -28,15 +28,15 @@ async function selectOptionContaining(select, text) {
 
 test("student creates a reserved journey and opens its Reserved Pass", async ({ page }) => {
   await login(page, "student6@student.tarc.edu.my");
-  await openJourney(page, "Demo: Danau Kota → TAR UMT");
+  await openJourney(page, "Demo schedule: Wangsa Maju Section 2 → TAR UMT Gate 7");
   await page.getByRole("button", { name: /Seat 1, available/ }).click();
   await expect(page.getByText("Seat selected. Your seat is guaranteed after booking confirmation.")).toBeVisible();
   await page.getByRole("button", { name: "Confirm Reserved Seat" }).click();
 
   await expect(page.getByText("RESERVED · CONFIRMED")).toBeVisible();
-  const bookingArticle = page.getByRole("article").filter({ hasText: "Demo: Danau Kota → TAR UMT" });
+  const bookingArticle = page.getByRole("article").filter({ hasText: "Demo schedule: Wangsa Maju Section 2 → TAR UMT Gate 7" });
   await expect(
-    bookingArticle.getByRole("heading", { name: "Demo: Danau Kota → TAR UMT" }),
+    bookingArticle.getByRole("heading", { name: "Demo schedule: Wangsa Maju Section 2 → TAR UMT Gate 7" }),
   ).toBeVisible();
   await page.getByRole("button", { name: /Reserved Pass/ }).click();
   await expect(page.getByRole("dialog", { name: /Reserved Boarding Pass/ })).toBeVisible();
@@ -45,16 +45,16 @@ test("student creates a reserved journey and opens its Reserved Pass", async ({ 
 
 test("student joins a deterministic full-journey waitlist through the UI", async ({ page }) => {
   await login(page, "student7@student.tarc.edu.my");
-  await openJourney(page, "Demo: TAR UMT → Setapak Central");
+  await openJourney(page, "Demo schedule: TAR UMT Gate 7 → PV12");
   await expect(page.getByText("No single seat is free across this complete journey.")).toBeVisible();
   await page.getByRole("button", { name: "Join Waitlist" }).click();
   await expect(page.getByText("WAITLIST · WAITING")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Demo: TAR UMT → Setapak Central" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Demo schedule: TAR UMT Gate 7 → PV12" })).toBeVisible();
 });
 
 test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ page }) => {
   await login(page, "student8@student.tarc.edu.my");
-  await openJourney(page, "Demo: Danau Kota → TAR UMT");
+  await openJourney(page, "Demo schedule: Wangsa Maju Section 2 → TAR UMT Gate 7");
   await page.getByRole("button", { name: "Generate Walk-in Pass" }).click();
   await expect(page.getByRole("dialog", { name: /Walk-in Boarding Pass/ })).toBeVisible();
   await expect(
@@ -65,11 +65,11 @@ test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ pa
 test("assigned driver starts boarding and performs a real manual boarding mutation", async ({ page }) => {
   await login(page, "driver1@tarumt.edu.my");
   const tripSelect = page.getByLabel("Assigned Trip");
-  const option = tripSelect.locator("option").filter({ hasText: "Demo: TAR UMT → Danau Kota" });
+  const option = tripSelect.locator("option").filter({ hasText: "Demo schedule: TAR UMT Gate 7 → Wangsa Maju Section 2" });
   await tripSelect.selectOption(await option.getAttribute("value"));
   await expect(page.getByText("E2E Boarding Student")).toBeVisible();
   await page.getByRole("button", { name: "Start boarding" }).click();
-  await expect(page.getByText(/Current stop: TAR UMT Main Gate/)).toBeVisible();
+  await expect(page.getByText(/Current stop: TAR UMT Gate 7/)).toBeVisible();
   const passenger = page
     .getByText(/E2E Boarding Student · RESERVED/)
     .locator("xpath=ancestor::div[contains(@class, 'bg-slate-900')][1]");
@@ -119,7 +119,7 @@ test("admin schedules a valid Trip and sees its generated snapshot projection", 
   await login(page, "admin1@admin.tarc.edu.my", "admin1");
   await page.getByRole("tab", { name: "Timetable" }).click();
   await page.getByRole("button", { name: "Schedule New Trip" }).click();
-  await page.getByLabel("Route").selectOption({ label: "Demo: Setapak Central → TAR UMT" });
+  await page.getByLabel("Route").selectOption({ label: "Demo schedule: PV12 → TAR UMT Gate 7" });
   await selectOptionContaining(page.getByLabel("Bus"), "TAR-1002");
   await selectOptionContaining(page.getByLabel("Driver"), "Tan Boon Driver");
   const departure = new Date(Date.now() + 72 * 60 * 60 * 1_000);
@@ -130,7 +130,7 @@ test("admin schedules a valid Trip and sees its generated snapshot projection", 
   await page.getByRole("button", { name: "Schedule Trip" }).click();
 
   const scheduled = page
-    .getByRole("heading", { name: "Demo: Setapak Central → TAR UMT" })
+    .getByRole("heading", { name: "Demo schedule: PV12 → TAR UMT Gate 7" })
     .last()
     .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' glass-card ')][1]");
   await expect(scheduled.getByText("TAR-1002", { exact: true })).toBeVisible();
