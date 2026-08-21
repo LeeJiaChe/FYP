@@ -72,15 +72,15 @@ test("fresh seed exposes the ten canonical directional routes without retired pl
 
 test("student creates a reserved journey and opens its Reserved Pass", async ({ page }) => {
   await login(page, "student6@student.tarc.edu.my");
-  await openJourney(page, "Wangsa Maju Section 2 → TAR UMT");
+  await openJourney(page, "Jalan Genting Klang → TAR UMT");
   await page.getByRole("button", { name: /Seat 1, available/ }).click();
   await expect(page.getByText("Seat selected. Your seat is guaranteed after booking confirmation.")).toBeVisible();
   await page.getByRole("button", { name: "Confirm Reserved Seat" }).click();
 
   await expect(page.getByText("RESERVED · CONFIRMED")).toBeVisible();
-  const bookingArticle = page.getByRole("article").filter({ hasText: "Wangsa Maju Section 2 → TAR UMT" });
+  const bookingArticle = page.getByRole("article").filter({ hasText: "Jalan Genting Klang → TAR UMT" });
   await expect(
-    bookingArticle.getByRole("heading", { name: "Wangsa Maju Section 2 → TAR UMT" }),
+    bookingArticle.getByRole("heading", { name: "Jalan Genting Klang → TAR UMT" }),
   ).toBeVisible();
   await page.getByRole("button", { name: /Reserved Pass/ }).click();
   await expect(page.getByRole("dialog", { name: /Reserved Boarding Pass/ })).toBeVisible();
@@ -99,7 +99,7 @@ test("student joins a deterministic full-journey waitlist through the UI", async
 
 test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ page }) => {
   await login(page, "student8@student.tarc.edu.my");
-  await openJourney(page, "Wangsa Maju Section 2 → TAR UMT");
+  await openJourney(page, "Jalan Genting Klang → TAR UMT");
   await page.getByRole("button", { name: "Generate Walk-in Pass" }).click();
   await expect(page.getByRole("dialog", { name: /Walk-in Boarding Pass/ })).toBeVisible();
   await expect(

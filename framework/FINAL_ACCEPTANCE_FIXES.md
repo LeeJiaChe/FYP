@@ -1,7 +1,7 @@
 # Final Acceptance Fixes
 
-**Status:** Final acceptance candidate; final SHA and GitHub Actions evidence are
-recorded after publication.
+**Status:** Final acceptance implementation published; exact final SHA and
+GitHub Actions evidence are recorded in the acceptance handoff.
 
 **Date:** 2026-08-22
 
