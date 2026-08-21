@@ -4,7 +4,7 @@ import Modal from "./Modal";
 interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title: string;
   message: string;
   confirmText?: string;
@@ -31,8 +31,8 @@ export default function ConfirmModal({
             {cancelText}
           </button>
           <button
-            onClick={() => {
-              onConfirm();
+            onClick={async () => {
+              await onConfirm();
               onClose();
             }}
             className="flex-1 px-4 py-2 font-bold rounded-lg transition-colors"

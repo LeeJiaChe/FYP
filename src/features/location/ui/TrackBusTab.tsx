@@ -3,7 +3,7 @@
 import { productPolicy } from "@/shared/config/policies";
 
 import { Navigation, Ticket } from "lucide-react";
-import BusLocationTracker from "@/components/BusLocationTracker";
+import BusLocationTracker from "./BusLocationTracker";
 
 const DEFAULT_STOPS = [
   "Main Gate",
@@ -18,7 +18,7 @@ interface TrackBusTabProps {
   trackedTrip: any;
   setTrackedTrip: (trip: any) => void;
   user?: any;
-  onOpenSeatModal: (tripId: string) => void;
+  onBrowseTrips: () => void;
 }
 
 export default function TrackBusTab({
@@ -26,7 +26,7 @@ export default function TrackBusTab({
   trackedTrip,
   setTrackedTrip,
   user,
-  onOpenSeatModal,
+  onBrowseTrips,
 }: TrackBusTabProps) {
   return (
     <div className="space-y-5 animate-fade-in">
@@ -47,12 +47,14 @@ export default function TrackBusTab({
           style={{ color: "var(--accent-secondary)" }}
         />
         <label
+          htmlFor="tracking-trip"
           className="text-xs font-semibold"
           style={{ color: "var(--text-secondary)" }}
         >
           Select Trip to Track:
         </label>
         <select
+          id="tracking-trip"
           value={trackedTrip?.id || ""}
           onChange={(e) => {
             const t = trips.find((x) => x.id === e.target.value);
@@ -205,7 +207,7 @@ export default function TrackBusTab({
 
             {trackedTrip.status === "NOT_STARTED" && (
               <button
-                onClick={() => onOpenSeatModal(trackedTrip.id)}
+                onClick={onBrowseTrips}
                 disabled={
                   (user?.creditScore ?? productPolicy.initialCredit) <
                   productPolicy.bookingRestrictionBelowCredit
@@ -213,7 +215,7 @@ export default function TrackBusTab({
                 className="btn-primary w-full text-xs flex items-center justify-center gap-2 mt-2"
               >
                 <Ticket className="w-4 h-4" />
-                Book This Bus
+                Choose From / To
               </button>
             )}
           </div>

@@ -47,7 +47,7 @@ export default function BusLocationTracker({
 }: BusLocationProps) {
   const [location, setLocation] = useState<TelemetryLocation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(0);
 
   const fetchLatest = useCallback(async () => {
     try {

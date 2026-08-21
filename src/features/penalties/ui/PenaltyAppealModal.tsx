@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { X, Send, AlertTriangle } from "lucide-react";
+import { Send, AlertTriangle } from "lucide-react";
+import Modal from "@/components/Modal";
 
 interface PenaltyAppealModalProps {
   penalty: any;
@@ -42,21 +43,13 @@ export default function PenaltyAppealModal({ penalty, onClose, onSuccess }: Pena
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="glass-panel w-full max-w-lg rounded-3xl p-6 border border-slate-700/80 shadow-2xl relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
+    <Modal isOpen onClose={onClose} title="Appeal penalty" maxWidth="lg">
+      <div className="p-5 sm:p-6">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
             <AlertTriangle className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">Appeal Penalty</h2>
             <p className="text-xs text-slate-400">Submit justification for staff review</p>
           </div>
         </div>
@@ -80,10 +73,12 @@ export default function PenaltyAppealModal({ penalty, onClose, onSuccess }: Pena
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+            <label htmlFor="appeal-reason" className="block text-xs font-semibold text-slate-300 mb-1.5">
               Explanation / Medical Reason <span className="text-rose-400">*</span>
             </label>
             <textarea
+              id="appeal-reason"
+              name="reason"
               required
               rows={4}
               placeholder="Explain why you were unable to board or cancel in advance (e.g. medical emergency, transport delay)..."
@@ -111,6 +106,6 @@ export default function PenaltyAppealModal({ penalty, onClose, onSuccess }: Pena
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }

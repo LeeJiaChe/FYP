@@ -64,10 +64,13 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Full Name</label>
+              <label htmlFor="register-name" className="block text-xs font-semibold text-slate-300 mb-1.5">Full Name</label>
               <div className="relative">
                 <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
+                  id="register-name"
+                  name="name"
+                  autoComplete="name"
                   type="text"
                   required
                   placeholder="e.g. John Doe"
@@ -79,10 +82,13 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Student ID</label>
+              <label htmlFor="register-student-id" className="block text-xs font-semibold text-slate-300 mb-1.5">Student ID</label>
               <div className="relative">
                 <IdCard className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
+                  id="register-student-id"
+                  name="studentId"
+                  autoComplete="off"
                   type="text"
                   required
                   placeholder="e.g. 2201995"
@@ -91,28 +97,36 @@ export default function RegisterPage() {
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
+              <p className="mt-1 text-[11px] text-slate-500">Stored in uppercase automatically.</p>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Email Address</label>
+              <label htmlFor="register-email" className="block text-xs font-semibold text-slate-300 mb-1.5">Student Email</label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
+                  id="register-email"
+                  name="email"
+                  autoComplete="email"
                   type="email"
                   required
-                  placeholder="student@tarumt.edu.my"
+                  placeholder="your.name@student.tarc.edu.my"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
+              <p className="mt-1 text-[11px] text-slate-500">Use your @student.tarc.edu.my address.</p>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Password</label>
+              <label htmlFor="register-password" className="block text-xs font-semibold text-slate-300 mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
+                  id="register-password"
+                  name="password"
+                  autoComplete="new-password"
                   type="password"
                   required
                   placeholder="••••••••"

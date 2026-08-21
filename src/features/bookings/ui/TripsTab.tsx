@@ -5,26 +5,22 @@ import {
   MapPin,
   Calendar,
   Clock,
-  ChevronRight,
   X,
   Ticket,
   Search,
   RefreshCw,
   Navigation,
   Filter,
-  CheckCircle2,
-  AlertCircle,
   Bus,
   ArrowRight,
   Check,
 } from "lucide-react";
-import BusLocationTracker from "@/components/BusLocationTracker";
+import { BusLocationTracker } from "@/features/location/ui";
 import ConnectedRouteLine from "./ConnectedRouteLine";
 
 interface TripsTabProps {
   routes: any[];
   trips: any[];
-  loadingTrips: boolean;
   isBookingRestricted?: boolean;
   onRefresh: () => void;
   onOpenSeatModal: (
@@ -40,7 +36,6 @@ interface TripsTabProps {
 export default function TripsTab({
   routes,
   trips,
-  loadingTrips,
   isBookingRestricted,
   onRefresh,
   onOpenSeatModal,
@@ -55,7 +50,7 @@ export default function TripsTab({
 
   // ─── Stepper Wizard Modal State ──────────────────────────────
   const [selectedRouteForModal, setSelectedRouteForModal] = useState<any | null>(null);
-  const [modalStep, setModalStep] = useState<1 | 2 | 3>(1); // 1: Date -> 2: From/To -> 3: Time Slot
+  const [modalStep, setModalStep] = useState<1 | 2 | 3>(1); // 1: From/To -> 2: Date -> 3: Departure/Seat
   const [modalSelectedDate, setModalSelectedDate] = useState<string>("");
   const [modalFromStop, setModalFromStop] = useState<string>("");
   const [modalToStop, setModalToStop] = useState<string>("");
@@ -257,12 +252,13 @@ export default function TripsTab({
         {/* Filter Input Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+            <label htmlFor="route-search" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Search Route
             </label>
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
               <input
+                id="route-search"
                 type="text"
                 value={routeSearchQuery}
                 onChange={(e) => setRouteSearchQuery(e.target.value)}
@@ -273,10 +269,11 @@ export default function TripsTab({
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+            <label htmlFor="journey-from" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               From (Boarding Stop)
             </label>
             <select
+              id="journey-from"
               value={fromStopFilter}
               onChange={(e) => setFromStopFilter(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
@@ -291,10 +288,11 @@ export default function TripsTab({
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+            <label htmlFor="journey-to" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               To (Dropoff Stop)
             </label>
             <select
+              id="journey-to"
               value={toStopFilter}
               onChange={(e) => setToStopFilter(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
@@ -309,10 +307,11 @@ export default function TripsTab({
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+            <label htmlFor="journey-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Departure Date
             </label>
             <select
+              id="journey-date"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
@@ -327,10 +326,11 @@ export default function TripsTab({
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+            <label htmlFor="journey-time" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Time Slot
             </label>
             <select
+              id="journey-time"
               value={timeWindowFilter}
               onChange={(e) => setTimeWindowFilter(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
@@ -343,10 +343,12 @@ export default function TripsTab({
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+            <label htmlFor="journey-availability" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               Seat Availability
             </label>
             <select
+              id="journey-availability"
+              disabled
               value={availabilityFilter}
               onChange={(e) => setAvailabilityFilter(e.target.value)}
               className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
@@ -448,7 +450,7 @@ export default function TripsTab({
                     disabled={!!isBookingRestricted}
                     className="btn-primary w-full text-xs flex items-center justify-center gap-2"
                   >
-                    <span>Select Date & Destination</span>
+                    <span>Choose From and To</span>
                     <ArrowRight className="w-4 h-4 text-indigo-200" />
                   </button>
                 </div>
@@ -458,12 +460,13 @@ export default function TripsTab({
         </div>
       )}
 
-      {/* ══ STEPPER WIZARD MODAL: ROUTE -> DATE -> FROM/TO DESTINATION -> TIME ══ */}
+      {/* Booking flow: From -> To -> Date -> Departure -> Seat */}
       {selectedRouteForModal && (
         <div className="modal-overlay">
-          <div className="modal-content w-full max-w-2xl p-6 relative animate-scale-up space-y-5">
+          <div role="dialog" aria-modal="true" aria-labelledby="booking-flow-title" className="modal-content w-full max-w-2xl p-6 relative animate-scale-up space-y-5">
             <button
               onClick={() => setSelectedRouteForModal(null)}
+              aria-label="Close booking flow"
               className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 transition-colors"
             >
               <X className="w-4 h-4" />
@@ -472,9 +475,9 @@ export default function TripsTab({
             {/* Modal Title */}
             <div>
               <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase">
-                4-Step Booking Process
+                From → To → Date → Departure → Seat
               </span>
-              <h2 className="text-xl font-bold text-white mt-0.5">
+              <h2 id="booking-flow-title" className="text-xl font-bold text-white mt-0.5">
                 {selectedRouteForModal.name}
               </h2>
             </div>
@@ -491,7 +494,7 @@ export default function TripsTab({
               >
                 <span className="text-[10px] block font-extrabold uppercase">Step 1</span>
                 <span className="text-xs font-bold flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" /> Pick Date
+                  <MapPin className="w-3.5 h-3.5" /> From / To
                 </span>
               </button>
 
@@ -505,7 +508,7 @@ export default function TripsTab({
               >
                 <span className="text-[10px] block font-extrabold uppercase">Step 2</span>
                 <span className="text-xs font-bold flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5" /> From / To Stops
+                  <Calendar className="w-3.5 h-3.5" /> Date
                 </span>
               </button>
 
@@ -519,13 +522,13 @@ export default function TripsTab({
               >
                 <span className="text-[10px] block font-extrabold uppercase">Step 3</span>
                 <span className="text-xs font-bold flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" /> Time & Seat
+                  <Clock className="w-3.5 h-3.5" /> Departure & Seat
                 </span>
               </button>
             </div>
 
-            {/* STEP 1: SELECT DATE */}
-            {modalStep === 1 && (
+            {/* STEP 2: SELECT DATE */}
+            {modalStep === 2 && (
               <div className="space-y-4 animate-fade-in">
                 <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
                   <div className="flex items-center gap-2 text-xs text-indigo-300 font-semibold">
@@ -538,7 +541,7 @@ export default function TripsTab({
                         key={dateStr}
                         onClick={() => {
                           setModalSelectedDate(dateStr);
-                          setModalStep(2);
+                          setModalStep(3);
                         }}
                         className={`p-3 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between border ${
                           modalSelectedDate === dateStr
@@ -555,17 +558,17 @@ export default function TripsTab({
 
                 <div className="flex justify-end">
                   <button
-                    onClick={() => setModalStep(2)}
+                    onClick={() => setModalStep(3)}
                     className="btn-primary text-xs flex items-center gap-1.5"
                   >
-                    Next: From & To Stops <ArrowRight className="w-4 h-4" />
+                    Next: Choose Departure <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 2: SELECT FROM & TO DESTINATION STOPS */}
-            {modalStep === 2 && (
+            {/* STEP 1: SELECT FROM & TO DESTINATION STOPS */}
+            {modalStep === 1 && (
               <div className="space-y-4 animate-fade-in">
                 <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-4">
                   <div className="flex items-center gap-2 text-xs text-indigo-300 font-semibold">
@@ -575,10 +578,11 @@ export default function TripsTab({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      <label htmlFor="booking-from" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                         Boarding Stop (From)
                       </label>
                       <select
+                        id="booking-from"
                         value={modalFromStop}
                         onChange={(e) => setModalFromStop(e.target.value)}
                         className="w-full p-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:border-indigo-500"
@@ -592,10 +596,11 @@ export default function TripsTab({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      <label htmlFor="booking-to" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                         Dropoff Stop (To)
                       </label>
                       <select
+                        id="booking-to"
                         value={modalToStop}
                         onChange={(e) => setModalToStop(e.target.value)}
                         className="w-full p-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:border-indigo-500"
@@ -623,11 +628,11 @@ export default function TripsTab({
                 </div>
 
                 <div className="flex justify-between">
-                  <button onClick={() => setModalStep(1)} className="btn-ghost text-xs">
-                    Back to Date
+                  <button onClick={() => setSelectedRouteForModal(null)} className="btn-ghost text-xs">
+                    Cancel
                   </button>
-                  <button onClick={() => setModalStep(3)} className="btn-primary text-xs flex items-center gap-1.5">
-                    Next: Pick Time Slot <ArrowRight className="w-4 h-4" />
+                  <button onClick={() => setModalStep(2)} className="btn-primary text-xs flex items-center gap-1.5">
+                    Next: Pick Date <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -641,8 +646,8 @@ export default function TripsTab({
                   <span>
                     📅 {modalSelectedDate} • 🚏 {modalFromStop} → {modalToStop}
                   </span>
-                  <button onClick={() => setModalStep(2)} className="text-[10px] underline text-indigo-400 hover:text-white">
-                    Change Leg
+                  <button onClick={() => setModalStep(1)} className="text-[10px] underline text-indigo-400 hover:text-white">
+                    Change From / To
                   </button>
                 </div>
 
@@ -706,7 +711,7 @@ export default function TripsTab({
 
                 <div className="pt-2 flex justify-between">
                   <button onClick={() => setModalStep(2)} className="btn-ghost text-xs">
-                    Back to From / To
+                    Back to Date
                   </button>
                   <button
                     type="button"

@@ -48,10 +48,21 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
   const userRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchUser();
+    if (!initialUser) void fetchUser();
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 15000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setShowNotifications(false);
+      setShowThemePicker(false);
+      setShowUserMenu(false);
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
   }, []);
 
   // Close dropdowns on outside click
@@ -190,11 +201,15 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
             <div ref={themeRef} className="relative">
               <button
                 onClick={() => setShowThemePicker(!showThemePicker)}
+                aria-label="Choose color theme"
+                aria-expanded={showThemePicker}
+                aria-controls="theme-menu"
                 className="relative p-2 rounded-xl transition-all duration-200 tooltip-trigger"
                 style={{ color: "var(--text-secondary)" }}
                 title={`Theme: ${currentTheme?.name}`}
               >
                 <div
+                  id="theme-menu"
                   className="w-5 h-5 rounded-full border-2"
                   style={{
                     background: `linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))`,
@@ -239,6 +254,9 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
             <div ref={notifRef} className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
+                aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
+                aria-expanded={showNotifications}
+                aria-controls="notification-menu"
                 className="relative p-2 rounded-xl transition-all duration-200"
                 style={{ color: "var(--text-secondary)" }}
               >
@@ -250,6 +268,7 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
 
               {showNotifications && (
                 <div
+                  id="notification-menu"
                   className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl shadow-2xl z-50 overflow-hidden animate-scale-in"
                   style={{ background: "var(--bg-surface)", border: "1px solid var(--glass-border)", boxShadow: "0 24px 60px var(--shadow-color)" }}
                 >
@@ -267,7 +286,7 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
                           Mark all read
                         </button>
                       )}
-                      <button onClick={fetchNotifications} className="p-1 rounded-lg transition-colors" style={{ color: "var(--text-muted)" }}>
+                      <button aria-label="Refresh notifications" onClick={fetchNotifications} className="p-2 rounded-lg transition-colors" style={{ color: "var(--text-muted)" }}>
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -316,10 +335,14 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
             <div ref={userRef} className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
+                aria-label="Open user menu"
+                aria-expanded={showUserMenu}
+                aria-controls="user-menu"
                 className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl transition-all duration-200"
                 style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
               >
                 <div
+                  id="user-menu"
                   className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs text-white"
                   style={{ background: `linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))` }}
                 >

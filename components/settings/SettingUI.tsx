@@ -1,22 +1,6 @@
 import React from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 
-export function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
-  return (
-    <label className="toggle-switch cursor-pointer" onClick={onChange}>
-      <div
-        className="relative w-12 h-6 rounded-full transition-all duration-300"
-        style={{ background: checked ? "var(--accent-primary)" : "var(--border)" }}
-      >
-        <div
-          className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-300"
-          style={{ transform: checked ? "translateX(26px)" : "translateX(4px)" }}
-        />
-      </div>
-    </label>
-  );
-}
-
 export function SettingCard({ children, title, description, icon }: {
   children: React.ReactNode;
   title: string;
@@ -41,22 +25,6 @@ export function SettingCard({ children, title, description, icon }: {
         </div>
       </div>
       {children}
-    </div>
-  );
-}
-
-export function SettingRow({ label, description, children }: {
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-2">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{label}</p>
-        {description && <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{description}</p>}
-      </div>
-      <div className="shrink-0">{children}</div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React from "react";
 import { Palette, CheckCircle2 } from "lucide-react";
-import { SettingCard, SettingRow, Toggle } from "./SettingUI";
+import { SettingCard } from "./SettingUI";
 import { useTheme, THEMES, ThemeId } from "@/lib/theme";
 
 export function AppearanceTab() {
@@ -43,19 +43,9 @@ export function AppearanceTab() {
             ))}
           </div>
         </div>
-
-        <div className="pt-4 border-t space-y-3" style={{ borderColor: "var(--border)" }}>
-          <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>Display Preferences</p>
-          <SettingRow label="Compact Mode" description="Reduce spacing for more content">
-            <Toggle checked={false} onChange={() => {}} />
-          </SettingRow>
-          <SettingRow label="Reduce Animations" description="Minimize motion for accessibility">
-            <Toggle checked={false} onChange={() => {}} />
-          </SettingRow>
-          <SettingRow label="High Contrast" description="Enhance text visibility">
-            <Toggle checked={false} onChange={() => {}} />
-          </SettingRow>
-        </div>
+        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          Motion automatically follows your browser&apos;s reduced-motion preference.
+        </p>
       </div>
     </SettingCard>
   );

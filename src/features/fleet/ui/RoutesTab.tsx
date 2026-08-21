@@ -31,7 +31,7 @@ export default function RoutesTab({ routes, onOpenModal, onEditRoute, onDeactiva
           >
             <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>{r.name}</h3>
             <div className="flex flex-wrap gap-2">
-              {r.routeStops?.map((routeStop: any, i: number) => (
+              {r.routeStops?.map((routeStop: any) => (
                 <span
                   key={routeStop.id}
                   className="text-xs px-2.5 py-1 rounded-lg font-medium"

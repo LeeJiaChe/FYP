@@ -80,11 +80,14 @@ export function SecurityTab() {
           const showKey = field;
           return (
             <div key={field}>
-              <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>
+              <label htmlFor={`security-${field}-password`} className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>
                 {labels[field]}
               </label>
               <div className="relative">
                 <input
+                  id={`security-${field}-password`}
+                  name={keys[field]}
+                  autoComplete={field === "current" ? "current-password" : "new-password"}
                   type={showPasswords[showKey] ? "text" : "password"}
                   value={secForm[keys[field]] as string}
                   onChange={(e) => setSecForm({ ...secForm, [keys[field]]: e.target.value })}
@@ -94,6 +97,7 @@ export function SecurityTab() {
                 />
                 <button
                   type="button"
+                  aria-label={`${showPasswords[showKey] ? "Hide" : "Show"} ${labels[field].toLowerCase()}`}
                   onClick={() => setShowPasswords({ ...showPasswords, [showKey]: !showPasswords[showKey] })}
                   className="absolute right-3 top-1/2 -translate-y-1/2"
                   style={{ color: "var(--text-muted)" }}

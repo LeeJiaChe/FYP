@@ -136,6 +136,11 @@
    ============================ */
 
 @layer base {
+  :focus-visible {
+    outline: 3px solid var(--accent-secondary);
+    outline-offset: 3px;
+  }
+
   body {
     background-color: var(--bg-base);
     color: var(--text-primary);
@@ -220,6 +225,13 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
+}
+
+.btn-primary:disabled,
+.btn-ghost:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
 }
 
 .btn-primary::before {
@@ -529,6 +541,37 @@
   max-height: 90vh;
   overflow-y: auto;
   animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.portal-loading {
+  min-height: 60vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.responsive-table {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+@media (max-width: 430px) {
+  .modal-overlay { padding: 8px; }
+  .modal-content { max-height: 96vh; border-radius: 18px; }
+  .tab-bar { overflow-x: auto; max-width: 100%; }
+  .tab-item { min-height: 44px; padding-inline: 14px; }
+  .btn-primary, .btn-ghost { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ============================

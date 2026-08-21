@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Clock, QrCode, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
+import { Clock, QrCode, RefreshCw } from "lucide-react";
+import Modal from "@/components/Modal";
 
 export interface DynamicPassDescriptor {
   endpoint: string;
@@ -25,7 +27,7 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function fetchQRToken() {
+  const fetchQRToken = useCallback(async function fetchQRToken() {
     try {
       setLoading(true);
       setError(null);
@@ -50,10 +52,10 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [pass.endpoint, pass.requestBody]);
 
   useEffect(() => {
-    void fetchQRToken();
+    const initialFetch = window.setTimeout(() => void fetchQRToken(), 0);
     const autoRefresh = window.setInterval(() => void fetchQRToken(), 45_000);
     const timer = window.setInterval(
       () => setTimeLeft((previous) => Math.max(previous - 1, 0)),
@@ -62,19 +64,17 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
     return () => {
       window.clearInterval(autoRefresh);
       window.clearInterval(timer);
+      window.clearTimeout(initialFetch);
     };
-  }, [pass.endpoint, JSON.stringify(pass.requestBody)]);
+  }, [fetchQRToken]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="glass-panel w-full max-w-md rounded-3xl p-6 border border-slate-700/80 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800" aria-label="Close pass">
-          <X className="w-5 h-5" />
-        </button>
+    <Modal isOpen onClose={onClose} title={pass.title} maxWidth="md">
+      <div className="p-5 sm:p-6">
         <div className="text-center space-y-1 mb-5">
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-400 mb-2"><QrCode className="w-6 h-6" /></div>
-          <h2 className="text-xl font-bold text-white">{pass.title}</h2>
-          <p className="text-xs text-slate-400">{pass.purpose} · signed token refreshes every 45 seconds</p>
+          <p className="text-sm font-bold text-slate-200">{pass.purpose}</p>
+          <p className="text-xs text-slate-400">This QR refreshes automatically for your security.</p>
         </div>
         <div className="bg-slate-900/80 rounded-2xl p-4 mb-5 border border-slate-800 space-y-2 text-xs">
           <div className="flex justify-between"><span className="text-slate-400">Route</span><span className="font-semibold text-white">{pass.routeName}</span></div>
@@ -88,12 +88,11 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
           ) : error ? (
             <div className="w-64 h-64 rounded-2xl bg-red-950/20 border border-red-500/30 flex flex-col items-center justify-center text-center p-4 text-xs text-red-300 gap-3"><p>{error}</p><button onClick={() => void fetchQRToken()} className="px-3 py-2 bg-red-700 text-white rounded-lg">Retry</button></div>
           ) : qrDataUrl ? (
-            <div className="p-3 bg-white rounded-3xl border-4 border-blue-500/30"><img src={qrDataUrl} alt={`${pass.purpose} QR code`} className="w-60 h-60 rounded-2xl" /></div>
+            <div className="p-3 bg-white rounded-3xl border-4 border-blue-500/30"><Image unoptimized width={240} height={240} src={qrDataUrl} alt={`${pass.purpose} QR code`} className="w-60 h-60 rounded-2xl" /></div>
           ) : null}
           <div className="flex items-center gap-2 text-xs text-slate-300"><Clock className="w-4 h-4 text-amber-400" />Expires in <strong className="text-amber-300">{timeLeft}s</strong><button onClick={() => void fetchQRToken()} disabled={loading} className="text-blue-400 underline">Refresh</button></div>
         </div>
-        <div className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-slate-500"><ShieldCheck className="w-4 h-4 text-emerald-400" /><span>Signed, not encrypted; the server rechecks the durable record.</span></div>
       </div>
-    </div>
+    </Modal>
   );
 }

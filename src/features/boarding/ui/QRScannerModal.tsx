@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Camera, CheckCircle2, QrCode, RefreshCw, X } from "lucide-react";
+import { AlertCircle, Camera, CheckCircle2, QrCode, RefreshCw } from "lucide-react";
+import Modal from "@/components/Modal";
 
 interface QRScannerModalProps {
   tripId: string;
@@ -127,23 +128,24 @@ export default function QRScannerModal({
       if (frameTimer !== null) window.clearTimeout(frameTimer);
       stream?.getTracks().forEach((track) => track.stop());
     };
+    // handleScan deliberately reads the latest component state; restarting the
+    // camera for each fallback-token keystroke would make scanning unusable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId, mode]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="glass-panel w-full max-w-lg rounded-3xl p-6 border border-slate-700/80 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800" aria-label="Close scanner">
-          <X className="w-5 h-5" />
-        </button>
-
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={mode === "BOARDING" ? "Boarding Pass Scanner" : "Exit / Alighting Scanner"}
+      maxWidth="lg"
+    >
+      <div className="p-5 sm:p-6">
         <div className="text-center space-y-2 mb-5">
           <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
             {mode === "BOARDING" ? <QrCode className="w-6 h-6" /> : <Camera className="w-6 h-6" />}
           </div>
-          <h2 className="text-xl font-bold text-white">
-            {mode === "BOARDING" ? "Boarding Pass Scanner" : "Exit / Alighting Scanner"}
-          </h2>
-          <p className="text-xs text-slate-400">Signed tokens identify a durable record; the server revalidates live Trip and passenger state.</p>
+          <p className="text-xs text-slate-400">The server verifies the pass, assigned Trip, passenger journey, and current boarding state.</p>
         </div>
 
         <div className="rounded-2xl overflow-hidden border border-slate-700 bg-black aspect-video mb-3">
@@ -155,7 +157,7 @@ export default function QRScannerModal({
         {result && <div className="p-4 mb-4 bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 rounded-xl text-center"><CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-1" /><div className="font-bold text-sm text-white">{result.outcome || "Accepted"}</div>{result.passengerName && <div className="text-slate-400">{result.passengerName}</div>}</div>}
 
         <details className="border-t border-slate-800 pt-4">
-          <summary className="cursor-pointer text-xs font-semibold text-amber-300">Development/Demo fallback: paste signed token</summary>
+          <summary className="cursor-pointer text-xs font-semibold text-amber-300">Development / Demo fallback: paste pass token</summary>
           <div className="space-y-3 mt-3">
             <textarea rows={3} aria-label="Development token fallback" placeholder="Paste the signed JWT token from the displayed pass" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 font-mono" />
             <button onClick={() => void handleScan()} disabled={loading || !tokenInput.trim()} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 disabled:opacity-50">
@@ -164,6 +166,6 @@ export default function QRScannerModal({
           </div>
         </details>
       </div>
-    </div>
+    </Modal>
   );
 }

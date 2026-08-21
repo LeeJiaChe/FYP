@@ -73,3 +73,27 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Install Chromium browser test runner
+        run: |
+          npm install --no-save --no-package-lock @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Prepare isolated browser-test database
+        run: |
+          node --import tsx scripts/verify-test-database.ts
+          DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate reset --force --skip-seed
+          DATABASE_URL="$TEST_DATABASE_URL" npm run db:seed
+
+      - name: Browser end-to-end tests
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: npm run test:e2e
+
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore

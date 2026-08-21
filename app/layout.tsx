@@ -6,12 +6,6 @@ import { Toaster } from "react-hot-toast";
 export const metadata: Metadata = {
   title: "TAR UMT Bus Booking & Real-Time Management System",
   description: "Campus Bus Seat Booking, QR Boarding & Real-Time Fleet Occupancy System",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "TAR UMT Bus",
-  },
   formatDetection: {
     telephone: false,
   },
@@ -21,8 +15,6 @@ export const viewport: Viewport = {
   themeColor: "#080d1a",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({
@@ -32,10 +24,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full theme-dark" data-theme="dark" suppressHydrationWarning>
-      <head>
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-      </head>
       <body className="font-sans min-h-full flex flex-col antialiased">
         <ThemeProvider>
           {children}

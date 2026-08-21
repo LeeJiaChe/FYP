@@ -2,11 +2,11 @@
 
 > **Final Year Project (FYP)** — A responsive web application for directional journey search, segment-aware reserved seating, non-guaranteed walk-in boarding, live simulated-GPS location, and transport operations.
 
-> **Architecture v2 status:** Phases 3–8 implement directional topology,
+> **Architecture v2 status:** Phases 3–9 implement directional topology,
 > reserved journeys/waitlist, boarding/walk-in/alighting, progress-based
 > penalties, fleet administration, persisted simulated GPS telemetry,
-> authenticated realtime invalidation, and segment-weighted analytics. PWA
-> artifact and broad frontend cleanup remain Phase 9 work.
+> authenticated realtime invalidation, segment-weighted analytics, and a
+> responsive accessible frontend. This is a website, not an installable PWA.
 
 ---
 
@@ -276,7 +276,7 @@ See [`NOTES.md`](./NOTES.md) for a full list of assumptions and design decisions
 - How the realtime service is architecturally decoupled from Next.js
 - Directional ordered Stops and journey-aware reserved/standing capacity
 - Reserved versus non-guaranteed Walk-in passes
-- GPS simulator telemetry and later seat-device/PWA removal
+- GPS simulator telemetry, removed seat-device scope, and website-only delivery
 
 ---
 
@@ -299,19 +299,19 @@ FYPBusSystem/
 │   │   ├── penalties/  # Penalty listing
 │   │   ├── notifications/ # Notification read/unread
 │   │   └── analytics/  # Aggregated analytics data
-│   ├── globals.css     # Global styles & Tailwind base
-│   ├── layout.tsx      # Root layout
-│   ├── manifest.ts     # Legacy PWA artifact; scheduled for deletion
+│   ├── globals.css     # Global styles, responsive and focus rules
+│   ├── layout.tsx      # Root website layout and metadata
 │   └── page.tsx        # Landing page
 ├── components/
-│   ├── admin/          # Admin-specific components
-│   ├── student/        # Student-specific components
-│   ├── BusLocationTracker.tsx # Persisted telemetry view; no schedule fallback
-│   ├── DynamicQRModal.tsx
-│   ├── Navbar.tsx
-│   ├── PenaltyAppealModal.tsx
-│   ├── QRScannerModal.tsx
-│   └── SeatGrid.tsx
+│   ├── Navbar.tsx      # Cross-portal navigation
+│   ├── Modal.tsx       # Accessible shared dialog primitive
+│   └── SeatGrid.tsx    # Journey-specific seat selection visual
+├── src/features/
+│   ├── bookings/ui/    # Student journey and reservation UI
+│   ├── boarding/ui/    # Driver operations and pass/scanner UI
+│   ├── fleet/ui/       # Admin Stop/Route/Bus composition
+│   ├── location/ui/    # Persisted telemetry and monitoring UI
+│   └── penalties/ui/   # Student/admin appeal UI
 ├── lib/
 │   ├── auth.ts         # JWT helpers & getCurrentUser()
 │   ├── prisma.ts       # Prisma client singleton

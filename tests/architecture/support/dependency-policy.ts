@@ -143,12 +143,13 @@ export function inspectDependencyPolicy(
         target &&
         target.feature !== owner &&
         target.entry !== "public" &&
+        target.entry !== "ui" &&
         target.entry !== "server"
       ) {
         violations.push({
           file,
           rule: "no-cross-feature-deep-import",
-          detail: `use @/features/${target.feature}/public or /server, not ${specifier}`,
+          detail: `use @/features/${target.feature}/public, /ui, or /server, not ${specifier}`,
         });
       }
     }

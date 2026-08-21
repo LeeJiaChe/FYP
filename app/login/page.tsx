@@ -43,9 +43,9 @@ export default function LoginPage() {
   }
 
   // Helper function for quick demo credential fill
-  function quickFill(userEmail: string) {
+  function quickFill(userEmail: string, demoPassword = "password123") {
     setEmailOrStudentId(userEmail);
-    setPassword("password123");
+    setPassword(demoPassword);
   }
 
   return (
@@ -73,13 +73,16 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Email or Student ID</label>
+              <label htmlFor="login-identity" className="block text-xs font-semibold text-slate-300 mb-1.5">Email or Student ID</label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
+                  id="login-identity"
+                  name="identity"
+                  autoComplete="username"
                   type="text"
                   required
-                  placeholder="student1@tarumt.edu.my or 2201991"
+                  placeholder="student1@student.tarc.edu.my or your Student ID"
                   value={emailOrStudentId}
                   onChange={(e) => setEmailOrStudentId(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
@@ -88,10 +91,13 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">Password</label>
+              <label htmlFor="login-password" className="block text-xs font-semibold text-slate-300 mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
+                  id="login-password"
+                  name="password"
+                  autoComplete="current-password"
                   type="password"
                   required
                   placeholder="••••••••"
@@ -119,7 +125,7 @@ export default function LoginPage() {
             <div className="grid grid-cols-3 gap-1.5 text-[11px]">
               <button
                 type="button"
-                onClick={() => quickFill("student1@tarumt.edu.my")}
+                onClick={() => quickFill("student1@student.tarc.edu.my")}
                 className="py-1.5 px-2 bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 rounded-lg text-blue-300 text-center font-medium transition-colors"
               >
                 Student 1
@@ -133,13 +139,15 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => quickFill("admin@tarumt.edu.my")}
+                onClick={() => quickFill("admin1@admin.tarc.edu.my", "admin1")}
                 className="py-1.5 px-2 bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 rounded-lg text-purple-300 text-center font-medium transition-colors"
               >
                 Admin Staff
               </button>
             </div>
-            <p className="text-[10px] text-slate-500 text-center">Password for demo accounts: <code className="text-slate-400">password123</code></p>
+            <p className="text-[10px] text-slate-500 text-center">
+              Student/driver password: <code className="text-slate-400">password123</code>. Admin: <code className="text-slate-400">admin1</code>.
+            </p>
           </div>
         </div>
 

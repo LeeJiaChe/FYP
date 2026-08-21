@@ -66,8 +66,11 @@ export function ProfileTab() {
         </div>
 
         <div>
-          <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Full Name</label>
+          <label htmlFor="profile-name" className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Full Name</label>
           <input
+            id="profile-name"
+            name="name"
+            autoComplete="name"
             type="text"
             value={profileForm.name}
             onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
@@ -77,8 +80,11 @@ export function ProfileTab() {
         </div>
 
         <div>
-          <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Email Address</label>
+          <label htmlFor="profile-email" className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Email Address</label>
           <input
+            id="profile-email"
+            name="email"
+            autoComplete="email"
             type="email"
             value={profileForm.email}
             readOnly
@@ -89,8 +95,10 @@ export function ProfileTab() {
 
         {user?.studentId && (
           <div>
-            <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Student ID</label>
+            <label htmlFor="profile-student-id" className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Student ID</label>
             <input
+              id="profile-student-id"
+              name="studentId"
               type="text"
               value={profileForm.studentId}
               readOnly

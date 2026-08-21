@@ -1,6 +1,6 @@
 import React from "react";
 
-// ─── VISUAL CONNECTED ROUTE LINE COMPONENT ────────────────────────
+// Journey topology visual owned by the booking feature.
 function ConnectedRouteLine({
   stops,
   fromStop,

@@ -1,14 +1,14 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
-import toast from "react-hot-toast";
+import React, { createContext, useContext, useState } from "react";
+import type { CurrentUser } from "@/shared/ui/current-user";
 
-export type SettingSection = "profile" | "security" | "language" | "appearance" | "notifications" | "privacy" | "data";
+export type SettingSection = "profile" | "security" | "appearance";
 
 interface SettingsContextType {
   activeSection: SettingSection;
   setActiveSection: (s: SettingSection) => void;
-  user: any;
+  user: CurrentUser;
   fetchUser: () => Promise<void>;
   
   // Profile
@@ -27,27 +27,20 @@ interface SettingsContextType {
   secLoading: boolean;
   setSecLoading: (val: boolean) => void;
 
-  // Notification prefs state
-  notifPrefs: any;
-  setNotifPrefs: (val: any) => void;
-
-  // Privacy state
-  privacyPrefs: any;
-  setPrivacyPrefs: (val: any) => void;
-
-  // Language
-  language: string;
-  setLanguage: (val: string) => void;
 }
 
 const SettingsContext = createContext<SettingsContextType | null>(null);
 
-export function SettingsProvider({ children }: { children: React.ReactNode }) {
+export function SettingsProvider({ children, initialUser }: { children: React.ReactNode; initialUser: CurrentUser }) {
   const [activeSection, setActiveSection] = useState<SettingSection>("profile");
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<CurrentUser>(initialUser);
 
   // Profile state
-  const [profileForm, setProfileForm] = useState({ name: "", email: "", studentId: "" });
+  const [profileForm, setProfileForm] = useState({
+    name: initialUser.name,
+    email: initialUser.email,
+    studentId: initialUser.studentId || "",
+  });
   const [profileAlert, setProfileAlert] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
 
@@ -56,46 +49,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [secAlert, setSecAlert] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [secLoading, setSecLoading] = useState(false);
 
-  // Notification prefs state
-  const [notifPrefs, setNotifPrefs] = useState({
-    bookingConfirmed: true,
-    departureReminder: true,
-    waitlistUpdate: true,
-    penaltyIssued: true,
-    appealResolved: true,
-    tripDelayed: true,
-    pushEnabled: false,
-  });
-
-  // Privacy state
-  const [privacyPrefs, setPrivacyPrefs] = useState({
-    showProfileToDrivers: true,
-    allowAnonymousAnalytics: true,
-    twoFactorEnabled: false,
-  });
-
-  // Language
-  const [language, setLanguage] = useState("en");
-
-  useEffect(() => {
-    fetchUser();
-    const savedLang = localStorage.getItem("fyp-language") || "en";
-    setLanguage(savedLang);
-  }, []);
-
   async function fetchUser() {
-    try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-        setProfileForm({
-          name: data.user.name || "",
-          email: data.user.email || "",
-          studentId: data.user.studentId || "",
-        });
-      }
-    } catch (err: any) { toast.error(err.message || "An error occurred"); }
+    const res = await fetch("/api/auth/me");
+    if (!res.ok) return;
+    const data = await res.json();
+    setUser(data.user);
+    setProfileForm({
+      name: data.user.name || "",
+      email: data.user.email || "",
+      studentId: data.user.studentId || "",
+    });
   }
 
   return (
@@ -109,9 +72,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         secForm, setSecForm,
         secAlert, setSecAlert,
         secLoading, setSecLoading,
-        notifPrefs, setNotifPrefs,
-        privacyPrefs, setPrivacyPrefs,
-        language, setLanguage,
       }}
     >
       {children}

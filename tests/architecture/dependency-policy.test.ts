@@ -48,6 +48,13 @@ describe("Architecture v2 dependency policy", () => {
     );
     assert.deepEqual(
       rules(
+        "src/features/boarding/ui/Scanner.tsx",
+        'import { useTrips } from "@/features/trips/ui";',
+      ),
+      [],
+    );
+    assert.deepEqual(
+      rules(
         "src/features/boarding/application/board.ts",
         'import { reserve } from "../../bookings/domain/reserve";',
       ),
