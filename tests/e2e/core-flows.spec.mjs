@@ -73,7 +73,7 @@ test("fresh seed exposes the ten canonical directional routes without retired pl
 test("student creates a reserved journey and opens its Reserved Pass", async ({ page }) => {
   await login(page, "student6@student.tarc.edu.my");
   await openJourney(page, "TAR UMT → Wangsa Maju Section 2");
-  await page.getByRole("button", { name: /Seat 1, available/ }).click();
+  await page.getByRole("button", { name: /Seat \d+, available/ }).first().click();
   await expect(page.getByText("Seat selected. Your seat is guaranteed after booking confirmation.")).toBeVisible();
   await page.getByRole("button", { name: "Confirm Reserved Seat" }).click();
 
