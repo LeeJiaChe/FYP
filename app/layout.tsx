@@ -1,46 +1,41 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
-import { ThemeProvider } from "@/lib/theme";
+import { ThemeProvider, type ThemeId } from "@/lib/theme";
 import { Toaster } from "react-hot-toast";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-
 export const metadata: Metadata = {
-  title: "TAR UMT Bus Booking & Real-Time Management System",
-  description: "Campus Bus Seat Booking, QR Boarding & Real-Time Fleet Occupancy System",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "TAR UMT Bus",
-  },
+  title: "TAR UMT Shuttle Management System",
+  description: "Journey reservation, QR boarding validation, fleet operations and simulated GPS tracking prototype",
   formatDetection: {
     telephone: false,
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#080d1a",
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
+export async function generateViewport(): Promise<Viewport> {
+  const cookieStore = await cookies();
+  const isDark = cookieStore.get("fyp-theme")?.value !== "light";
+  return {
+    themeColor: isDark ? "#0b0e12" : "#f3f1ed",
+    width: "device-width",
+    initialScale: 1,
+  };
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const savedTheme = cookieStore.get("fyp-theme")?.value;
+  const initialTheme: ThemeId = savedTheme === "light" ? "light" : "dark";
+
   return (
-    <html lang="en" className="h-full theme-dark" data-theme="dark" suppressHydrationWarning>
-      <head>
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-      </head>
-      <body className={`${inter.variable} font-sans min-h-full flex flex-col antialiased`}>
-        <ThemeProvider>
+    <html lang="en" className={`h-full theme-${initialTheme}`} data-theme={initialTheme}>
+      <body className="font-sans min-h-full flex flex-col antialiased">
+        <a className="skip-link" href="#main-content">Skip to main content</a>
+        <ThemeProvider initialTheme={initialTheme}>
           {children}
           <Toaster 
             position="bottom-center" 

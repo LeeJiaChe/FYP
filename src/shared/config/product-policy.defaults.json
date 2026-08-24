@@ -1,0 +1,11 @@
+{
+  "bookingOpenLeadMs": 604800000,
+  "boardingOpenLeadMs": 900000,
+  "normalBoardingCloseGraceMs": 300000,
+  "qrTokenLifetimeSeconds": 60,
+  "initialCredit": 100,
+  "noShowPenaltyPoints": 15,
+  "bookingRestrictionBelowCredit": 40,
+  "gpsSimulatorIntervalMs": 5000,
+  "locationRetentionMs": 604800000
+}

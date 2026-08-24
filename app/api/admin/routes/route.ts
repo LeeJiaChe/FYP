@@ -1,127 +1,60 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
-import { createRouteSchema, updateRouteSchema } from "@/lib/validations";
+import {
+  createRoute,
+  createRouteSchema,
+  listRoutes,
+  retireRoute,
+  updateRoute,
+  updateRouteSchema,
+} from "@/features/fleet/server";
+import { unauthenticated } from "@/shared/application/application-error";
+import {
+  handleRoute,
+  parseJsonBody,
+} from "@/shared/http/handle-route.server";
+import { uuidSchema } from "@/shared/types/uuid";
 
-export async function GET() {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized. Admin role required." }, { status: 403 });
-    }
-
-    const routes = await prisma.route.findMany({
-      orderBy: { name: "asc" },
-      include: { _count: { select: { trips: true } } },
-    });
-
-    const formatted = routes.map((r) => ({
-      id: r.id,
-      name: r.name,
-      stops: JSON.parse(r.stops || "[]"),
-      tripsCount: r._count.trips,
-    }));
-
-    return NextResponse.json({ routes: formatted });
-  } catch (err: any) {
-    return NextResponse.json({ error: "Failed to fetch routes" }, { status: 500 });
-  }
+async function actor() {
+  const user = await getUserFromToken();
+  if (!user) throw unauthenticated();
+  return { userId: user.userId, role: user.role };
 }
 
-export async function POST(req: Request) {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized. Admin role required." }, { status: 403 });
-    }
+export async function GET(request: Request) {
+  return handleRoute(request, async () => ({
+    body: { routes: await listRoutes(await actor()) },
+  }));
+}
 
-    const body = await req.json();
-    const validated = createRouteSchema.parse(body);
-
-    const route = await prisma.route.create({
-      data: {
-        name: validated.name,
-        stops: JSON.stringify(validated.stops),
-      },
-    });
-
-    return NextResponse.json({
+export async function POST(request: Request) {
+  return handleRoute(request, async () => ({
+    body: {
       success: true,
-      route: {
-        id: route.id,
-        name: route.name,
-        stops: JSON.parse(route.stops),
-      },
-    });
-  } catch (err: any) {
-    if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
-      return NextResponse.json({ error: msg }, { status: 400 });
-    }
-    return NextResponse.json({ error: "Failed to create route" }, { status: 500 });
-  }
+      route: await createRoute(
+        await actor(),
+        await parseJsonBody(request, createRouteSchema),
+      ),
+    },
+    status: 201,
+  }));
 }
 
-export async function PATCH(req: Request) {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
-    const body = await req.json();
-    const { id, name, stops } = updateRouteSchema.parse(body);
-
-    const route = await prisma.route.update({
-      where: { id },
-      data: {
-        ...(name ? { name } : {}),
-        ...(stops ? { stops: JSON.stringify(stops) } : {}),
-      },
-    });
-
-    return NextResponse.json({
+export async function PATCH(request: Request) {
+  return handleRoute(request, async () => ({
+    body: {
       success: true,
-      route: {
-        id: route.id,
-        name: route.name,
-        stops: JSON.parse(route.stops),
-      },
-    });
-  } catch (err: any) {
-    if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || "Validation error";
-      return NextResponse.json({ error: msg }, { status: 400 });
-    }
-    return NextResponse.json({ error: "Failed to update route" }, { status: 500 });
-  }
+      route: await updateRoute(
+        await actor(),
+        await parseJsonBody(request, updateRouteSchema),
+      ),
+    },
+  }));
 }
 
-export async function DELETE(req: Request) {
-  try {
-    const user = await getUserFromToken();
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-    if (!id) return NextResponse.json({ error: "Route ID required" }, { status: 400 });
-
-    const activeTripsCount = await prisma.trip.count({
-      where: { routeId: id, status: { in: ["NOT_STARTED", "BOARDING", "DEPARTED"] } },
-    });
-
-    if (activeTripsCount > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete route with ${activeTripsCount} active or scheduled trip(s). Reassign or cancel trips first.` },
-        { status: 400 }
-      );
-    }
-
-    await prisma.route.delete({ where: { id } });
-    return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: "Failed to delete route" }, { status: 500 });
-  }
+export async function DELETE(request: Request) {
+  return handleRoute(request, async () => {
+    const id = uuidSchema.parse(new URL(request.url).searchParams.get("id"));
+    await retireRoute(await actor(), id);
+    return { body: { success: true } };
+  });
 }

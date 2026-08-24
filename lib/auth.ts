@@ -1,12 +1,12 @@
+import "server-only";
+
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
+import { serverEnvironment } from "@/shared/config/env.server";
 
-const JWT_SECRET = process.env.JWT_SECRET as string;
-if (!JWT_SECRET) {
-  throw new Error("FATAL: JWT_SECRET environment variable is not set.");
-}
+const JWT_SECRET = serverEnvironment.session.signingSecret;
 export const COOKIE_NAME = "fyp_session";
 
 export interface JWTPayload {
@@ -63,7 +63,7 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
 
 /**
  * Full DB lookup — use only when you need live fields like
- * creditScore or isBookingRestricted that are NOT stored in the JWT.
+ * creditScore or other live account fields that are NOT stored in the JWT.
  */
 export async function getCurrentUser() {
   const cookieStore = await cookies();
@@ -82,4 +82,3 @@ export async function getCurrentUser() {
   
   return user;
 }
-

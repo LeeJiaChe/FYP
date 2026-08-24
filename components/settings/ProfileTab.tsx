@@ -2,6 +2,7 @@ import React from "react";
 import { User, Save } from "lucide-react";
 import { SettingCard, Alert } from "./SettingUI";
 import { useSettings } from "./SettingsContext";
+import { productPolicy } from "@/shared/config/policies";
 
 export function ProfileTab() {
   const {
@@ -45,28 +46,28 @@ export function ProfileTab() {
       description="Update your personal details and display name"
       icon={<User className="w-5 h-5 text-white" />}
     >
-      <form onSubmit={handleProfileSave} className="space-y-4">
+      <form onSubmit={handleProfileSave} className="settings-form">
         {profileAlert && <Alert type={profileAlert.type} message={profileAlert.msg} />}
 
-        <div className="flex items-center gap-4 mb-4">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-2xl"
-            style={{ background: `linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))` }}
-          >
+        <div className="profile-identity">
+          <div className="profile-avatar">
             {profileForm.name?.charAt(0)?.toUpperCase() || "?"}
           </div>
-          <div>
-            <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{profileForm.name}</p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>{profileForm.email}</p>
+          <div className="profile-identity-copy">
+            <strong>{profileForm.name}</strong>
+            <span>{profileForm.email}</span>
             {user?.studentId && (
-              <p className="text-xs mt-0.5" style={{ color: "var(--accent-secondary)" }}>Student ID: {user.studentId}</p>
+              <small>Student ID: {user.studentId}</small>
             )}
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Full Name</label>
+          <label htmlFor="profile-name" className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Full Name</label>
           <input
+            id="profile-name"
+            name="name"
+            autoComplete="name"
             type="text"
             value={profileForm.name}
             onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
@@ -76,8 +77,11 @@ export function ProfileTab() {
         </div>
 
         <div>
-          <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Email Address</label>
+          <label htmlFor="profile-email" className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Email Address</label>
           <input
+            id="profile-email"
+            name="email"
+            autoComplete="email"
             type="email"
             value={profileForm.email}
             readOnly
@@ -88,8 +92,10 @@ export function ProfileTab() {
 
         {user?.studentId && (
           <div>
-            <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Student ID</label>
+            <label htmlFor="profile-student-id" className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Student ID</label>
             <input
+              id="profile-student-id"
+              name="studentId"
               type="text"
               value={profileForm.studentId}
               readOnly
@@ -99,36 +105,23 @@ export function ProfileTab() {
         )}
 
         {user?.role === "STUDENT" && (
-          <div
-            className="p-4 rounded-xl"
-            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
-          >
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>Credit Score</span>
-              <span className="text-lg font-extrabold" style={{ color: (user?.creditScore ?? 100) < 40 ? "#f87171" : "#4ade80" }}>
-                {user?.creditScore ?? 100} / 100
-              </span>
+          <div className={`profile-credit ${(user?.creditScore ?? productPolicy.initialCredit) < productPolicy.bookingRestrictionBelowCredit ? "is-restricted" : ""}`}>
+            <div>
+              <span>Credit Score</span>
+              <strong>
+                {user?.creditScore ?? productPolicy.initialCredit} / {productPolicy.initialCredit}
+              </strong>
             </div>
-            <div className="progress-bar">
-              <div
-                className="progress-fill"
-                style={{
-                  width: `${user?.creditScore ?? 100}%`,
-                  background: (user?.creditScore ?? 100) < 40
-                    ? "linear-gradient(90deg, #ef4444, #f87171)"
-                    : "linear-gradient(90deg, var(--accent-primary), #4ade80)",
-                }}
-              />
-            </div>
-            {user?.isBookingRestricted && (
-              <p className="text-[11px] mt-2 font-semibold" style={{ color: "#f87171" }}>
-                ⚠ Booking privileges currently restricted.
+            {(user?.creditScore ?? productPolicy.initialCredit) <
+              productPolicy.bookingRestrictionBelowCredit && (
+              <p>
+                Booking privileges currently restricted.
               </p>
             )}
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="settings-form-actions">
           <button
             type="submit"
             className="btn-primary flex items-center gap-2"

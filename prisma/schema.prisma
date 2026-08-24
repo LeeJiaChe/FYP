@@ -24,15 +24,7 @@ enum TripStatus {
   BOARDING
   DEPARTED
   ARRIVED
-  DELAYED
   CANCELLED
-}
-
-enum SeatStatus {
-  AVAILABLE
-  RESERVED
-  CHECKED_IN
-  NO_SHOW
 }
 
 enum BookingStatus {
@@ -40,7 +32,13 @@ enum BookingStatus {
   CANCELLED
   COMPLETED
   NO_SHOW
-  WAITLISTED
+}
+
+enum WaitlistStatus {
+  WAITING
+  PROMOTED
+  CANCELLED
+  EXPIRED
 }
 
 enum CheckInMethod {
@@ -48,11 +46,34 @@ enum CheckInMethod {
   MANUAL
 }
 
+enum AlightingMethod {
+  QR
+  MANUAL
+  AUTO_PLANNED_STOP
+}
+
+enum WalkInIntentStatus {
+  PENDING
+  BOARDED
+  REJECTED_FULL
+  EXPIRED
+  CANCELLED
+}
+
+enum WalkInJourneyStatus {
+  BOARDED
+  COMPLETED
+}
+
 enum PenaltyStatus {
   ACTIVE
   APPEALED
   OVERTURNED
   UPHELD
+}
+
+enum PenaltyType {
+  RESERVED_NO_SHOW
 }
 
 enum AppealStatus {
@@ -72,48 +93,79 @@ enum NotificationType {
   TRIP_DELAYED
 }
 
-enum DeviceSignal {
-  OK
-  OFFLINE
-  ERROR
+enum LocationSource {
+  SIMULATED
+  GPS
 }
 
 model User {
-  id                  String          @id @default(uuid())
-  studentId           String?         @unique
-  name                String
-  email               String          @unique
-  passwordHash        String
-  role                UserRole
-  creditScore         Int             @default(100)
-  isBookingRestricted Boolean         @default(false)
-  sessionVersion      Int             @default(1)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  id             String   @id @default(uuid())
+  studentId      String?  @unique
+  name           String
+  email          String   @unique
+  passwordHash   String
+  role           UserRole
+  creditScore    Int      @default(100)
+  sessionVersion Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  driverTrips         Trip[]          @relation("DriverTrips")
-  bookings            Booking[]
-  penalties           Penalty[]
-  appeals             PenaltyAppeal[]
-  reviewedAppeals     PenaltyAppeal[] @relation("AdminReviewedAppeals")
-  notifications       Notification[]
+  driverTrips       Trip[]              @relation("DriverTrips")
+  bookings          Booking[]
+  penalties         Penalty[]
+  appeals           PenaltyAppeal[]
+  reviewedAppeals   PenaltyAppeal[]     @relation("AdminReviewedAppeals")
+  notifications     Notification[]
+  waitlistEntries   WaitlistEntry[]
+  walkInIntents     WalkInIntent[]
+  walkInJourneys    WalkInJourney[]
+  tripStatusChanges TripStatusHistory[] @relation("TripStatusActor")
 }
 
 model Bus {
-  id          String    @id @default(uuid())
-  plateNumber String    @unique
-  capacity    Int
-  status      BusStatus @default(ACTIVE)
-  deletedAt   DateTime?
-  trips       Trip[]
+  id               String    @id @default(uuid())
+  plateNumber      String    @unique
+  seatedCapacity   Int
+  standingCapacity Int
+  status           BusStatus @default(ACTIVE)
+  deletedAt        DateTime?
+  trips            Trip[]
 }
 
 model Route {
-  id        String    @id @default(uuid())
-  name      String
-  stops     String    // JSON string array
-  deletedAt DateTime?
-  trips     Trip[]
+  id         String      @id @default(uuid())
+  name       String
+  deletedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  routeStops RouteStop[]
+  trips      Trip[]
+}
+
+model Stop {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique
+  name       String
+  latitude   Decimal     @db.Decimal(9, 6)
+  longitude  Decimal     @db.Decimal(9, 6)
+  deletedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  routeStops RouteStop[]
+  tripStops  TripStop[]
+}
+
+model RouteStop {
+  id                          String @id @default(uuid()) @db.Uuid
+  routeId                     String
+  route                       Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stopId                      String @db.Uuid
+  stop                        Stop   @relation(fields: [stopId], references: [id], onDelete: Restrict)
+  position                    Int
+  travelDurationToNextMinutes Int?
+
+  @@unique([routeId, position])
+  @@unique([routeId, stopId])
 }
 
 model Trip {
@@ -127,81 +179,270 @@ model Trip {
   departureTime        DateTime
   estimatedArrivalTime DateTime
   boardingDeadline     DateTime
+  seatedCapacity       Int
+  standingCapacity     Int
   status               TripStatus @default(NOT_STARTED)
+  delayMinutes         Int        @default(0)
   delayReason          String?
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
 
-  seats                Seat[]
-  bookings             Booking[]
+  tripSeats       TripSeat[]
+  tripStops       TripStop[]
+  tripSegments    TripSegment[]
+  bookings        Booking[]
+  waitlistEntries WaitlistEntry[]
+  walkInIntents   WalkInIntent[]
+  walkInJourneys  WalkInJourney[]
+  statusHistory   TripStatusHistory[]
+  locationSamples TripLocationSample[]
 
   @@index([routeId])
   @@index([busId])
   @@index([driverId])
   @@index([departureTime])
   @@index([status])
+  @@index([routeId, departureTime])
+  @@index([driverId, departureTime])
 }
 
-model Seat {
-  id         String            @id @default(uuid())
-  tripId     String
-  trip       Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  seatNumber Int
-  status     SeatStatus        @default(AVAILABLE)
-  booking    Booking?
-  deviceLogs DeviceStatusLog[]
+model TripStop {
+  id               String    @id @default(uuid()) @db.Uuid
+  tripId           String
+  trip             Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  stopId           String    @db.Uuid
+  stop             Stop      @relation(fields: [stopId], references: [id], onDelete: Restrict)
+  position         Int
+  stopCode         String
+  stopName         String
+  latitude         Decimal   @db.Decimal(9, 6)
+  longitude        Decimal   @db.Decimal(9, 6)
+  plannedArrival   DateTime
+  plannedDeparture DateTime
+  boardingDeadline DateTime
+  actualArrival    DateTime?
+  actualDeparture  DateTime?
+  passedAt         DateTime?
+
+  segmentsFrom            TripSegment[]   @relation("TripSegmentFrom")
+  segmentsTo              TripSegment[]   @relation("TripSegmentTo")
+  boardingBookings        Booking[]       @relation("BookingBoardingStop")
+  dropOffBookings         Booking[]       @relation("BookingDropOffStop")
+  boardingWaitlistEntries WaitlistEntry[] @relation("WaitlistBoardingStop")
+  dropOffWaitlistEntries  WaitlistEntry[] @relation("WaitlistDropOffStop")
+  boardingWalkInIntents   WalkInIntent[]  @relation("WalkInIntentBoardingStop")
+  dropOffWalkInIntents    WalkInIntent[]  @relation("WalkInIntentDropOffStop")
+  boardingWalkInJourneys  WalkInJourney[] @relation("WalkInJourneyBoardingStop")
+  dropOffWalkInJourneys   WalkInJourney[] @relation("WalkInJourneyDropOffStop")
+
+  @@unique([tripId, position])
+  @@unique([tripId, stopId])
+  @@unique([tripId, id])
+  @@index([stopId, plannedDeparture])
+}
+
+model TripSegment {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  tripId               String
+  trip                 Trip                   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  position             Int
+  fromTripStopId       String                 @db.Uuid
+  fromTripStop         TripStop               @relation("TripSegmentFrom", fields: [fromTripStopId], references: [id], onDelete: Cascade)
+  toTripStopId         String                 @db.Uuid
+  toTripStop           TripStop               @relation("TripSegmentTo", fields: [toTripStopId], references: [id], onDelete: Cascade)
+  reservedSeatSegments ReservedSeatSegment[]
+  standingClaims       StandingSegmentClaim[]
+
+  @@unique([tripId, position])
+  @@unique([tripId, fromTripStopId, toTripStopId])
+  @@unique([tripId, id])
+}
+
+model TripSeat {
+  id                   String                @id @default(uuid()) @db.Uuid
+  tripId               String
+  trip                 Trip                  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  seatNumber           Int
+  bookings             Booking[]
+  reservedSeatSegments ReservedSeatSegment[]
 
   @@unique([tripId, seatNumber])
-  @@index([tripId])
+  @@unique([tripId, id])
 }
 
 model Booking {
-  id               String         @id @default(uuid())
-  studentId        String
-  student          User           @relation(fields: [studentId], references: [id], onDelete: Restrict)
-  tripId           String
-  trip             Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  seatId           String?        @unique
-  seat             Seat?          @relation(fields: [seatId], references: [id], onDelete: SetNull)
-  status           BookingStatus  @default(CONFIRMED)
-  waitlistPosition Int?
-  checkInMethod    CheckInMethod?
-  qrTokenIssuedAt  DateTime?
-  checkedInAt      DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id                 String           @id @default(uuid())
+  studentId          String
+  student            User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  tripId             String
+  trip               Trip             @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  tripSeatId         String           @db.Uuid
+  tripSeat           TripSeat         @relation(fields: [tripId, tripSeatId], references: [tripId, id], onDelete: Restrict)
+  boardingTripStopId String           @db.Uuid
+  boardingTripStop   TripStop         @relation("BookingBoardingStop", fields: [tripId, boardingTripStopId], references: [tripId, id], onDelete: Restrict)
+  dropOffTripStopId  String           @db.Uuid
+  dropOffTripStop    TripStop         @relation("BookingDropOffStop", fields: [tripId, dropOffTripStopId], references: [tripId, id], onDelete: Restrict)
+  status             BookingStatus    @default(CONFIRMED)
+  checkInMethod      CheckInMethod?
+  checkedInAt        DateTime?
+  actualAlightedAt   DateTime?
+  alightingMethod    AlightingMethod?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
-  penalties        Penalty[]
+  penalties            Penalty[]
+  reservedSeatSegments ReservedSeatSegment[]
+  promotedFromWaitlist WaitlistEntry?        @relation("WaitlistPromotion")
 
-  @@index([studentId])
-  @@index([tripId])
+  @@unique([tripId, id])
+  @@unique([tripId, id, tripSeatId])
+  @@index([studentId, tripId, status])
+  @@index([tripId, status])
   @@index([status])
-  @@unique([tripId, waitlistPosition])
+  @@index([boardingTripStopId, status, checkedInAt])
+}
+
+model ReservedSeatSegment {
+  id            String      @id @default(uuid()) @db.Uuid
+  bookingId     String
+  tripId        String
+  tripSeatId    String      @db.Uuid
+  tripSegmentId String      @db.Uuid
+  booking       Booking     @relation(fields: [tripId, bookingId, tripSeatId], references: [tripId, id, tripSeatId], onDelete: Cascade)
+  tripSeat      TripSeat    @relation(fields: [tripId, tripSeatId], references: [tripId, id], onDelete: Cascade)
+  tripSegment   TripSegment @relation(fields: [tripId, tripSegmentId], references: [tripId, id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([tripSeatId, tripSegmentId])
+  @@unique([bookingId, tripSegmentId])
+  @@index([bookingId])
+  @@index([tripId, tripSegmentId])
+}
+
+model WaitlistEntry {
+  id                 String         @id @default(uuid())
+  studentId          String
+  student            User           @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  tripId             String
+  trip               Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  boardingTripStopId String         @db.Uuid
+  boardingTripStop   TripStop       @relation("WaitlistBoardingStop", fields: [tripId, boardingTripStopId], references: [tripId, id], onDelete: Restrict)
+  dropOffTripStopId  String         @db.Uuid
+  dropOffTripStop    TripStop       @relation("WaitlistDropOffStop", fields: [tripId, dropOffTripStopId], references: [tripId, id], onDelete: Restrict)
+  queuedAt           DateTime       @default(now())
+  status             WaitlistStatus @default(WAITING)
+  promotedBookingId  String?
+  promotedBooking    Booking?       @relation("WaitlistPromotion", fields: [tripId, promotedBookingId], references: [tripId, id], onDelete: Restrict)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@unique([tripId, promotedBookingId])
+  @@index([tripId, status, queuedAt])
+  @@index([studentId, tripId, status])
+}
+
+model WalkInIntent {
+  id                 String             @id @default(uuid())
+  studentId          String
+  student            User               @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  tripId             String
+  trip               Trip               @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  boardingTripStopId String             @db.Uuid
+  boardingTripStop   TripStop           @relation("WalkInIntentBoardingStop", fields: [tripId, boardingTripStopId], references: [tripId, id], onDelete: Restrict)
+  dropOffTripStopId  String             @db.Uuid
+  dropOffTripStop    TripStop           @relation("WalkInIntentDropOffStop", fields: [tripId, dropOffTripStopId], references: [tripId, id], onDelete: Restrict)
+  status             WalkInIntentStatus @default(PENDING)
+  issuedAt           DateTime           @default(now())
+  expiresAt          DateTime
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  journey            WalkInJourney?
+
+  @@unique([tripId, id, studentId, boardingTripStopId, dropOffTripStopId])
+  @@index([studentId, status, expiresAt])
+  @@index([tripId, status, expiresAt])
+}
+
+model WalkInJourney {
+  id                 String                 @id @default(uuid())
+  walkInIntentId     String                 @unique
+  walkInIntent       WalkInIntent           @relation(fields: [tripId, walkInIntentId, studentId, boardingTripStopId, dropOffTripStopId], references: [tripId, id, studentId, boardingTripStopId, dropOffTripStopId], onDelete: Restrict)
+  studentId          String
+  student            User                   @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  tripId             String
+  trip               Trip                   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  boardingTripStopId String                 @db.Uuid
+  boardingTripStop   TripStop               @relation("WalkInJourneyBoardingStop", fields: [tripId, boardingTripStopId], references: [tripId, id], onDelete: Restrict)
+  dropOffTripStopId  String                 @db.Uuid
+  dropOffTripStop    TripStop               @relation("WalkInJourneyDropOffStop", fields: [tripId, dropOffTripStopId], references: [tripId, id], onDelete: Restrict)
+  boardedAt          DateTime
+  boardingMethod     CheckInMethod
+  status             WalkInJourneyStatus    @default(BOARDED)
+  actualAlightedAt   DateTime?
+  alightingMethod    AlightingMethod?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  standingClaims     StandingSegmentClaim[]
+
+  @@unique([tripId, id])
+  @@unique([tripId, walkInIntentId, studentId, boardingTripStopId, dropOffTripStopId])
+  @@index([studentId, tripId, status])
+  @@index([tripId, status])
+}
+
+model StandingSegmentClaim {
+  id              String        @id @default(uuid()) @db.Uuid
+  walkInJourneyId String
+  tripId          String
+  tripSegmentId   String        @db.Uuid
+  walkInJourney   WalkInJourney @relation(fields: [tripId, walkInJourneyId], references: [tripId, id], onDelete: Cascade)
+  tripSegment     TripSegment   @relation(fields: [tripId, tripSegmentId], references: [tripId, id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
+  @@unique([walkInJourneyId, tripSegmentId])
+  @@index([tripId, tripSegmentId])
+  @@index([walkInJourneyId])
+}
+
+model TripStatusHistory {
+  id         String     @id @default(uuid())
+  tripId     String
+  trip       Trip       @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromStatus TripStatus
+  toStatus   TripStatus
+  actorId    String
+  actor      User       @relation("TripStatusActor", fields: [actorId], references: [id], onDelete: Restrict)
+  reason     String?
+  occurredAt DateTime   @default(now())
+
+  @@index([tripId, occurredAt])
+  @@index([actorId, occurredAt])
 }
 
 model Penalty {
   id                   String        @id @default(uuid())
-  bookingId            String
-  booking              Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId            String        @unique
+  booking              Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
   studentId            String
-  student              User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student              User          @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  type                 PenaltyType   @default(RESERVED_NO_SHOW)
   creditPointsDeducted Int           @default(15)
   reason               String        @default("No-show")
   status               PenaltyStatus @default(ACTIVE)
   createdAt            DateTime      @default(now())
 
-  appeals              PenaltyAppeal[]
+  appeal PenaltyAppeal?
 
-  @@index([bookingId])
-  @@index([studentId])
+  @@index([studentId, createdAt])
+  @@index([status, createdAt])
 }
 
 model PenaltyAppeal {
   id                String       @id @default(uuid())
   penaltyId         String       @unique
-  penalty           Penalty      @relation(fields: [penaltyId], references: [id], onDelete: Cascade)
+  penalty           Penalty      @relation(fields: [penaltyId], references: [id], onDelete: Restrict)
   studentId         String
-  student           User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student           User         @relation(fields: [studentId], references: [id], onDelete: Restrict)
   reason            String
   status            AppealStatus @default(PENDING)
   reviewedByAdminId String?
@@ -210,28 +451,34 @@ model PenaltyAppeal {
   createdAt         DateTime     @default(now())
   resolvedAt        DateTime?
 
-  @@index([studentId])
+  @@index([studentId, createdAt])
+  @@index([status, createdAt])
 }
 
 model Notification {
-  id        String           @id @default(uuid())
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      NotificationType
-  message   String
-  isRead    Boolean          @default(false)
-  createdAt DateTime         @default(now())
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             NotificationType
+  message          String
+  deduplicationKey String?          @unique
+  isRead           Boolean          @default(false)
+  createdAt        DateTime         @default(now())
 
   @@index([userId])
   @@index([userId, isRead])
 }
 
-model DeviceStatusLog {
-  id              String       @id @default(uuid())
-  seatId          String
-  seat            Seat         @relation(fields: [seatId], references: [id], onDelete: Cascade)
-  simulatedSignal DeviceSignal @default(OK)
-  recordedAt      DateTime     @default(now())
+model TripLocationSample {
+  id         String         @id @default(uuid()) @db.Uuid
+  tripId     String
+  trip       Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  latitude   Decimal        @db.Decimal(9, 6)
+  longitude  Decimal        @db.Decimal(9, 6)
+  recordedAt DateTime
+  receivedAt DateTime       @default(now())
+  source     LocationSource
 
-  @@index([seatId])
+  @@index([tripId, recordedAt])
+  @@index([recordedAt])
 }

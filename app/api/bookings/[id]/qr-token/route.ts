@@ -1,52 +1,22 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getUserFromToken } from "@/lib/auth";
-import { generateQRTokenData } from "@/lib/qr";
+import { unauthenticated } from "@/shared/application/application-error";
+import { handleRoute } from "@/shared/http/handle-route.server";
+import { issueReservedBoardingPass } from "@/features/boarding/server";
+import { bookingIdSchema } from "@/features/bookings/server";
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return handleRoute(request, async () => {
     const user = await getUserFromToken();
-    if (!user || user.role !== "STUDENT") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
-    const { id: bookingId } = await params;
-
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { trip: true, seat: true },
-    });
-
-    if (!booking) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    if (booking.studentId !== user.userId) {
-      return NextResponse.json({ error: "Unauthorized access to this booking" }, { status: 403 });
-    }
-
-    if (booking.status !== "CONFIRMED") {
-      return NextResponse.json({ error: `Cannot generate QR for booking status: ${booking.status}` }, { status: 400 });
-    }
-
-    const { token, qrDataUrl, issuedAt } = await generateQRTokenData({
-      bookingId: booking.id,
-      seatId: booking.seatId,
-      tripId: booking.tripId,
-    });
-
-    await prisma.booking.update({
-      where: { id: bookingId },
-      data: { qrTokenIssuedAt: issuedAt },
-    });
-
-    return NextResponse.json({
-      token,
-      qrDataUrl,
-      issuedAt,
-      expiresInSeconds: 60,
-    });
-  } catch (err: any) {
-    return NextResponse.json({ error: "Failed to generate QR token" }, { status: 500 });
-  }
+    if (!user) throw unauthenticated();
+    const { id } = await params;
+    return {
+      body: await issueReservedBoardingPass(
+        { userId: user.userId, role: user.role },
+        bookingIdSchema.parse(id),
+      ),
+    };
+  });
 }

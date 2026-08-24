@@ -1,3 +1,10 @@
+> **Historical proposal snapshot (superseded):** This converted November 2025
+> proposal preserves the scope understood at that time. References below to IoT
+> seat devices, screenshot prevention, whole-trip seat matrices, timetable-only
+> cron logic, and “full E2E coverage” are not current product claims. The
+> canonical final behavior is defined by `framework/APP_SPECIFICATION.md` and
+> the Phase 8–10/final acceptance evidence.
+
 | Student Name | Lee Jia Che |  |  |
 | :---- | :---- | :---- | :---- |
 | **Programme** | RSW (Software Engineering) |  |  |

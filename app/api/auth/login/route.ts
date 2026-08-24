@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { verifyPassword, signToken, COOKIE_NAME } from "@/lib/auth";
 import { loginSchema } from "@/lib/validations";
 import { loginRateLimiter } from "@/lib/rate-limit";
+import { isBookingRestricted } from "@/features/penalties/public";
+import { productPolicy } from "@/shared/config/policies";
 
 export async function POST(req: Request) {
   try {
@@ -48,7 +50,7 @@ export async function POST(req: Request) {
         role: user.role,
         studentId: user.studentId,
         creditScore: user.creditScore,
-        isBookingRestricted: user.isBookingRestricted,
+        isBookingRestricted: isBookingRestricted(user.creditScore, productPolicy),
       },
     });
 

@@ -1,31 +1,46 @@
+import "server-only";
+
+import { serverEnvironment } from "@/shared/config/env.server";
+import { isValidRealtimeEmission } from "@/shared/realtime/event-contract.js";
+
+export type RealtimeEvent =
+  | "trip.changed"
+  | "occupancy.changed"
+  | "location.changed"
+  | "notification.changed";
+
+export interface RealtimeInvalidation {
+  readonly entityId: string;
+  readonly changedAt: string;
+  readonly reason?: string;
+}
+
 /**
  * Server-side only utility to emit events to the standalone Socket.io realtime service.
  * This file must NEVER be imported in client components.
  * Uses REALTIME_URL (private, server-only) — not NEXT_PUBLIC_REALTIME_URL.
  */
-export async function notifyRealtime(room: string, event: string, data: any) {
+export async function notifyRealtime(
+  room: string,
+  event: RealtimeEvent,
+  data: RealtimeInvalidation,
+) {
   try {
-    // Use a server-only env var (no NEXT_PUBLIC_ prefix) so the realtime URL is
-    // never leaked into the client bundle. Falls back to localhost for local dev.
-    const realtimeUrl = process.env.REALTIME_URL || "http://localhost:4000";
-    const secret = process.env.REALTIME_SERVICE_SECRET;
-    if (!secret) {
-      console.error("[Realtime Emit] REALTIME_SERVICE_SECRET not set, skipping emit");
-      return;
-    }
+    const realtimeUrl = serverEnvironment.realtime.serviceUrl;
+    const secret = serverEnvironment.realtime.serviceSecret;
 
-    await fetch(`${realtimeUrl}/emit`, {
+    if (!isValidRealtimeEmission(room, event, data)) {
+      throw new TypeError("Invalid realtime emission contract");
+    }
+    const response = await fetch(`${realtimeUrl}/emit`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
       },
-      body: JSON.stringify({
-        room,
-        event,
-        data,
-        secret,
-      }),
+      body: JSON.stringify({ room, event, data }),
     });
+    if (!response.ok) throw new Error(`Realtime service returned ${response.status}`);
   } catch (error) {
     // Fire-and-forget — realtime failure must never block the primary API response
     console.error("[Realtime Emit Error]", error);
