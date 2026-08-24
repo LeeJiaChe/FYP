@@ -9,15 +9,17 @@ async function login(page, identity, password = "password123") {
 }
 
 async function openJourney(page, routeName) {
-  const routeCard = page
-    .getByRole("heading", { name: routeName })
-    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' glass-card ')][1]");
-  await routeCard.getByRole("button", { name: /Choose From and To/ }).click();
-  await expect(page.getByText("From → To → Date → Departure → Seat")).toBeVisible();
-  await page.getByRole("button", { name: /Next: Pick Date/ }).click();
-  await page.getByRole("button", { name: /Next: Choose Departure/ }).click();
-  await page.getByRole("button", { name: /Check Seats/ }).first().click();
-  await expect(page.getByRole("dialog", { name: /Select Seat/ })).toBeVisible();
+  await page.getByRole("button", { name: "Book Shuttle" }).click();
+  const response = await page.request.get("/api/routes");
+  const { routes } = await response.json();
+  const route = routes.find((item) => item.name === routeName);
+  const stops = route.stops ?? route.routeStops.map((item) => item.stop.name);
+  await page.getByLabel("From").selectOption({ label: stops[0] });
+  await page.getByLabel("To").selectOption({ label: stops.at(-1) });
+  await page.getByLabel("Date").selectOption({ index: 1 });
+  const departure = page.getByRole("article").filter({ hasText: routeName }).first();
+  await departure.getByRole("button", { name: "Check seats" }).click();
+  await expect(page.getByRole("dialog", { name: "Choose your seat" })).toBeVisible();
 }
 
 async function selectOptionContaining(select, text) {
@@ -78,11 +80,9 @@ test("student creates a reserved journey and opens its Reserved Pass", async ({ 
   await expect(page.getByText("Seat selected. Your seat is guaranteed after booking confirmation.")).toBeVisible();
   await page.getByRole("button", { name: "Confirm Reserved Seat" }).click();
 
-  await expect(page.getByText("RESERVED · CONFIRMED")).toBeVisible();
+  await expect(page.getByText("Reserved · CONFIRMED")).toBeVisible();
   const bookingArticle = page.getByRole("article").filter({ hasText: "TAR UMT → Wangsa Maju Section 2" });
-  await expect(
-    bookingArticle.getByRole("heading", { name: "TAR UMT → Wangsa Maju Section 2" }),
-  ).toBeVisible();
+  await expect(bookingArticle).toBeVisible();
 
   const driver = await browser.newPage();
   await login(driver, "driver1@tarumt.edu.my");
@@ -105,11 +105,8 @@ test("student joins a deterministic full-journey waitlist through the UI", async
   await openJourney(page, "TAR UMT → PV10/PV12/PV13 corridor");
   await expect(page.getByText("No single seat is free across this complete journey.")).toBeVisible();
   await page.getByRole("button", { name: "Join Waitlist" }).click();
-  await expect(page.getByText("WAITLIST · WAITING")).toBeVisible();
-  const waitlistArticle = page.getByRole("article").filter({ hasText: "WAITLIST · WAITING" });
-  await expect(
-    waitlistArticle.getByRole("heading", { name: "TAR UMT → PV10/PV12/PV13 corridor" }),
-  ).toBeVisible();
+  await expect(page.getByText("Waitlist · WAITING")).toBeVisible();
+  await expect(page.getByRole("article").filter({ hasText: "TAR UMT → PV10/PV12/PV13 corridor" })).toBeVisible();
 });
 
 test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ page }) => {
@@ -118,7 +115,7 @@ test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ pa
   await page.getByRole("button", { name: "Generate Walk-in Pass" }).click();
   await expect(page.getByRole("dialog", { name: /Walk-in Boarding Pass/ })).toBeVisible();
   await expect(
-    page.getByText("This pass does not guarantee boarding. Standing capacity is checked when scanned."),
+    page.getByText(/Boarding not guaranteed/),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy demo token" })).toBeVisible();
 });
@@ -128,17 +125,19 @@ test("assigned driver starts boarding and performs a real manual boarding mutati
   const tripSelect = page.getByLabel("Assigned Trip");
   const option = tripSelect.locator("option").filter({ hasText: "TAR UMT → Wangsa Maju Section 2" });
   await tripSelect.selectOption(await option.getAttribute("value"));
+  await page.getByRole("button", { name: /Manifest/ }).click();
   await expect(page.getByText("E2E Boarding Student")).toBeVisible();
+  await page.getByRole("button", { name: /Trip/ }).click();
   const startBoarding = page.getByRole("button", { name: "Start boarding" });
   if (await startBoarding.isVisible()) await startBoarding.click();
   await expect(page.getByText(/Current stop: TAR UMT Gate 7 \/ East Campus/)).toBeVisible();
-  const passenger = page
-    .getByText(/E2E Boarding Student · RESERVED/)
-    .locator("xpath=ancestor::div[contains(@class, 'bg-slate-900')][1]");
+  await page.getByRole("button", { name: /Manifest/ }).click();
+  const passenger = page.getByRole("article").filter({ hasText: "E2E Boarding Student" }).first();
   await passenger.getByRole("button", { name: "Manual board" }).click();
-  await expect(passenger.getByText("Boarded")).toBeVisible();
+  await expect(page.getByText("On board")).toBeVisible();
 
-  await page.getByRole("button", { name: /Scan Boarding/ }).click();
+  await page.getByRole("button", { name: /Trip/ }).click();
+  await page.getByRole("button", { name: /Scan boarding pass/ }).click();
   await expect(page.locator("video")).toBeVisible();
   await expect(page.getByText("Development / Demo fallback")).toBeVisible();
 });
@@ -146,7 +145,7 @@ test("assigned driver starts boarding and performs a real manual boarding mutati
 test("student appeal submission and admin approval complete through visible workflows", async ({ browser }) => {
   const student = await browser.newPage();
   await login(student, "student9@student.tarc.edu.my");
-  await student.getByRole("tab", { name: /Penalties & Appeals/ }).click();
+  await student.getByRole("button", { name: /Credit & Appeals/ }).click();
   await expect(student.getByText("85", { exact: true })).toBeVisible();
   await student.getByRole("main").getByRole("button", { name: "Submit Appeal" }).click();
   const appealDialog = student.getByRole("dialog", { name: "Appeal penalty" });
@@ -159,18 +158,18 @@ test("student appeal submission and admin approval complete through visible work
 
   const admin = await browser.newPage();
   await login(admin, "admin1@admin.tarc.edu.my", "admin1");
-  await admin.getByRole("tab", { name: "Appeals" }).click();
-  const appealCard = admin
-    .getByText("E2E Appeal Student")
-    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' glass-card ')][1]");
-  await appealCard.getByPlaceholder("Admin review comment / note...").fill("Approved in deterministic E2E.");
-  await appealCard.getByRole("button", { name: /Approve/ }).click();
-  await expect(appealCard.getByText("Status: APPROVED")).toBeVisible();
+  await admin.getByRole("button", { name: "Appeals" }).click();
+  await admin.getByRole("button", { name: /E2E Appeal Student/ }).click();
+  await admin.getByLabel("Review comment").fill("Approved in deterministic E2E.");
+  await admin.getByRole("button", { name: /Approve and restore credit/ }).click();
+  await expect(admin.getByText("Appeal approved", { exact: true })).toBeVisible();
+  await expect(admin.getByRole("button", { name: "Reject appeal" })).toHaveCount(0);
+  await expect(admin.getByRole("button", { name: /Approve and restore credit/ })).toHaveCount(0);
   await admin.close();
 
   const result = await browser.newPage();
   await login(result, "student9@student.tarc.edu.my");
-  await result.getByRole("tab", { name: /Penalties & Appeals/ }).click();
+  await result.getByRole("button", { name: /Credit & Appeals/ }).click();
   await expect(result.getByText("100", { exact: true })).toBeVisible();
   await expect(result.getByText("OVERTURNED", { exact: true })).toBeVisible();
   await expect(result.getByText("Approved in deterministic E2E.")).toBeVisible();
@@ -179,8 +178,8 @@ test("student appeal submission and admin approval complete through visible work
 
 test("admin schedules a valid Trip and sees its generated snapshot projection", async ({ page }) => {
   await login(page, "admin1@admin.tarc.edu.my", "admin1");
-  await page.getByRole("tab", { name: "Timetable" }).click();
-  await page.getByRole("button", { name: "Schedule New Trip" }).click();
+  await page.getByRole("button", { name: "Timetable" }).click();
+  await page.getByRole("button", { name: "Schedule Trip" }).click();
   await page.getByLabel("Route").selectOption({ label: "PV10/PV12/PV13 corridor → TAR UMT" });
   await selectOptionContaining(page.getByLabel("Bus"), "TAR-1002");
   await selectOptionContaining(page.getByLabel("Driver"), "Tan Boon Driver");
@@ -191,27 +190,29 @@ test("admin schedules a valid Trip and sees its generated snapshot projection", 
   await page.getByLabel("Departure Time").fill(local);
   await page.getByRole("button", { name: "Schedule Trip" }).click();
 
-  const scheduled = page
-    .getByRole("heading", { name: "PV10/PV12/PV13 corridor → TAR UMT" })
-    .last()
-    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' glass-card ')][1]");
-  await expect(scheduled.getByText("TAR-1002", { exact: true })).toBeVisible();
-  await expect(scheduled.getByText(/Driver: Tan Boon Driver/)).toBeVisible();
-  await expect(scheduled.getByText(/Snapshot: 28 seated \+ 12 standing/)).toBeVisible();
+  const scheduled = page.getByRole("article").filter({ hasText: "PV10/PV12/PV13 corridor → TAR UMT" }).last();
+  await expect(scheduled.getByText(/TAR-1002 · Tan Boon Driver/)).toBeVisible();
+  await expect(scheduled.getByText(/28 seated \+ 12 standing/)).toBeVisible();
 });
 
 test("persisted GPS remains explicitly simulated and never timetable-derived", async ({ page }) => {
   await login(page, "student1@student.tarc.edu.my");
-  await page.getByRole("tab", { name: /Track Bus/ }).click();
+  await page.getByRole("button", { name: "Track" }).click();
   await page.getByLabel("Select Trip to Track:").selectOption({ index: 1 });
   await expect(page.getByText(/Simulated GPS \/ Prototype/)).toBeVisible();
   await expect(page.getByText(/Latest sample|No live telemetry received yet/)).toBeVisible();
 });
 
-test("system, light, and dark appearance preferences remain readable", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "light" });
+test("only persistent Light and Dark appearance modes remain readable", async ({ page }) => {
   await login(page, "student1@student.tarc.edu.my");
-  await page.evaluate(() => localStorage.setItem("fyp-theme", "system"));
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const darkColors = await page.locator("body").evaluate((body) => ({
+    background: getComputedStyle(body).backgroundColor,
+    foreground: getComputedStyle(body).color,
+  }));
+  expect(darkColors.background).not.toBe(darkColors.foreground);
+
+  await page.getByRole("button", { name: "Switch to Light Mode" }).click();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   const lightColors = await page.locator("body").evaluate((body) => ({
@@ -219,14 +220,9 @@ test("system, light, and dark appearance preferences remain readable", async ({ 
     foreground: getComputedStyle(body).color,
   }));
   expect(lightColors.background).not.toBe(lightColors.foreground);
-
-  await page.evaluate(() => localStorage.setItem("fyp-theme", "dark"));
+  expect(lightColors.background).not.toBe(darkColors.background);
+  await expect(page.getByText(/System|Ocean|Forest|Sunset|Midnight/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Switch to Dark Mode" }).click();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  const darkColors = await page.locator("body").evaluate((body) => ({
-    background: getComputedStyle(body).backgroundColor,
-    foreground: getComputedStyle(body).color,
-  }));
-  expect(darkColors.background).not.toBe(darkColors.foreground);
-  expect(darkColors.background).not.toBe(lightColors.background);
 });

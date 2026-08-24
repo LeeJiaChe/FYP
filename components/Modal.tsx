@@ -7,6 +7,7 @@ interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  description?: string;
   children: ReactNode;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl";
 }
@@ -15,12 +16,16 @@ export default function Modal({
   isOpen,
   onClose,
   title,
+  description,
   children,
   maxWidth = "md",
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const titleId = useId();
+  const descriptionId = useId();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -34,7 +39,7 @@ export default function Modal({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab" || !dialog) return;
@@ -65,7 +70,7 @@ export default function Modal({
       document.body.style.overflow = previousOverflow;
       returnFocusRef.current?.focus();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -89,20 +94,20 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
+        aria-describedby={description ? descriptionId : undefined}
         aria-label={title ? undefined : "Dialog"}
         tabIndex={-1}
         className={`modal-content w-full ${maxWidthClasses[maxWidth]} relative`}
       >
         {title && (
-          <div className="flex justify-between items-center border-b border-white/10 pb-4 mb-4">
-            <h2 id={titleId} className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>
-              {title}
-            </h2>
+          <div className="modal-header">
+            <div><h2 id={titleId} className="modal-title">{title}</h2>
+              {description && <p id={descriptionId} className="modal-description">{description}</p>}
+            </div>
             <button
               onClick={onClose}
               aria-label="Close dialog"
-              className="p-1 hover:bg-white/10 rounded-lg transition-colors z-10"
-              style={{ color: "var(--text-muted)" }}
+              className="modal-close"
             >
               <X className="w-5 h-5" />
             </button>
@@ -112,13 +117,12 @@ export default function Modal({
           <button
             onClick={onClose}
             aria-label="Close dialog"
-            className="absolute top-4 right-4 p-1 hover:bg-white/10 rounded-lg transition-colors z-10"
-            style={{ color: "var(--text-muted)" }}
+            className="modal-close modal-close-floating"
           >
             <X className="w-5 h-5" />
           </button>
         )}
-        <div className="mt-2">
+        <div className="modal-body">
           {children}
         </div>
       </div>

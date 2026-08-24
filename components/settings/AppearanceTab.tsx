@@ -1,7 +1,7 @@
 import React from "react";
-import { Palette, CheckCircle2 } from "lucide-react";
+import { Moon, Palette, Sun } from "lucide-react";
 import { SettingCard } from "./SettingUI";
-import { useTheme, THEMES, ThemeId } from "@/lib/theme";
+import { useTheme, type ThemeId } from "@/lib/theme";
 
 export function AppearanceTab() {
   const { theme, setTheme } = useTheme();
@@ -9,38 +9,32 @@ export function AppearanceTab() {
   return (
     <SettingCard
       title="Appearance"
-      description="Customize the look and feel of the app"
+      description="Choose Light or Dark mode"
       icon={<Palette className="w-5 h-5 text-white" />}
     >
-      <div className="space-y-5">
+      <div className="appearance-settings">
         <div>
-          <p className="text-sm font-bold mb-3" style={{ color: "var(--text-primary)" }}>Color Theme</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {THEMES.map((t) => (
+          <p className="mb-3 text-sm font-bold" style={{ color: "var(--text-primary)" }}>Appearance</p>
+          <div className="appearance-options">
+            {([
+              { id: "light", name: "Light", description: "Bright neutral surfaces", icon: Sun },
+              { id: "dark", name: "Dark", description: "Charcoal operational surfaces", icon: Moon },
+            ] as const).map((option) => {
+              const Icon = option.icon;
+              return (
               <button
-                key={t.id}
-                onClick={() => setTheme(t.id as ThemeId)}
-                className="flex flex-col items-start gap-2 p-4 rounded-xl text-left transition-all duration-200"
-                style={{
-                  border: `2px solid ${theme === t.id ? "var(--accent-primary)" : "var(--border)"}`,
-                  background: theme === t.id ? "var(--accent-glow)" : "var(--bg-surface)",
-                  transform: theme === t.id ? "scale(1.02)" : "scale(1)",
-                }}
+                key={option.id}
+                onClick={() => setTheme(option.id as ThemeId)}
+                aria-pressed={theme === option.id}
+                className={theme === option.id ? "active" : ""}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">{t.icon}</span>
-                  {theme === t.id && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: "var(--accent-primary)" }} />}
-                </div>
+                <Icon className="size-5" aria-hidden style={{ color: theme === option.id ? "var(--text)" : "var(--text-muted)" }} />
                 <div>
-                  <p className="text-xs font-bold" style={{ color: theme === t.id ? "var(--accent-secondary)" : "var(--text-primary)" }}>
-                    {t.name}
-                  </p>
-                  <p className="text-[10px] leading-tight mt-0.5" style={{ color: "var(--text-muted)" }}>
-                    {t.description}
-                  </p>
+                  <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{option.name}</p>
+                  <p className="mt-1 text-xs leading-snug" style={{ color: "var(--text-muted)" }}>{option.description}</p>
                 </div>
               </button>
-            ))}
+            )})}
           </div>
         </div>
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>

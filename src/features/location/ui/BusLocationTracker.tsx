@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import io from "socket.io-client";
-import { AlertCircle, Bus, Clock, MapPin, Navigation, RefreshCw } from "lucide-react";
+import { Bus, Clock, MapPin, Navigation, RefreshCw } from "lucide-react";
 
 interface TelemetryLocation {
   tripId: string;
@@ -107,67 +107,87 @@ export default function BusLocationTracker({
   }, [location, tripStops]);
 
   const stale = location ? now - new Date(location.recordedAt).getTime() > 30_000 : false;
-  const statusColor = status === "ARRIVED" ? "#4ade80" : "var(--accent-secondary)";
-
   return (
-    <div className="rounded-2xl p-5 space-y-5" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div className="flex items-start justify-between gap-3">
+    <section className="telemetry-panel">
+      <header className="telemetry-heading">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))" }}>
-              <Navigation className="w-4 h-4 text-white" />
-            </div>
-            <h3 className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>Live Bus Location</h3>
+          <div className="telemetry-title">
+            <span><Navigation aria-hidden /></span>
+            <h3>Shuttle position</h3>
           </div>
-          <p className="text-[10px] font-bold" style={{ color: "var(--accent-secondary)" }}>
+          <p>
             Simulated GPS / Prototype
           </p>
         </div>
-        <button type="button" onClick={() => void fetchLatest()} className="btn-ghost p-2" aria-label="Refresh telemetry">
-          <RefreshCw className="w-3.5 h-3.5" />
+        <button type="button" onClick={() => void fetchLatest()} className="btn-ghost telemetry-refresh" aria-label="Refresh telemetry">
+          <RefreshCw aria-hidden />
         </button>
-      </div>
+      </header>
 
-      <div className="relative h-64 overflow-hidden rounded-2xl" style={{ background: "linear-gradient(135deg, rgba(30,41,59,.95), rgba(15,23,42,.95))", border: "1px solid var(--border)" }}>
-        <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "linear-gradient(rgba(148,163,184,.25) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.25) 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
-        {tripStops.map((stop, index) => {
-          const latitudes = tripStops.map((item) => Number(item.latitude));
-          const longitudes = tripStops.map((item) => Number(item.longitude));
-          const latRange = Math.max(0.000001, Math.max(...latitudes) - Math.min(...latitudes));
-          const lngRange = Math.max(0.000001, Math.max(...longitudes) - Math.min(...longitudes));
-          const left = 8 + ((Number(stop.longitude) - Math.min(...longitudes)) / lngRange) * 84;
-          const top = 8 + (1 - (Number(stop.latitude) - Math.min(...latitudes)) / latRange) * 84;
-          return <MapPin key={`${stop.stopName ?? stop.name}-${index}`} className="absolute w-4 h-4 text-slate-400" style={{ left: `${left}%`, top: `${top}%`, transform: "translate(-50%, -50%)" }} />;
-        })}
-        {location ? (
-          <div className="absolute transition-all duration-700" style={{ left: `${marker.left}%`, top: `${marker.top}%`, transform: "translate(-50%, -50%)" }}>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))", border: "3px solid white", boxShadow: "0 0 0 5px rgba(59,130,246,.2)" }}>
-              <Bus className="w-5 h-5 text-white" />
-            </div>
+      {location ? (
+        <>
+          <div className="telemetry-map">
+            <div className="telemetry-map-texture" aria-hidden />
+            {tripStops.map((stop, index) => {
+              const latitudes = tripStops.map((item) => Number(item.latitude));
+              const longitudes = tripStops.map((item) => Number(item.longitude));
+              const latRange = Math.max(0.000001, Math.max(...latitudes) - Math.min(...latitudes));
+              const lngRange = Math.max(0.000001, Math.max(...longitudes) - Math.min(...longitudes));
+              const left = 8 + ((Number(stop.longitude) - Math.min(...longitudes)) / lngRange) * 84;
+              const top = 8 + (1 - (Number(stop.latitude) - Math.min(...latitudes)) / latRange) * 84;
+              return <MapPin key={`${stop.stopName ?? stop.name}-${index}`} className="telemetry-stop-marker" style={{ left: `${left}%`, top: `${top}%` }} aria-hidden />;
+            })}
+          <div className="telemetry-bus-marker" style={{ left: `${marker.left}%`, top: `${marker.top}%` }}>
+            <Bus aria-hidden />
           </div>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-center p-6">
+          </div>
+
+          <dl className="telemetry-facts">
+            <div><dt>Route</dt><dd>{routeName}</dd></div>
+            <div><dt>Bus / Status</dt><dd className={status === "ARRIVED" ? "is-arrived" : ""}>{busPlateNumber} · {status.replaceAll("_", " ")}</dd></div>
+            <div><dt>Latest sample</dt><dd className={stale ? "is-stale" : "is-current"}>{ageLabel(location.recordedAt, now)}</dd></div>
+          </dl>
+
+          <footer className="telemetry-meta">
+            <span><Clock aria-hidden /> Recorded {new Date(location.recordedAt).toLocaleString()}</span>
+            <span>{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)} · {location.source}</span>
+          </footer>
+        </>
+      ) : (
+        <section className={`telemetry-unavailable ${loading ? "is-loading" : ""}`} aria-live="polite">
+          <header>
+            <span className="telemetry-unavailable-icon"><Navigation aria-hidden /></span>
             <div>
-              <AlertCircle className="w-7 h-7 mx-auto mb-2 text-amber-400" />
-              <p className="text-sm font-bold text-slate-200">{loading ? "Loading telemetry…" : "No live telemetry received yet."}</p>
+              <strong>{loading ? "Checking latest position" : "Live position unavailable"}</strong>
+              <p>{loading ? "Looking for a persisted simulated GPS sample." : "No persisted simulated GPS sample is available for this Trip."}</p>
             </div>
+          </header>
+
+          <dl className="telemetry-unavailable-facts">
+            <div><dt>Current route</dt><dd>{routeName}</dd></div>
+            <div><dt>Operational state</dt><dd className={status === "ARRIVED" ? "is-arrived" : ""}>{status.replaceAll("_", " ")}</dd></div>
+            <div><dt>Latest authoritative stop</dt><dd>{status === "ARRIVED" && stops.length > 0 ? stops[stops.length - 1] : "Not available"}</dd></div>
+          </dl>
+
+          <div className="telemetry-unavailable-route">
+            <div><strong>Stop progression</strong><span>Scheduled route order</span></div>
+            {stops.length > 0 ? (
+              <ol>
+                {stops.map((stop, index) => (
+                  <li key={`${stop}-${index}`} className={status === "ARRIVED" && index === stops.length - 1 ? "is-arrived" : ""}>
+                    <i aria-hidden />
+                    <span>{stop}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p>No snapshotted route stops are available for this Trip.</p>
+            )}
           </div>
-        )}
-      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-        <div className="p-3 rounded-xl" style={{ background: "var(--bg-surface)" }}><span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>Route</span><strong>{routeName}</strong></div>
-        <div className="p-3 rounded-xl" style={{ background: "var(--bg-surface)" }}><span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>Bus / Status</span><strong style={{ color: statusColor }}>{busPlateNumber} · {status.replaceAll("_", " ")}</strong></div>
-        <div className="p-3 rounded-xl" style={{ background: "var(--bg-surface)" }}><span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>Latest sample</span><strong className={stale ? "text-amber-400" : "text-emerald-400"}>{location ? ageLabel(location.recordedAt, now) : "Unavailable"}</strong></div>
-      </div>
-
-      {location && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[10px]" style={{ color: "var(--text-muted)" }}>
-          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Recorded {new Date(location.recordedAt).toLocaleString()}</span>
-          <span>{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)} · {location.source}</span>
-        </div>
+          <small>Position will appear when a persisted simulated sample becomes available.</small>
+        </section>
       )}
-      {!location && stops.length > 0 && <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>Route stops: {stops.join(" → ")}</p>}
-    </div>
+    </section>
   );
 }

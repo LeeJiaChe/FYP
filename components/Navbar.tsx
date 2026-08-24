@@ -1,25 +1,23 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
 import {
-  Bus,
+  AlertTriangle,
   Bell,
-  LogOut,
+  Bus,
+  CheckCircle2,
+  ChevronDown,
   CreditCard,
+  Gift,
+  Info,
+  LogOut,
+  Moon,
   RefreshCw,
   Settings,
-  Palette,
-  ChevronDown,
-  X,
-  User as UserIcon,
-  CheckCircle2,
-  Info,
-  AlertTriangle,
-  Gift,
+  Sun,
 } from "lucide-react";
-import { useTheme, THEMES } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
 import { productPolicy } from "@/shared/config/policies";
 
 interface User {
@@ -32,391 +30,197 @@ interface User {
   isBookingRestricted?: boolean;
 }
 
+interface NotificationItem {
+  id: string;
+  type: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export default function Navbar({ initialUser }: { initialUser?: User | null }) {
   const [user, setUser] = useState<User | null>(initialUser || null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showThemePicker, setShowThemePicker] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const pathname = usePathname();
-  const { theme, setTheme, themes } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   const notifRef = useRef<HTMLDivElement>(null);
-  const themeRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!initialUser) void fetchUser();
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 15000);
-    return () => clearInterval(interval);
-  }, []);
+    void fetchNotifications();
+    const interval = window.setInterval(fetchNotifications, 15000);
+    return () => window.clearInterval(interval);
+  }, [initialUser]);
 
   useEffect(() => {
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
+    function closeMenus(event: MouseEvent | KeyboardEvent) {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof MouseEvent) {
+        const target = event.target as Node;
+        if (notifRef.current?.contains(target) || userRef.current?.contains(target)) return;
+      }
       setShowNotifications(false);
-      setShowThemePicker(false);
       setShowUserMenu(false);
     }
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, []);
-
-  // Close dropdowns on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotifications(false);
-      if (themeRef.current && !themeRef.current.contains(e.target as Node)) setShowThemePicker(false);
-      if (userRef.current && !userRef.current.contains(e.target as Node)) setShowUserMenu(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("mousedown", closeMenus);
+    document.addEventListener("keydown", closeMenus);
+    return () => {
+      document.removeEventListener("mousedown", closeMenus);
+      document.removeEventListener("keydown", closeMenus);
+    };
   }, []);
 
   async function fetchUser() {
     try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      } else {
-        setUser(null);
-      }
-    } catch {
-      setUser(null);
-    }
+      const response = await fetch("/api/auth/me");
+      setUser(response.ok ? (await response.json()).user : null);
+    } catch { setUser(null); }
   }
 
   async function fetchNotifications() {
     try {
-      const res = await fetch("/api/notifications/mine");
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unreadCount || 0);
-      }
+      const response = await fetch("/api/notifications/mine");
+      if (!response.ok) return;
+      const data = await response.json();
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unreadCount || 0);
     } catch {}
   }
 
   async function markAsRead(id: string) {
-    try {
-      await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
-      fetchNotifications();
-    } catch {}
+    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+    void fetchNotifications();
   }
 
   async function markAllRead() {
-    try {
-      const unread = notifications.filter((n) => !n.isRead);
-      await Promise.all(unread.map((n) => fetch(`/api/notifications/${n.id}/read`, { method: "PATCH" })));
-      fetchNotifications();
-    } catch {}
+    await Promise.all(
+      notifications.filter((item) => !item.isRead).map((item) =>
+        fetch(`/api/notifications/${item.id}/read`, { method: "PATCH" }),
+      ),
+    );
+    void fetchNotifications();
   }
 
   async function handleLogout() {
     setLoading(true);
     await fetch("/api/auth/logout", { method: "POST" });
-    setUser(null);
     window.location.href = "/login";
   }
 
-  function getNotifIcon(type: string) {
-    if (type.includes("CONFIRMED") || type.includes("PROMOTED")) return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />;
-    if (type.includes("PENALTY") || type.includes("NO_SHOW") || type.includes("CANCELLED")) return <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />;
-    if (type.includes("APPEAL")) return <Gift className="w-3.5 h-3.5 text-amber-400" />;
-    return <Info className="w-3.5 h-3.5 text-blue-400" />;
+  function notificationIcon(type: string) {
+    if (type.includes("CONFIRMED") || type.includes("PROMOTED")) return <CheckCircle2 aria-hidden className="size-4 text-emerald-600" />;
+    if (type.includes("PENALTY") || type.includes("NO_SHOW") || type.includes("CANCELLED")) return <AlertTriangle aria-hidden className="size-4 text-red-600" />;
+    if (type.includes("APPEAL")) return <Gift aria-hidden className="size-4 text-amber-600" />;
+    return <Info aria-hidden className="size-4 text-blue-600" />;
   }
 
-  const currentTheme = themes.find((t) => t.id === theme);
+  const homeHref = user?.role === "ADMIN" ? "/admin" : user?.role === "DRIVER" ? "/driver" : user ? "/student" : "/";
+  const score = user?.creditScore ?? productPolicy.initialCredit;
+  const restricted = score < productPolicy.bookingRestrictionBelowCredit;
 
   return (
-    <header className="sticky top-0 z-50 nav-glass">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Brand */}
-        <Link
-          href={user ? (user.role === "ADMIN" ? "/admin" : user.role === "DRIVER" ? "/driver" : "/student") : "/"}
-          className="flex items-center space-x-3 group shrink-0"
-        >
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-3"
-            style={{
-              background: `linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))`,
-              boxShadow: `0 4px 16px var(--accent-glow)`,
-            }}
-          >
-            <Bus className="w-5 h-5 text-white" />
-          </div>
-          <div className="hidden sm:block">
-            <span className="font-extrabold text-lg tracking-tight" style={{ color: "var(--text-primary)" }}>
-              TAR UMT{" "}
-              <span style={{ color: "var(--accent-secondary)" }}>Shuttle</span>
-            </span>
-            <span className="text-[10px] block -mt-0.5 font-medium tracking-wide" style={{ color: "var(--text-muted)" }}>
-              Real-time Fleet & Seat Booking
-            </span>
-          </div>
+    <header className="nav-glass sticky top-0 z-50">
+      <div className="nav-inner mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <Link href={homeHref} className="nav-brand group flex min-w-0 items-center gap-3" aria-label="TAR UMT Shuttle home">
+          <span className="nav-brand-mark grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--institutional)] text-white">
+            <Bus aria-hidden className="size-5" strokeWidth={1.8} />
+          </span>
+          <span className="min-w-0 leading-tight">
+            <span className="block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--text)] sm:text-base">TAR UMT Shuttle</span>
+            <span className="hidden text-[0.68rem] font-medium text-[var(--text-muted)] sm:block">Campus transport operations</span>
+          </span>
         </Link>
 
-        {/* Right Side */}
-        {user ? (
-          <div className="flex items-center gap-2">
-            {/* Credit Score Badge — students only */}
-            {user.role === "STUDENT" && (
-              <div
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border"
-                style={
-                  (user.creditScore ?? productPolicy.initialCredit) <
-                  productPolicy.bookingRestrictionBelowCredit
-                    ? { background: "rgba(239,68,68,0.1)", borderColor: "rgba(239,68,68,0.3)", color: "#f87171" }
-                    : { background: "rgba(34,197,94,0.1)", borderColor: "rgba(34,197,94,0.3)", color: "#4ade80" }
-                }
-              >
-                <CreditCard className="w-3.5 h-3.5" />
-                <span>{user.creditScore ?? productPolicy.initialCredit} pts</span>
-                {(user.creditScore ?? productPolicy.initialCredit) <
-                  productPolicy.bookingRestrictionBelowCredit && (
-                  <span className="ml-1 bg-rose-600 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">RESTRICTED</span>
+        <div className="nav-utilities flex items-center gap-1.5 sm:gap-2">
+          {user?.role === "STUDENT" && (
+            <span className={`hidden items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium tabular-nums sm:flex ${restricted ? "border-red-300 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200" : "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"}`}>
+              <CreditCard aria-hidden className="size-3.5" /> {score} credit
+              {restricted && <span>Restricted</span>}
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="nav-utility-button nav-theme-toggle grid size-10 place-items-center rounded-[9px] border border-[var(--border)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--text)]"
+            aria-label={`Switch to ${theme === "light" ? "Dark" : "Light"} Mode`}
+            title={`Current theme: ${theme === "light" ? "Light" : "Dark"}`}
+          >
+            {theme === "light" ? <Moon aria-hidden className="size-[18px]" /> : <Sun aria-hidden className="size-[18px]" />}
+          </button>
+
+          {user ? (
+            <>
+              <div ref={notifRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => { setShowNotifications((value) => !value); setShowUserMenu(false); }}
+                  aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
+                  aria-expanded={showNotifications}
+                  aria-controls="notification-menu"
+                  className="nav-utility-button nav-notifications relative grid size-10 place-items-center rounded-[9px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--text)]"
+                >
+                  <Bell aria-hidden className="size-5" />
+                  {unreadCount > 0 && <span className="notification-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>}
+                </button>
+                {showNotifications && (
+                  <section id="notification-menu" aria-label="Notifications" className="absolute right-0 top-full mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-menu)]">
+                    <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+                      <div>
+                        <h2 className="text-sm font-bold">Notifications</h2>
+                        <p className="text-xs text-[var(--text-muted)]">{unreadCount ? `${unreadCount} unread` : "You are up to date"}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {unreadCount > 0 && <button type="button" onClick={markAllRead} className="px-2 py-2 text-xs font-semibold text-[var(--brand)]">Mark all read</button>}
+                        <button type="button" aria-label="Refresh notifications" onClick={fetchNotifications} className="grid size-9 place-items-center rounded-lg hover:bg-[var(--surface-subtle)]"><RefreshCw aria-hidden className="size-4" /></button>
+                      </div>
+                    </div>
+                    <div className="max-h-[22rem] overflow-y-auto p-2">
+                      {notifications.length === 0 ? (
+                        <p className="px-4 py-10 text-center text-sm text-[var(--text-muted)]">No notifications yet.</p>
+                      ) : notifications.map((item) => (
+                        <button key={item.id} type="button" onClick={() => markAsRead(item.id)} className={`flex w-full gap-3 rounded-[10px] px-3 py-3 text-left transition-colors hover:bg-[var(--surface-subtle)] ${item.isRead ? "" : "bg-[var(--brand-subtle)]"}`}>
+                          <span className="mt-0.5">{notificationIcon(item.type)}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-start justify-between gap-3">
+                              <span className="text-[0.68rem] font-medium text-[var(--text-secondary)]">{item.type.replace(/_/g, " ").toLowerCase()}</span>
+                              <time className="shrink-0 text-[0.68rem] text-[var(--text-muted)]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+                            </span>
+                            <span className="mt-1 block text-xs leading-relaxed text-[var(--text-secondary)]">{item.message}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 )}
               </div>
-            )}
 
-            {/* Role Badge */}
-            <span
-              className="hidden sm:inline-block px-2.5 py-1 rounded-lg text-xs font-bold tracking-wider uppercase border"
-              style={
-                user.role === "ADMIN"
-                  ? { background: "rgba(168,85,247,0.1)", borderColor: "rgba(168,85,247,0.3)", color: "#c084fc" }
-                  : user.role === "DRIVER"
-                  ? { background: "rgba(245,158,11,0.1)", borderColor: "rgba(245,158,11,0.3)", color: "#fbbf24" }
-                  : { background: "rgba(99,102,241,0.1)", borderColor: "rgba(99,102,241,0.3)", color: "var(--accent-secondary)" }
-              }
-            >
-              {user.role}
-            </span>
-
-            {/* Theme Picker */}
-            <div ref={themeRef} className="relative">
-              <button
-                onClick={() => setShowThemePicker(!showThemePicker)}
-                aria-label="Choose color theme"
-                aria-expanded={showThemePicker}
-                aria-controls="theme-menu"
-                className="relative p-2 rounded-xl transition-all duration-200 tooltip-trigger"
-                style={{ color: "var(--text-secondary)" }}
-                title={`Theme: ${currentTheme?.name}`}
-              >
-                <div
-                  id="theme-menu"
-                  className="w-5 h-5 rounded-full border-2"
-                  style={{
-                    background: `linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))`,
-                    borderColor: "var(--border-hover)",
-                  }}
-                />
-              </button>
-
-              {showThemePicker && (
-                <div
-                  className="absolute right-0 top-full mt-2 w-64 rounded-2xl p-3 z-50 animate-scale-in"
-                  style={{ background: "var(--bg-surface)", border: "1px solid var(--glass-border)", boxShadow: "0 24px 60px var(--shadow-color)" }}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>Choose Theme</h3>
-                    <Palette className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {themes.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => { setTheme(t.id); setShowThemePicker(false); }}
-                        className="flex flex-col items-start gap-1 p-2.5 rounded-xl text-left transition-all duration-200"
-                        style={{
-                          border: `1px solid ${theme === t.id ? "var(--accent-primary)" : "var(--border)"}`,
-                          background: theme === t.id ? "var(--accent-glow)" : "transparent",
-                        }}
-                      >
-                        <span className="text-base">{t.icon}</span>
-                        <span className="text-[11px] font-bold" style={{ color: theme === t.id ? "var(--accent-secondary)" : "var(--text-primary)" }}>
-                          {t.name}
-                        </span>
-                        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{t.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Notification Bell */}
-            <div ref={notifRef} className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
-                aria-expanded={showNotifications}
-                aria-controls="notification-menu"
-                className="relative p-2 rounded-xl transition-all duration-200"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                  <span className="notification-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
-                )}
-              </button>
-
-              {showNotifications && (
-                <div
-                  id="notification-menu"
-                  className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl shadow-2xl z-50 overflow-hidden animate-scale-in"
-                  style={{ background: "var(--bg-surface)", border: "1px solid var(--glass-border)", boxShadow: "0 24px 60px var(--shadow-color)" }}
-                >
-                  <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
-                    <h3 className="font-bold text-sm flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-                      <Bell className="w-4 h-4" style={{ color: "var(--accent-secondary)" }} />
-                      Notifications
-                      {unreadCount > 0 && (
-                        <span className="badge badge-blue">{unreadCount} new</span>
-                      )}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      {unreadCount > 0 && (
-                        <button onClick={markAllRead} className="text-[11px] font-semibold" style={{ color: "var(--accent-secondary)" }}>
-                          Mark all read
-                        </button>
-                      )}
-                      <button aria-label="Refresh notifications" onClick={fetchNotifications} className="p-2 rounded-lg transition-colors" style={{ color: "var(--text-muted)" }}>
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      </button>
+              <div ref={userRef} className="relative">
+                <button type="button" onClick={() => { setShowUserMenu((value) => !value); setShowNotifications(false); }} aria-label="Open user menu" aria-expanded={showUserMenu} aria-controls="user-menu" className="nav-account-button flex h-10 items-center gap-2 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-2 sm:px-3">
+                  <span className="grid size-7 place-items-center rounded-[7px] bg-[var(--surface-3)] text-xs font-semibold text-[var(--text-secondary)]">{user.name.charAt(0).toUpperCase()}</span>
+                  <span className="hidden max-w-24 truncate text-xs font-medium sm:block">{user.name.split(" ")[0]}</span>
+                  <ChevronDown aria-hidden className="size-3.5 text-[var(--text-muted)]" />
+                </button>
+                {showUserMenu && (
+                  <div id="user-menu" className="absolute right-0 top-full mt-2 w-56 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-menu)]">
+                    <div className="border-b border-[var(--border)] px-3 py-2.5">
+                      <p className="truncate text-sm font-bold">{user.name}</p>
+                      <p className="truncate text-xs text-[var(--text-muted)]">{user.email}</p>
                     </div>
+                    <Link href="/settings" onClick={() => setShowUserMenu(false)} className="mt-1 flex min-h-10 items-center gap-2.5 rounded-lg px-3 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text)]"><Settings aria-hidden className="size-4" /> Account settings</Link>
+                    <button type="button" onClick={handleLogout} disabled={loading} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-xs font-semibold text-[var(--danger)] hover:bg-[var(--danger-subtle)]"><LogOut aria-hidden className="size-4" />{loading ? "Signing out…" : "Sign out"}</button>
                   </div>
-                  <div className="max-h-80 overflow-y-auto p-3 space-y-2">
-                    {notifications.length === 0 ? (
-                      <div className="py-8 text-center">
-                        <Bell className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--text-muted)" }} />
-                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>No notifications yet</p>
-                      </div>
-                    ) : (
-                      notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => markAsRead(n.id)}
-                          className="flex gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200"
-                          style={{
-                            background: n.isRead ? "transparent" : "var(--accent-glow)",
-                            border: `1px solid ${n.isRead ? "var(--border)" : "var(--border-hover)"}`,
-                          }}
-                        >
-                          <div className="mt-0.5 shrink-0">{getNotifIcon(n.type)}</div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-start gap-2">
-                              <span className="text-[11px] font-bold" style={{ color: "var(--accent-secondary)" }}>
-                                {n.type.replace(/_/g, " ")}
-                              </span>
-                              <span className="text-[10px] shrink-0" style={{ color: "var(--text-muted)" }}>
-                                {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            </div>
-                            <p className="mt-0.5 text-xs leading-snug" style={{ color: "var(--text-secondary)" }}>{n.message}</p>
-                          </div>
-                          {!n.isRead && (
-                            <div className="w-2 h-2 rounded-full mt-1 shrink-0" style={{ background: "var(--accent-primary)" }} />
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* User Menu */}
-            <div ref={userRef} className="relative">
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                aria-label="Open user menu"
-                aria-expanded={showUserMenu}
-                aria-controls="user-menu"
-                className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl transition-all duration-200"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
-              >
-                <div
-                  id="user-menu"
-                  className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs text-white"
-                  style={{ background: `linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))` }}
-                >
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <span className="hidden sm:block text-xs font-semibold max-w-[80px] truncate" style={{ color: "var(--text-primary)" }}>
-                  {user.name.split(" ")[0]}
-                </span>
-                <ChevronDown className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
-              </button>
-
-              {showUserMenu && (
-                <div
-                  className="absolute right-0 top-full mt-2 w-52 rounded-2xl p-2 z-50 animate-scale-in"
-                  style={{ background: "var(--bg-surface)", border: "1px solid var(--glass-border)", boxShadow: "0 24px 60px var(--shadow-color)" }}
-                >
-                  <div className="px-3 py-2 mb-1 border-b" style={{ borderColor: "var(--border)" }}>
-                    <p className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{user.name}</p>
-                    <p className="text-[11px] truncate" style={{ color: "var(--text-muted)" }}>{user.email}</p>
-                  </div>
-
-                  <Link
-                    href="/settings"
-                    onClick={() => setShowUserMenu(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 w-full"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
-                    <Settings className="w-4 h-4" />
-                    Personal Settings
-                  </Link>
-
-                  {user.role === "STUDENT" && (
-                    <Link
-                      href="/student"
-                      onClick={() => setShowUserMenu(false)}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 w-full"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      <Bus className="w-4 h-4" />
-                      My Dashboard
-                    </Link>
-                  )}
-
-                  <div className="my-1 border-t" style={{ borderColor: "var(--border)" }} />
-
-                  <button
-                    onClick={handleLogout}
-                    disabled={loading}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200 w-full text-left"
-                    style={{ color: "#f87171" }}
-                  >
-                    <LogOut className="w-4 h-4" />
-                    {loading ? "Signing out..." : "Sign Out"}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <Link
-              href="/login"
-              className="btn-ghost text-xs"
-            >
-              Sign In
-            </Link>
-            <Link
-              href="/register"
-              className="btn-primary text-xs"
-            >
-              Register
-            </Link>
-          </div>
-        )}
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2"><Link href="/login" className="btn-ghost">Sign in</Link><Link href="/register" className="btn-primary">Register</Link></div>
+          )}
+        </div>
       </div>
     </header>
   );

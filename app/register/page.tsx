@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Bus, User, Mail, Lock, IdCard, ArrowRight, AlertCircle } from "lucide-react";
 
@@ -13,7 +11,6 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,19 +39,19 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+    <main id="main-content" className="auth-shell">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
           <Link href="/" className="inline-flex items-center space-x-3 group">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+            <div className="auth-logo">
               <Bus className="w-6 h-6 text-white" />
             </div>
           </Link>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">Create Student Account</h1>
-          <p className="text-xs text-slate-400">Register to book bus seats and generate dynamic boarding passes</p>
+          <h1 className="text-2xl font-extrabold tracking-tight">Create student account</h1>
+          <p className="text-xs text-[var(--text-secondary)]">Register to plan journeys and access boarding passes</p>
         </div>
 
-        <div className="glass-panel p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
+        <div className="auth-panel">
           {error && (
             <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -76,7 +73,7 @@ export default function RegisterPage() {
                   placeholder="e.g. John Doe"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="input-field pl-10"
                 />
               </div>
             </div>
@@ -94,7 +91,7 @@ export default function RegisterPage() {
                   placeholder="e.g. 2201995"
                   value={studentId}
                   onChange={(e) => setStudentId(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="input-field pl-10"
                 />
               </div>
               <p className="mt-1 text-[11px] text-slate-500">Stored in uppercase automatically.</p>
@@ -113,7 +110,7 @@ export default function RegisterPage() {
                   placeholder="your.name@student.tarc.edu.my"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="input-field pl-10"
                 />
               </div>
               <p className="mt-1 text-[11px] text-slate-500">Use your @student.tarc.edu.my address.</p>
@@ -132,7 +129,7 @@ export default function RegisterPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="input-field pl-10"
                 />
               </div>
             </div>
@@ -140,7 +137,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 text-sm transition-all"
+              className="btn-primary w-full"
             >
               {loading ? "Creating Account..." : "Register Account"} <ArrowRight className="w-4 h-4" />
             </button>
@@ -154,6 +151,6 @@ export default function RegisterPage() {
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

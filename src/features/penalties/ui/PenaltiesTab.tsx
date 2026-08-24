@@ -17,18 +17,12 @@ export default function PenaltiesTab({
   const currentCreditScore = user?.creditScore ?? 100;
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      {/* Score overview */}
-      <div
-        className="rounded-2xl p-6 flex flex-col sm:flex-row items-center gap-6"
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border)",
-        }}
-      >
-        <div className="flex-1 space-y-1">
+    <div className="account-view animate-fade-in">
+      <section className="account-credit-stage">
+        <div className="account-credit-copy">
+          <p className="eyebrow">Account standing</p>
           <h2 className="section-title text-xl">
-            Credit Score & Penalty Record
+            Passenger credit and eligibility
           </h2>
           <p className="section-subtitle">
             Each reserved no-show deducts up to {productPolicy.noShowPenaltyPoints} credit
@@ -37,168 +31,56 @@ export default function PenaltiesTab({
           </p>
         </div>
 
-        <div
-          className="text-center p-5 rounded-2xl min-w-[160px]"
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <span
-            className="text-[10px] uppercase font-bold block mb-1"
-            style={{ color: "var(--text-muted)" }}
-          >
-            Current Score
-          </span>
-          <span
-            className="text-4xl font-extrabold block"
-            style={{
-              color:
-                currentCreditScore < productPolicy.bookingRestrictionBelowCredit
-                  ? "#f87171"
-                  : "#4ade80",
-            }}
-          >
-            {currentCreditScore}
-          </span>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            / {productPolicy.initialCredit}
-          </span>
-          <div className="mt-2 progress-bar">
-            <div
-              className="progress-fill"
-              style={{
-                width: `${(currentCreditScore / productPolicy.initialCredit) * 100}%`,
-                background:
-                  currentCreditScore < productPolicy.bookingRestrictionBelowCredit
-                    ? "linear-gradient(90deg, #ef4444, #f87171)"
-                    : "linear-gradient(90deg, var(--accent-primary), #4ade80)",
-              }}
-            />
-          </div>
+        <div className={`credit-score ${currentCreditScore < productPolicy.bookingRestrictionBelowCredit ? "is-restricted" : ""}`}>
+          <span>Current credit</span>
+          <strong className="tabular-nums">{currentCreditScore}<small>/{productPolicy.initialCredit}</small></strong>
+          <p>{currentCreditScore < productPolicy.bookingRestrictionBelowCredit ? "Reservation restricted" : "Booking available"}</p>
         </div>
-      </div>
+      </section>
 
-      {/* Penalties list */}
-      <div className="space-y-4">
+      <section className="penalty-list" aria-labelledby="penalty-history-heading">
+        <header><h3 id="penalty-history-heading">Penalty history</h3><span>{penalties.length}</span></header>
         {penalties.length === 0 ? (
-          <div
-            className="py-16 text-center rounded-2xl"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <CheckCircle2
-              className="w-10 h-10 mx-auto mb-3"
-              style={{ color: "#4ade80" }}
-            />
-            <p
-              className="font-bold"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Clean record!
-            </p>
-            <p
-              className="text-xs mt-1"
-              style={{ color: "var(--text-muted)" }}
-            >
+          <div className="account-empty">
+            <CheckCircle2 aria-hidden />
+            <strong>No penalties on record</strong>
+            <p>
               No penalty points or active restrictions.
             </p>
           </div>
         ) : (
           penalties.map((p, idx) => (
-            <div
+            <article
               key={p.id}
-              className="rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 animate-slide-up"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                animationDelay: `${idx * 60}ms`,
-              }}
+              className="penalty-row animate-slide-up"
+              style={{ animationDelay: `${idx * 60}ms` }}
             >
-              <div className="flex-1 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="penalty-main">
+                <div className="penalty-status">
                   <span className="badge badge-red">
                     -{p.creditPointsDeducted} pts
                   </span>
-                  <span
-                    className="badge"
-                    style={
-                      p.status === "ACTIVE"
-                        ? {
-                            background: "rgba(239,68,68,0.1)",
-                            color: "#f87171",
-                            borderColor: "rgba(239,68,68,0.3)",
-                          }
-                        : p.status === "APPEALED"
-                          ? {
-                              background: "rgba(245,158,11,0.1)",
-                              color: "#fbbf24",
-                              borderColor: "rgba(245,158,11,0.3)",
-                            }
-                          : p.status === "OVERTURNED"
-                            ? {
-                                background: "rgba(34,197,94,0.1)",
-                                color: "#4ade80",
-                                borderColor: "rgba(34,197,94,0.3)",
-                              }
-                            : {
-                                background: "var(--bg-surface)",
-                                color: "var(--text-muted)",
-                                borderColor: "var(--border)",
-                              }
-                    }
-                  >
+                  <span className={`badge ${p.status === "ACTIVE" ? "badge-red" : p.status === "APPEALED" ? "badge-amber" : p.status === "OVERTURNED" ? "badge-green" : ""}`}>
                     {p.status}
                   </span>
                 </div>
-                <h3
-                  className="font-semibold text-sm"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  {p.reason}
-                </h3>
-                <p
-                  className="text-xs"
-                  style={{ color: "var(--text-muted)" }}
-                >
+                <h4>{p.reason}</h4>
+                <p className="penalty-meta">
                   {p.booking?.routeName} •{" "}
                   {p.booking?.departureTime &&
                     new Date(p.booking.departureTime).toLocaleDateString()}
                 </p>
 
                 {p.appeal && (
-                  <div
-                    className="mt-2 p-3 rounded-xl text-xs"
-                    style={{
-                      background: "var(--bg-surface)",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    <span
-                      className="block font-bold mb-1"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      Your Appeal:
-                    </span>
-                    <span style={{ color: "var(--text-secondary)" }}>
+                  <div className="penalty-appeal">
+                    <span>Your Appeal</span>
+                    <p>
                       &quot;{p.appeal.reason}&quot;
-                    </span>
+                    </p>
                     {p.appeal.adminComment && (
-                      <div
-                        className="mt-2 pt-2 border-t"
-                        style={{ borderColor: "var(--border)" }}
-                      >
-                        <span
-                          className="font-bold"
-                          style={{ color: "var(--accent-secondary)" }}
-                        >
-                          Staff Response:{" "}
-                        </span>
-                        <span style={{ color: "var(--text-secondary)" }}>
-                          {p.appeal.adminComment}
-                        </span>
+                      <div>
+                        <strong>Staff Response</strong>
+                        <p>{p.appeal.adminComment}</p>
                       </div>
                     )}
                   </div>
@@ -208,19 +90,16 @@ export default function PenaltiesTab({
               {p.status === "ACTIVE" && !p.appeal && (
                 <button
                   onClick={() => onOpenAppealModal(p)}
-                  className="btn-primary text-xs flex items-center gap-2 shrink-0"
-                  style={{
-                    background: "linear-gradient(135deg, #d97706, #f59e0b)",
-                  }}
+                  className="btn-secondary penalty-action"
                 >
                   <AlertCircle className="w-4 h-4" />
                   Submit Appeal
                 </button>
               )}
-            </div>
+            </article>
           ))
         )}
-      </div>
+      </section>
     </div>
   );
 }

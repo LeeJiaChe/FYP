@@ -625,7 +625,7 @@ export async function getDriverManifestRecord(
           include: {
             student: { select: { name: true, studentId: true } },
             tripSeat: { select: { seatNumber: true } },
-            boardingTripStop: { select: { stopName: true } },
+            boardingTripStop: { select: { id: true, stopName: true } },
             dropOffTripStop: { select: { id: true, stopName: true } },
           },
         },

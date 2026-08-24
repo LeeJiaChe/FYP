@@ -46,21 +46,18 @@ export function ProfileTab() {
       description="Update your personal details and display name"
       icon={<User className="w-5 h-5 text-white" />}
     >
-      <form onSubmit={handleProfileSave} className="space-y-4">
+      <form onSubmit={handleProfileSave} className="settings-form">
         {profileAlert && <Alert type={profileAlert.type} message={profileAlert.msg} />}
 
-        <div className="flex items-center gap-4 mb-4">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-2xl"
-            style={{ background: `linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))` }}
-          >
+        <div className="profile-identity">
+          <div className="profile-avatar">
             {profileForm.name?.charAt(0)?.toUpperCase() || "?"}
           </div>
-          <div>
-            <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{profileForm.name}</p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>{profileForm.email}</p>
+          <div className="profile-identity-copy">
+            <strong>{profileForm.name}</strong>
+            <span>{profileForm.email}</span>
             {user?.studentId && (
-              <p className="text-xs mt-0.5" style={{ color: "var(--accent-secondary)" }}>Student ID: {user.studentId}</p>
+              <small>Student ID: {user.studentId}</small>
             )}
           </div>
         </div>
@@ -108,37 +105,23 @@ export function ProfileTab() {
         )}
 
         {user?.role === "STUDENT" && (
-          <div
-            className="p-4 rounded-xl"
-            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
-          >
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>Credit Score</span>
-              <span className="text-lg font-extrabold" style={{ color: (user?.creditScore ?? productPolicy.initialCredit) < productPolicy.bookingRestrictionBelowCredit ? "#f87171" : "#4ade80" }}>
+          <div className={`profile-credit ${(user?.creditScore ?? productPolicy.initialCredit) < productPolicy.bookingRestrictionBelowCredit ? "is-restricted" : ""}`}>
+            <div>
+              <span>Credit Score</span>
+              <strong>
                 {user?.creditScore ?? productPolicy.initialCredit} / {productPolicy.initialCredit}
-              </span>
-            </div>
-            <div className="progress-bar">
-              <div
-                className="progress-fill"
-                style={{
-                  width: `${user?.creditScore ?? productPolicy.initialCredit}%`,
-                  background: (user?.creditScore ?? productPolicy.initialCredit) < productPolicy.bookingRestrictionBelowCredit
-                    ? "linear-gradient(90deg, #ef4444, #f87171)"
-                    : "linear-gradient(90deg, var(--accent-primary), #4ade80)",
-                }}
-              />
+              </strong>
             </div>
             {(user?.creditScore ?? productPolicy.initialCredit) <
               productPolicy.bookingRestrictionBelowCredit && (
-              <p className="text-[11px] mt-2 font-semibold" style={{ color: "#f87171" }}>
-                ⚠ Booking privileges currently restricted.
+              <p>
+                Booking privileges currently restricted.
               </p>
             )}
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="settings-form-actions">
           <button
             type="submit"
             className="btn-primary flex items-center gap-2"

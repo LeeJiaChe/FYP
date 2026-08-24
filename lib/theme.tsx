@@ -1,91 +1,62 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
-export type ThemeId = "system" | "dark" | "light" | "ocean" | "forest" | "sunset" | "midnight";
-type AppliedThemeId = Exclude<ThemeId, "system">;
-
-export interface Theme {
-  id: ThemeId;
-  name: string;
-  description: string;
-  icon: string;
-}
-
-export const THEMES: Theme[] = [
-  { id: "system",   name: "System",        description: "Follow the operating-system appearance", icon: "💻" },
-  { id: "dark",     name: "Cosmic Dark",   description: "Default deep-space dark theme",        icon: "🌑" },
-  { id: "light",    name: "Cloud Light",   description: "Clean bright professional look",        icon: "☀️" },
-  { id: "ocean",    name: "Deep Ocean",    description: "Teal & cyan cool ocean tones",          icon: "🌊" },
-  { id: "forest",   name: "Forest Mist",   description: "Earthy greens & natural palette",       icon: "🌿" },
-  { id: "sunset",   name: "Sunset Glow",   description: "Warm amber & rose gradient tones",      icon: "🌅" },
-  { id: "midnight", name: "Midnight Blue", description: "Rich indigo & purple deep blues",       icon: "🌙" },
-];
+export type ThemeId = "light" | "dark";
 
 interface ThemeContextValue {
   theme: ThemeId;
-  setTheme: (id: ThemeId) => void;
-  themes: Theme[];
+  setTheme: (theme: ThemeId) => void;
+  toggleTheme: () => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue>({
-  theme: "system",
-  setTheme: () => {},
-  themes: THEMES,
-});
+const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeId>("system");
+export function ThemeProvider({
+  children,
+  initialTheme = "dark",
+}: {
+  children: ReactNode;
+  initialTheme?: ThemeId;
+}) {
+  const [theme, setThemeState] = useState<ThemeId>(initialTheme);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("fyp-theme") as ThemeId | null;
-    const resolved = saved && THEMES.some((candidate) => candidate.id === saved)
-      ? saved
-      : "system";
-    applyTheme(resolved);
-    const synchronizePreference = window.setTimeout(
-      () => setThemeState(resolved),
-      0,
-    );
-    return () => window.clearTimeout(synchronizePreference);
-  }, []);
-
-  useEffect(() => {
-    if (theme !== "system") return;
-    const preference = window.matchMedia("(prefers-color-scheme: dark)");
-    const sync = () => applyTheme("system");
-    preference.addEventListener("change", sync);
-    return () => preference.removeEventListener("change", sync);
-  }, [theme]);
-
-  function setTheme(id: ThemeId) {
-    setThemeState(id);
-    localStorage.setItem("fyp-theme", id);
-    applyTheme(id);
+  function setTheme(nextTheme: ThemeId) {
+    setThemeState(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.classList.toggle("theme-dark", nextTheme === "dark");
+    document.documentElement.classList.toggle("theme-light", nextTheme === "light");
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute("content", nextTheme === "dark" ? "#0b0e12" : "#f3f1ed");
+    localStorage.setItem("fyp-theme", nextTheme);
+    document.cookie = `fyp-theme=${nextTheme}; path=/; max-age=31536000; samesite=lax`;
   }
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("fyp-theme");
+      if (saved === "light" || saved === "dark") {
+        if (saved !== theme) {
+          setTheme(saved);
+        }
+      }
+    } catch {}
+  }, []);
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, themes: THEMES }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        setTheme,
+        toggleTheme: () => setTheme(theme === "light" ? "dark" : "light"),
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );
 }
 
 export function useTheme() {
-  return useContext(ThemeContext);
-}
-
-function applyTheme(id: ThemeId) {
-  const root = document.documentElement;
-  const applied: AppliedThemeId =
-    id === "system"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      : id;
-  // Remove all theme classes
-  root.classList.remove("theme-dark", "theme-light", "theme-ocean", "theme-forest", "theme-sunset", "theme-midnight");
-  root.classList.add(`theme-${applied}`);
-  root.setAttribute("data-theme", applied);
-  root.setAttribute("data-theme-preference", id);
+  const context = useContext(ThemeContext);
+  if (!context) throw new Error("useTheme must be used within ThemeProvider");
+  return context;
 }

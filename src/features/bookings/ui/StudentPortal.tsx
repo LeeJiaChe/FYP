@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
+import Modal from "@/components/Modal";
+import MotionSurface from "@/components/MotionSurface";
 import ConfirmModal from "@/components/ConfirmModal";
 import SeatGrid, { SeatItem } from "@/components/SeatGrid";
 import { DynamicQRModal, type DynamicPassDescriptor } from "@/features/boarding/ui";
 import { PenaltyAppealModal, PenaltiesTab } from "@/features/penalties/ui";
-import RestrictedBanner from "@/components/student/RestrictedBanner";
-import NextTripBanner from "@/components/student/NextTripBanner";
-import FeaturedRouteCard from "@/components/student/FeaturedRouteCard";
+import StudentHome from "@/components/student/StudentHome";
 import TripsTab from "@/features/bookings/ui/TripsTab";
 import MyBookingsTab from "@/features/bookings/ui/MyBookingsTab";
 import { TrackBusTab } from "@/features/location/ui";
@@ -18,12 +18,13 @@ import { useTrips } from "@/features/trips/ui";
 import { productPolicy } from "@/shared/config/policies";
 import type { CurrentUser } from "@/shared/ui/current-user";
 
-import { Bus, Ticket, Navigation, CreditCard, X, AlertCircle } from "lucide-react";
+import { AlertCircle, Bus, CheckCircle2, Home, Navigation, Ticket, UserRound } from "lucide-react";
 
-export default function StudentPortal({ initialUser }: { initialUser: CurrentUser }) {
-  const [activeTab, setActiveTab] = useState<
-    "trips" | "bookings" | "track" | "penalties"
-  >("trips");
+type StudentView = "home" | "book" | "journeys" | "track" | "account";
+
+export default function StudentPortal({ initialUser, initialTime }: { initialUser: CurrentUser; initialTime: string }) {
+  const [activeTab, setActiveTab] = useState<StudentView>("home");
+  const scrollViewportRef = useRef<HTMLElement>(null);
   const { user, fetchUser } = useCurrentUser(initialUser);
 
   // Trips state
@@ -43,11 +44,13 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
   const [bookingLoading, setBookingLoading] = useState(false);
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingConfirmation, setBookingConfirmation] = useState<any>(null);
 
   // My Bookings state
   const [myBookings, setMyBookings] = useState<any[]>([]);
   const [myWaitlist, setMyWaitlist] = useState<any[]>([]);
   const [myWalkIns, setMyWalkIns] = useState<any[]>([]);
+  const [bookingsStatus, setBookingsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [activePass, setActivePass] = useState<DynamicPassDescriptor | null>(null);
 
   // Tracked trip for real-time location
@@ -56,6 +59,19 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
   // Penalties state
   const [penalties, setPenalties] = useState<any[]>([]);
   const [appealPenalty, setAppealPenalty] = useState<any>(null);
+
+  useLayoutEffect(() => {
+    const scrollViewport = scrollViewportRef.current;
+    if (window.matchMedia("(max-width: 767px)").matches && scrollViewport) {
+      scrollViewport.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      return;
+    }
+    const root = document.documentElement;
+    const previousScrollBehavior = root.style.scrollBehavior;
+    root.style.scrollBehavior = "auto";
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    root.style.scrollBehavior = previousScrollBehavior;
+  }, [activeTab]);
 
   useEffect(() => {
     fetchRoutes();
@@ -90,8 +106,14 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
         const data = await res.json();
         setMyBookings(data.bookings || []);
         setMyWaitlist(data.waitlist || []);
+        setBookingsStatus("ready");
+      } else {
+        setBookingsStatus("error");
       }
-    } catch (err: any) { toast.error(err.message || "An error occurred"); }
+    } catch (err: any) {
+      setBookingsStatus("error");
+      toast.error(err.message || "An error occurred");
+    }
   }
 
   async function fetchWalkIns() {
@@ -208,9 +230,15 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
         return;
       }
 
+      setBookingConfirmation({
+        routeName: selectedTrip.routeName,
+        departureTime: selectedTrip.departureTime,
+        journey: selectedJourney,
+        seatNumber: tripSeats.find((seat) => seat.id === selectedSeatId)?.seatNumber,
+      });
       setSelectedTrip(null);
       await Promise.all([fetchBookings(), fetchTrips()]);
-      setActiveTab("bookings");
+      setActiveTab("journeys");
       toast.success("Reserved seat confirmed");
     } catch {
       setBookingError("Network error completing booking");
@@ -240,7 +268,7 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
       }
       setSelectedTrip(null);
       await fetchBookings();
-      setActiveTab("bookings");
+      setActiveTab("journeys");
       toast.success("Added to the journey waitlist");
     } catch {
       setBookingError("Network error joining waitlist");
@@ -314,105 +342,49 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
   const activeBookingsCount = myBookings.filter(
     (b) => b.status === "CONFIRMED"
   ).length + myWaitlist.filter((entry) => entry.status === "WAITING").length;
+  const isRestricted =
+    (user?.creditScore ?? productPolicy.initialCredit) <
+    productPolicy.bookingRestrictionBelowCredit;
+  const studentNavigation = [
+    { id: "home" as const, label: "Home", mobileLabel: "Home", icon: Home },
+    { id: "book" as const, label: "Book Shuttle", mobileLabel: "Book", icon: Bus },
+    { id: "journeys" as const, label: "My Journeys", mobileLabel: "Journeys", icon: Ticket, count: activeBookingsCount },
+    { id: "track" as const, label: "Track", mobileLabel: "Track", icon: Navigation },
+    { id: "account" as const, label: "Credit & Appeals", mobileLabel: "Account", icon: UserRound },
+  ];
 
   return (
-    <div
-      className="min-h-screen flex flex-col"
-      style={{ background: "var(--bg-base)" }}
-    >
+    <div className={`student-shell ${activeTab === "home" ? "student-home-pilot-mode" : ""}`}>
       <Navbar initialUser={user} />
+      <nav className="student-desktop-nav" aria-label="Student navigation">
+        {studentNavigation.map(({ id, label, icon: Icon, count }) => (
+          <button key={id} type="button" onClick={() => setActiveTab(id)} aria-current={activeTab === id ? "page" : undefined} className={activeTab === id ? "active" : ""}>
+            <Icon aria-hidden className="size-4" />{label}
+            {count ? <span className="nav-count">{count}</span> : null}
+          </button>
+        ))}
+      </nav>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <header>
-          <h1 className="section-title">Student Shuttle Portal</h1>
-          <p className="section-subtitle">Reserve a seat, request a non-guaranteed walk-in pass, or track an active shuttle.</p>
-        </header>
-        {/* Restricted Warning Banner */}
-        <RestrictedBanner
-          isBookingRestricted={
-            (user?.creditScore ?? productPolicy.initialCredit) <
-            productPolicy.bookingRestrictionBelowCredit
-          }
-          onViewPenalties={() => setActiveTab("penalties")}
-        />
+      <main ref={scrollViewportRef} id="main-content" className="student-content">
+        <MotionSurface motionKey={activeTab} disabled={activeTab === "home"}>
+        {activeTab === "home" && (
+          <StudentHome
+            user={user}
+            bookings={myBookings}
+            bookingsStatus={bookingsStatus}
+            currentTime={initialTime}
+            activeJourneyCount={activeBookingsCount}
+            isRestricted={isRestricted}
+            defaultCreditScore={productPolicy.initialCredit}
+            onPlanJourney={() => setActiveTab("book")}
+            onViewJourneys={() => setActiveTab("journeys")}
+            onTrackShuttle={() => setActiveTab("track")}
+            onViewAccount={() => setActiveTab("account")}
+            onOpenReservedPass={openReservedPass}
+          />
+        )}
 
-        {/* Next Trip Banner */}
-        <NextTripBanner
-          myBookings={myBookings}
-          onViewQR={openReservedPass}
-        />
-
-        <FeaturedRouteCard
-          trips={trips}
-          onBrowseRoutes={() => {
-            setActiveTab("trips");
-          }}
-        />
-
-        {/* Tab Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="tab-bar flex-1 min-w-0 overflow-x-auto" role="tablist" aria-label="Student portal sections">
-            {[
-              {
-                id: "trips",
-                icon: <Bus className="w-4 h-4" />,
-                label: "Book Shuttle",
-                badge: undefined as number | undefined,
-              },
-              {
-                id: "bookings",
-                icon: <Ticket className="w-4 h-4" />,
-                label: "My Bookings",
-                badge: activeBookingsCount as number | undefined,
-              },
-              {
-                id: "track",
-                icon: <Navigation className="w-4 h-4" />,
-                label: "Track Bus",
-                badge: undefined as number | undefined,
-              },
-              {
-                id: "penalties",
-                icon: <CreditCard className="w-4 h-4" />,
-                label: "Penalties & Appeals",
-                badge: undefined as number | undefined,
-              },
-            ].map(({ id, icon, label, badge }) => (
-              <button
-                key={id}
-                onClick={() =>
-                  setActiveTab(
-                    id as "trips" | "bookings" | "track" | "penalties"
-                  )
-                }
-                role="tab"
-                aria-selected={activeTab === id}
-                className={`tab-item ${activeTab === id ? "active" : ""}`}
-              >
-                {icon}
-                {label}
-                {badge != null && badge > 0 && (
-                  <span
-                    className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                    style={
-                      activeTab === id
-                        ? { background: "rgba(255,255,255,0.25)" }
-                        : {
-                            background: "var(--accent-primary)",
-                            color: "white",
-                          }
-                    }
-                  >
-                    {badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* TAB 1: BOOK SHUTTLE */}
-        {activeTab === "trips" && (
+        {activeTab === "book" && (
           <TripsTab
             routes={routes}
             trips={trips}
@@ -429,14 +401,21 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
           />
         )}
 
-        {/* TAB 2: MY BOOKINGS */}
-        {activeTab === "bookings" && (
+        {activeTab === "journeys" && (
+          <div className="space-y-5">
+            {bookingConfirmation && (
+              <section className="booking-success" role="status">
+                <CheckCircle2 aria-hidden className="size-6" />
+                <div><p className="eyebrow">Reservation confirmed</p><h2>{bookingConfirmation.journey?.boardingStopName} → {bookingConfirmation.journey?.dropOffStopName}</h2><p>{bookingConfirmation.routeName} · Seat {bookingConfirmation.seatNumber} · Your boarding pass is available below.</p></div>
+                <button type="button" onClick={() => setBookingConfirmation(null)} className="btn-ghost">Dismiss</button>
+              </section>
+            )}
           <MyBookingsTab
             myBookings={myBookings}
             waitlistEntries={myWaitlist}
             walkInIntents={myWalkIns}
             onRefresh={() => { void fetchBookings(); void fetchWalkIns(); }}
-            onBrowseTrips={() => setActiveTab("trips")}
+            onBrowseTrips={() => setActiveTab("book")}
             onOpenQR={openReservedPass}
             onOpenWalkInQR={openWalkInPass}
             onOpenAlightingQR={openAlightingPass}
@@ -447,75 +426,59 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
             onCancelBooking={(id) => setConfirmCancelId(id)}
             onLeaveWaitlist={handleLeaveWaitlist}
           />
+          </div>
         )}
 
-        {/* TAB 3: TRACK BUS */}
         {activeTab === "track" && (
           <TrackBusTab
             trips={trips}
             trackedTrip={trackedTrip}
             setTrackedTrip={setTrackedTrip}
             user={user}
-            onBrowseTrips={() => setActiveTab("trips")}
+            onBrowseTrips={() => setActiveTab("book")}
           />
         )}
 
-        {/* TAB 4: PENALTIES & APPEALS */}
-        {activeTab === "penalties" && (
+        {activeTab === "account" && (
           <PenaltiesTab
             user={user}
             penalties={penalties}
             onOpenAppealModal={setAppealPenalty}
           />
         )}
+        </MotionSurface>
       </main>
+
+      <nav className="student-mobile-nav" aria-label="Student mobile navigation">
+        {studentNavigation.map(({ id, mobileLabel, icon: Icon, count }) => (
+          <button key={id} type="button" onClick={() => setActiveTab(id)} aria-current={activeTab === id ? "page" : undefined} className={activeTab === id ? "active" : ""}>
+            <span className="relative"><Icon aria-hidden className="size-5" />{count ? <span className="mobile-count">{count}</span> : null}</span><span>{mobileLabel}</span>
+          </button>
+        ))}
+      </nav>
 
       {/* SEAT SELECTION MODAL */}
       {selectedTrip && (
-        <div className="modal-overlay">
-          <div role="dialog" aria-modal="true" aria-labelledby="seat-dialog-title" className="modal-content w-full max-w-2xl p-6 relative">
-            <button
-              autoFocus
-              onClick={() => setSelectedTrip(null)}
-              aria-label="Close seat selection"
-              className="absolute top-4 right-4 p-2 rounded-xl transition-all duration-200"
-              style={{
-                color: "var(--text-muted)",
-                background: "var(--bg-surface)",
-              }}
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <h2
-              id="seat-dialog-title"
-              className="text-xl font-bold mb-1"
-              style={{ color: "var(--text-primary)" }}
-            >
-              Select Seat — {selectedTrip.routeName}
-            </h2>
-            <p className="text-xs mb-5" style={{ color: "var(--text-muted)" }}>
+        <Modal isOpen onClose={() => setSelectedTrip(null)} title="Choose your seat" maxWidth="2xl">
+          <div className="seat-selection-flow">
+            <div className="seat-journey-context">
+              <p className="eyebrow">{selectedTrip.routeName}</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               Bus: {selectedTrip.busPlateNumber} • Departs:{" "}
               {new Date(selectedTrip.departureTime).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
-            </p>
-            {selectedJourney && (
-              <p className="text-xs mb-5" style={{ color: "var(--accent-secondary)" }}>
-                {selectedJourney.boardingStopName} → {selectedJourney.dropOffStopName}
               </p>
-            )}
+              {selectedJourney && (
+              <h3>
+                {selectedJourney.boardingStopName} → {selectedJourney.dropOffStopName}
+              </h3>
+              )}
+            </div>
 
             {bookingError && (
-              <div
-                className="p-3 mb-4 rounded-xl text-xs flex items-center gap-2"
-                style={{
-                  background: "rgba(239,68,68,0.1)",
-                  border: "1px solid rgba(239,68,68,0.3)",
-                  color: "#f87171",
-                }}
-              >
+              <div className="booking-error p-3 mb-4 rounded-xl text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 {bookingError}
               </div>
@@ -528,22 +491,19 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
               mode="student"
             />
             {tripSeats.length === 0 && (
-              <p className="mt-4 text-xs font-semibold text-amber-200">
+              <p className="mt-4 text-xs font-semibold text-[var(--warning)]">
                 No single seat is free across this complete journey.
               </p>
             )}
 
-            <div
-              className="mt-5 flex items-center justify-between pt-4 border-t"
-              style={{ borderColor: "var(--border)" }}
-            >
+            <div className="seat-confirmation-bar">
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                 {selectedSeatId
                   ? "Seat selected. Your seat is guaranteed after booking confirmation."
                   : "Please select an available seat"}
               </span>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedTrip(null)}
@@ -566,17 +526,14 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
                     disabled={bookingLoading}
                     onClick={handleJoinWaitlist}
                     className="btn-primary text-xs"
-                    style={{
-                      background: "linear-gradient(135deg, #d97706, #f59e0b)",
-                    }}
                   >
                     {bookingLoading ? "Joining..." : "Join Waitlist"}
                   </button>
                 )}
               </div>
             </div>
-            <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-              <p className="text-xs text-amber-200">
+            <div className="walk-in-alternative">
+              <p>
                 Prefer standing walk-in? This does not reserve capacity or guarantee boarding. Capacity is checked only when the driver scans the pass.
               </p>
               <button disabled={bookingLoading} onClick={handleGenerateWalkInPass} className="btn-ghost text-xs shrink-0">
@@ -584,7 +541,7 @@ export default function StudentPortal({ initialUser }: { initialUser: CurrentUse
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* DYNAMIC QR MODAL */}

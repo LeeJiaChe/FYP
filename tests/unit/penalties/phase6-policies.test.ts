@@ -97,6 +97,11 @@ describe("Phase 6 penalty and appeal lifecycle", () => {
       (error) =>
         error instanceof PenaltyLifecycleError && error.code === "NOT_PENDING",
     );
+    assert.throws(
+      () => assertAppealPending("REJECTED"),
+      (error) =>
+        error instanceof PenaltyLifecycleError && error.code === "NOT_PENDING",
+    );
     assert.equal(penaltyStatusForAppealDecision("APPROVED"), "OVERTURNED");
     assert.equal(penaltyStatusForAppealDecision("REJECTED"), "UPHELD");
   });

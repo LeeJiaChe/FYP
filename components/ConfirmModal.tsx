@@ -24,10 +24,10 @@ export default function ConfirmModal({
 }: ConfirmModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} maxWidth="sm">
-      <div className="space-y-6">
-        <p style={{ color: "var(--text-secondary)" }}>{message}</p>
-        <div className="flex gap-3 mt-4">
-          <button onClick={onClose} className="btn-ghost flex-1">
+      <div className="confirm-dialog">
+        <p>{message}</p>
+        <div className="confirm-actions">
+          <button onClick={onClose} className="btn-ghost">
             {cancelText}
           </button>
           <button
@@ -35,12 +35,7 @@ export default function ConfirmModal({
               await onConfirm();
               onClose();
             }}
-            className="flex-1 px-4 py-2 font-bold rounded-lg transition-colors"
-            style={
-              isDestructive
-                ? { backgroundColor: "#ef4444", color: "#fff" } // red
-                : { backgroundColor: "var(--accent-primary)", color: "#fff" } // primary
-            }
+            className={isDestructive ? "btn-danger" : "btn-primary"}
           >
             {confirmText}
           </button>

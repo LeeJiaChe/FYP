@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import toast from "react-hot-toast";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Bus, Lock, Mail, ArrowRight, AlertCircle, Info } from "lucide-react";
 
@@ -11,7 +9,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,21 +46,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+    <main id="main-content" className="auth-shell">
       <div className="w-full max-w-md space-y-6">
         {/* Logo Header */}
         <div className="text-center space-y-2">
           <Link href="/" className="inline-flex items-center space-x-3 group">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+            <div className="auth-logo">
               <Bus className="w-6 h-6 text-white" />
             </div>
           </Link>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">TAR UMT Bus Portal</h1>
-          <p className="text-xs text-slate-400">Sign in with your email or Student ID</p>
+          <h1 className="text-2xl font-extrabold tracking-tight">Welcome back</h1>
+          <p className="text-xs text-[var(--text-secondary)]">Sign in to TAR UMT Shuttle with your email or Student ID</p>
         </div>
 
         {/* Login Form Card */}
-        <div className="glass-panel p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
+        <div className="auth-panel">
           {error && (
             <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -85,7 +82,7 @@ export default function LoginPage() {
                   placeholder="student1@student.tarc.edu.my or your Student ID"
                   value={emailOrStudentId}
                   onChange={(e) => setEmailOrStudentId(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="input-field pl-10"
                 />
               </div>
             </div>
@@ -103,7 +100,7 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="input-field pl-10"
                 />
               </div>
             </div>
@@ -111,7 +108,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 text-sm transition-all"
+              className="btn-primary w-full"
             >
               {loading ? "Signing in..." : "Sign In"} <ArrowRight className="w-4 h-4" />
             </button>
@@ -126,21 +123,21 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => quickFill("student1@student.tarc.edu.my")}
-                className="py-1.5 px-2 bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 rounded-lg text-blue-300 text-center font-medium transition-colors"
+                className="btn-secondary min-h-10 px-2 text-[11px]"
               >
                 Student 1
               </button>
               <button
                 type="button"
                 onClick={() => quickFill("driver1@tarumt.edu.my")}
-                className="py-1.5 px-2 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/30 rounded-lg text-amber-300 text-center font-medium transition-colors"
+                className="btn-secondary min-h-10 px-2 text-[11px]"
               >
                 Driver 1
               </button>
               <button
                 type="button"
                 onClick={() => quickFill("admin1@admin.tarc.edu.my", "admin1")}
-                className="py-1.5 px-2 bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 rounded-lg text-purple-300 text-center font-medium transition-colors"
+                className="btn-secondary min-h-10 px-2 text-[11px]"
               >
                 Admin Staff
               </button>
@@ -152,12 +149,12 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-slate-400">
-          Don't have a student account?{" "}
+          Don&apos;t have a student account?{" "}
           <Link href="/register" className="text-blue-400 hover:underline font-semibold">
             Register here
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

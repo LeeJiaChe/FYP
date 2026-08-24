@@ -1,64 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Edit, Plus, Trash2 } from "lucide-react";
 
-interface RoutesTabProps {
-  routes: any[];
-  onOpenModal: () => void;
-  onEditRoute: (route: any) => void;
-  onDeactivateRoute: (route: any) => void;
-}
-
-export default function RoutesTab({ routes, onOpenModal, onEditRoute, onDeactivateRoute }: RoutesTabProps) {
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="section-title text-xl">Routes Management</h2>
-          <p className="section-subtitle">{routes.length} routes configured</p>
-        </div>
-        <button onClick={onOpenModal} className="btn-primary flex items-center gap-1.5 text-xs">
-          <Plus className="w-4 h-4" /> Add Route
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {routes.map((r, idx) => (
-          <div
-            key={r.id}
-            className="glass-card p-5 rounded-2xl space-y-3 animate-slide-up"
-            style={{ animationDelay: `${idx * 60}ms` }}
-          >
-            <h3 className="font-bold text-base" style={{ color: "var(--text-primary)" }}>{r.name}</h3>
-            <div className="flex flex-wrap gap-2">
-              {r.routeStops?.map((routeStop: any) => (
-                <span
-                  key={routeStop.id}
-                  className="text-xs px-2.5 py-1 rounded-lg font-medium"
-                  style={{ background: "var(--bg-surface)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
-                >
-                  {routeStop.stop.code} — {routeStop.stop.name}
-                  {routeStop.travelDurationToNextMinutes === null
-                    ? " (final)"
-                    : ` → ${routeStop.travelDurationToNextMinutes} min`}
-                </span>
-              ))}
-            </div>
-            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>{r.routeStops?.length || 0} ordered stops</p>
-            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              Changes apply only to Trips created after the edit; existing snapshots are preserved.
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => onEditRoute(r)} className="btn-ghost flex items-center gap-1 text-[11px]">
-                <Edit className="w-3 h-3" /> Edit
-              </button>
-              <button onClick={() => onDeactivateRoute(r)} className="btn-ghost flex items-center gap-1 text-[11px]">
-                <Trash2 className="w-3 h-3" /> Deactivate
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+export default function RoutesTab({ routes, onOpenModal, onEditRoute, onDeactivateRoute }: { routes: any[]; onOpenModal: () => void; onEditRoute: (route: any) => void; onDeactivateRoute: (route: any) => void }) {
+  const [selectedId, setSelectedId] = useState<string | null>(routes[0]?.id ?? null);
+  const route = routes.find((item) => item.id === selectedId) ?? routes[0];
+  return <div className="management-view route-management animate-fade-in"><header className="management-header"><div><p className="eyebrow">Directional topology</p><h1 className="section-title">Routes</h1><p className="section-subtitle">Ordered stops and travel-time relationships.</p></div><button onClick={onOpenModal} className="btn-primary"><Plus aria-hidden className="size-4" /> Add route</button></header>{routes.length === 0 ? <div className="dashboard-empty">No active routes.</div> : <div className="route-workspace"><nav aria-label="Route list">{routes.map((item) => <button type="button" key={item.id} onClick={() => setSelectedId(item.id)} aria-current={route?.id === item.id ? "true" : undefined} className={route?.id === item.id ? "active" : ""}><strong>{item.name}</strong><span>{item.routeStops?.length || 0} stops</span></button>)}</nav>{route && <section className="route-detail"><header><div><p className="eyebrow">Selected route</p><h2>{route.name}</h2></div><div className="row-actions"><button onClick={() => onEditRoute(route)} className="btn-secondary"><Edit aria-hidden className="size-3.5" /> Edit</button><button onClick={() => onDeactivateRoute(route)} className="btn-ghost danger"><Trash2 aria-hidden className="size-3.5" /> Deactivate</button></div></header><ol className="route-topology">{route.routeStops?.map((routeStop: any, index: number) => <li key={routeStop.id}><span>{index + 1}</span><div><strong>{routeStop.stop.code}</strong><p>{routeStop.stop.name}</p></div>{routeStop.travelDurationToNextMinutes === null ? <small>Final stop</small> : <small className="tabular-nums">{routeStop.travelDurationToNextMinutes} min to next</small>}</li>)}</ol><p className="route-snapshot-note">Changes apply only to Trips created after the edit; existing Trip snapshots remain unchanged.</p></section>}</div>}</div>;
 }

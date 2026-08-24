@@ -326,12 +326,7 @@ export async function resolveAppealRecord(
     });
     if (!appeal) throw new PenaltyPersistenceError("APPEAL_NOT_FOUND");
     if (appeal.status !== "PENDING") {
-      return {
-        outcome: "ALREADY_RESOLVED" as const,
-        appealId,
-        status: appeal.status,
-        penaltyStatus: appeal.penalty.status,
-      };
+      throw new PenaltyPersistenceError("APPEAL_NOT_PENDING");
     }
     try {
       assertAppealPending(appeal.status);

@@ -19,167 +19,108 @@ export default function LiveMonitoringTab({
   onRefresh,
 }: LiveMonitoringTabProps) {
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Selector & Refresh Bar */}
-      <div
-        className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl"
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border)",
-        }}
-      >
-        <div className="flex items-center gap-3 flex-1 min-w-[240px]">
-          <Activity className="w-5 h-5 text-emerald-400 shrink-0" />
-          <div className="space-y-0.5">
-            <span
-              className="text-xs font-semibold block"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Select Active Trip to Monitor
-            </span>
+    <div className="live-operations animate-fade-in">
+      <header className="live-operations-header">
+        <div><p className="eyebrow">Live operations</p><h1 className="section-title">Current fleet activity</h1><p className="section-subtitle">Operational Trip state, current segment occupancy and persisted telemetry.</p></div>
+        <button onClick={onRefresh} className="btn-ghost"><RefreshCw aria-hidden />Refresh</button>
+      </header>
+      <div className="live-trip-selector">
+        <Activity aria-hidden />
+        <label htmlFor="live-trip-select">
+          <span>Select Active Trip to Monitor</span>
+          <small>Boarding and departed Trips</small>
+        </label>
             <select
+              id="live-trip-select"
               value={selectedTripId || ""}
               onChange={(e) => setSelectedTripId(e.target.value)}
-              className="input-field py-1 text-xs font-bold"
-              style={{ minWidth: "220px" }}
+              className="input-field"
             >
               {trips.length === 0 ? (
                 <option value="">No active trips</option>
               ) : (
                 trips.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.routeName} ({t.busPlateNumber}) — {t.status}
+                    {t.routeName} ({t.busPlateNumber}) · {t.status}
                   </option>
                 ))
               )}
             </select>
-          </div>
-        </div>
-
-        <button
-          onClick={onRefresh}
-          className="btn-ghost flex items-center gap-1.5 text-xs shrink-0"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Refresh
-        </button>
       </div>
 
       {liveTripDetails ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Seat Grid Matrix */}
-          <div
-            className="lg:col-span-2 rounded-2xl p-6 space-y-4"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-white/5">
+        <div className="live-operations-workspace">
+          <section className="live-seat-region">
+            <header>
               <div>
-                <h3
-                  className="font-bold text-lg"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  Current Segment Occupancy — Bus {liveTripDetails.busPlateNumber}
-                </h3>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                <p className="eyebrow">Current segment occupancy</p>
+                <h2>Bus {liveTripDetails.busPlateNumber}</h2>
+                <p>
                   {liveTripDetails.routeName} • Departs:{" "}
                   {new Date(liveTripDetails.departureTime).toLocaleTimeString(
                     [],
                     { hour: "2-digit", minute: "2-digit" }
                   )}
                 </p>
-                <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
+                <small>
                   {liveTripDetails.latestLocation
                     ? `${liveTripDetails.latestLocation.source === "SIMULATED" ? "Simulated GPS / Prototype" : "GPS"} · ${new Date(liveTripDetails.latestLocation.recordedAt).toLocaleTimeString()}`
                     : "No live telemetry received yet"}
-                </p>
-                <p className="text-[11px] mt-1" style={{ color: "var(--accent-secondary)" }}>
+                </small>
+                <strong className="live-segment">
                   {liveTripDetails.currentSegment
                     ? `${liveTripDetails.currentSegment.fromStopName} → ${liveTripDetails.currentSegment.toStopName}`
                     : "No active segment"}
-                </p>
+                </strong>
               </div>
-              <span className="badge badge-emerald text-xs uppercase font-extrabold">
+              <span className="badge badge-blue">
                 {liveTripDetails.status}
               </span>
-            </div>
+            </header>
 
             <SeatGrid seats={liveTripDetails.seats || []} mode="admin" />
-          </div>
+          </section>
 
-          {/* Trip Summary Card */}
-          <div
-            className="rounded-2xl p-6 space-y-6 flex flex-col justify-between"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <div className="space-y-4">
-              <h3
-                className="font-bold text-base border-b border-white/5 pb-3"
-                style={{ color: "var(--text-primary)" }}
-              >
+          <aside className="live-occupancy-summary">
+              <h2>
                 Occupancy Breakdown
-              </h3>
+              </h2>
 
-              <div className="space-y-3">
+              <dl>
                 {[
                   {
                     label: "Seated capacity",
                     count: liveTripDetails.stats?.totalSeats || 0,
-                    color: "var(--text-primary)",
                   },
                   {
                     label: "Free on current segment",
                     count: liveTripDetails.stats?.availableSeats || 0,
-                    color: "#e2e8f0",
                   },
                   {
                     label: "Reserved on current segment",
                     count: liveTripDetails.stats?.reservedSeats || 0,
-                    color: "#ef4444",
                   },
                   {
-                    label: "Checked-in (Green)",
+                    label: "Checked-in",
                     count: liveTripDetails.stats?.checkedInSeats || 0,
-                    color: "#22c55e",
                   },
                   {
                     label: "Standing on current segment",
                     count: `${liveTripDetails.stats?.standingPassengers || 0} / ${liveTripDetails.stats?.standingCapacity || 0}`,
-                    color: "#38bdf8",
                   },
-                ].map(({ label, count, color }) => (
-                  <div key={label} className="flex justify-between items-center text-xs">
-                    <span style={{ color: "var(--text-muted)" }}>{label}</span>
-                    <span className="font-bold text-sm" style={{ color }}>
-                      {count}
-                    </span>
+                ].map(({ label, count }) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd className="tabular-nums">{count}</dd>
                   </div>
                 ))}
-              </div>
-            </div>
-
-          </div>
+              </dl>
+          </aside>
         </div>
       ) : (
-        <div
-          className="py-16 text-center rounded-2xl"
-          style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          <Activity
-            className="w-10 h-10 mx-auto mb-3"
-            style={{ color: "var(--text-muted)" }}
-          />
-          <p className="font-bold" style={{ color: "var(--text-secondary)" }}>
-            Select a trip to load live occupancy
-          </p>
+        <div className="live-operations-empty">
+          <Activity aria-hidden />
+          <strong>Select a Trip to load live occupancy</strong>
         </div>
       )}
     </div>

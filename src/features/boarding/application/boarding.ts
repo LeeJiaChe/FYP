@@ -263,6 +263,7 @@ export async function getDriverManifest(actor: BoardingActor, tripId: string) {
       dropOffStop: booking.dropOffTripStop.stopName,
       boarded: booking.checkedInAt !== null,
       alighted: booking.actualAlightedAt !== null,
+      expectedToBoardHere: booking.boardingTripStop.id === currentStop?.id,
       expectedToAlightHere: booking.dropOffTripStop.id === currentStop?.id,
     })),
     ...trip.walkInJourneys.map((journey) => ({
@@ -275,6 +276,7 @@ export async function getDriverManifest(actor: BoardingActor, tripId: string) {
       dropOffStop: journey.dropOffTripStop.stopName,
       boarded: true,
       alighted: journey.actualAlightedAt !== null,
+      expectedToBoardHere: false,
       expectedToAlightHere: journey.dropOffTripStop.id === currentStop?.id,
     })),
   ];

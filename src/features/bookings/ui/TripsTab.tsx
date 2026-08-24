@@ -1,21 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import {
-  MapPin,
-  Calendar,
-  Clock,
-  X,
-  Ticket,
-  Search,
-  RefreshCw,
-  Navigation,
-  Filter,
-  Bus,
-  ArrowRight,
-  Check,
-} from "lucide-react";
-import { BusLocationTracker } from "@/features/location/ui";
+import { useMemo, useRef, useState } from "react";
+import { ArrowRight, Bus, CalendarDays, Clock, MapPin, RefreshCw, Ticket } from "lucide-react";
 import ConnectedRouteLine from "./ConnectedRouteLine";
 
 interface TripsTabProps {
@@ -23,15 +9,22 @@ interface TripsTabProps {
   trips: any[];
   isBookingRestricted?: boolean;
   onRefresh: () => void;
-  onOpenSeatModal: (
-    tripId: string,
-    boardingTripStopId: string,
-    dropOffTripStopId: string,
-  ) => void;
+  onOpenSeatModal: (tripId: string, boardingTripStopId: string, dropOffTripStopId: string) => void;
   onTrackTrip: (trip: any) => void;
 }
 
+function dateKey(value: string | Date) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
+function readableDate(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-MY", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
 
 export default function TripsTab({
   routes,
@@ -40,733 +33,174 @@ export default function TripsTab({
   onRefresh,
   onOpenSeatModal,
 }: TripsTabProps) {
-  // ─── Filter States ──────────────────────────────────────────
-  const [routeSearchQuery, setRouteSearchQuery] = useState("");
-  const [fromStopFilter, setFromStopFilter] = useState("ALL");
-  const [toStopFilter, setToStopFilter] = useState("ALL");
-  const [dateFilter, setDateFilter] = useState("ALL");
-  const [timeWindowFilter, setTimeWindowFilter] = useState("ALL");
-  const [availabilityFilter, setAvailabilityFilter] = useState("ALL");
+  const [fromStop, setFromStop] = useState("");
+  const [toStop, setToStop] = useState("");
+  const [travelDate, setTravelDate] = useState("");
+  const departureSectionRef = useRef<HTMLElement>(null);
 
-  // ─── Stepper Wizard Modal State ──────────────────────────────
-  const [selectedRouteForModal, setSelectedRouteForModal] = useState<any | null>(null);
-  const [modalStep, setModalStep] = useState<1 | 2 | 3>(1); // 1: From/To -> 2: Date -> 3: Departure/Seat
-  const [modalSelectedDate, setModalSelectedDate] = useState<string>("");
-  const [modalFromStop, setModalFromStop] = useState<string>("");
-  const [modalToStop, setModalToStop] = useState<string>("");
+  const allStops = useMemo(() => {
+    const values = new Set<string>();
+    routes.forEach((route) => route.stops?.forEach((stop: string) => values.add(stop)));
+    return Array.from(values);
+  }, [routes]);
 
-  const [liveMapTrip, setLiveMapTrip] = useState<any | null>(null);
-
-  useEffect(() => {
-    if (!selectedRouteForModal) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedRouteForModal(null);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [selectedRouteForModal]);
-
-  // Extract all unique campus stops for top filter bar
-  const { allCampusStops, availableDates } = useMemo(() => {
-    const stopsSet = new Set<string>();
-    const dates = new Set<string>();
-
-    routes.forEach((r) => {
-      if (Array.isArray(r.stops)) {
-        r.stops.forEach((s: string) => stopsSet.add(s));
-      }
+  const destinationStops = useMemo(() => {
+    if (!fromStop) return [];
+    const values = new Set<string>();
+    routes.forEach((route) => {
+      const fromIndex = route.stops?.indexOf(fromStop) ?? -1;
+      if (fromIndex < 0) return;
+      route.stops.slice(fromIndex + 1).forEach((stop: string) => values.add(stop));
     });
+    return Array.from(values);
+  }, [fromStop, routes]);
 
-    trips.forEach((t) => {
-      if (t.departureTime) {
-        const dStr = new Date(t.departureTime).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
-        dates.add(dStr);
-      }
+  const matchingTrips = useMemo(() => {
+    if (!fromStop || !toStop) return [];
+    return trips.flatMap((trip) => {
+      const boardingIndex = trip.tripStops?.findIndex((stop: any) => stop.stopName === fromStop) ?? -1;
+      const dropOffIndex = trip.tripStops?.findIndex((stop: any) => stop.stopName === toStop) ?? -1;
+      if (boardingIndex < 0 || dropOffIndex <= boardingIndex) return [];
+      return [{
+        ...trip,
+        boardingStop: trip.tripStops[boardingIndex],
+        dropOffStop: trip.tripStops[dropOffIndex],
+      }];
     });
+  }, [fromStop, toStop, trips]);
 
-    return {
-      allCampusStops: Array.from(stopsSet).sort(),
-      availableDates: Array.from(dates).sort(),
-    };
-  }, [routes, trips]);
-
-  // Ensure each unique route appears ONLY ONCE on the main grid
-  const uniqueRoutesMap = new Map<string, any>();
-  routes.forEach((r) => {
-    if (r && r.id && !uniqueRoutesMap.has(r.id)) {
-      uniqueRoutesMap.set(r.id, r);
-    }
-  });
-  const uniqueRoutesList = Array.from(uniqueRoutesMap.values());
-
-  // ─── Route Filtering Logic for Grid ─────────────────────────
-  const filteredRoutes = uniqueRoutesList.filter((r) => {
-    if (routeSearchQuery) {
-      const q = routeSearchQuery.toLowerCase();
-      const matchName = r.name.toLowerCase().includes(q);
-      const matchStops = r.stops?.some((s: string) => s.toLowerCase().includes(q));
-      if (!matchName && !matchStops) return false;
-    }
-
-    if (fromStopFilter !== "ALL" && !r.stops?.includes(fromStopFilter)) return false;
-    if (toStopFilter !== "ALL" && !r.stops?.includes(toStopFilter)) return false;
-
-    if (fromStopFilter !== "ALL" && toStopFilter !== "ALL") {
-      const fromIdx = r.stops?.indexOf(fromStopFilter) ?? -1;
-      const toIdx = r.stops?.indexOf(toStopFilter) ?? -1;
-      if (fromIdx === -1 || toIdx === -1 || fromIdx >= toIdx) return false;
-    }
-
-    const routeTrips = trips.filter((t) => t.routeId === r.id);
-
-    if (dateFilter !== "ALL") {
-      const hasDateMatch = routeTrips.some((t) => {
-        const dStr = new Date(t.departureTime).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
-        return dStr === dateFilter;
-      });
-      if (!hasDateMatch) return false;
-    }
-
-    if (timeWindowFilter !== "ALL") {
-      const hasTimeMatch = routeTrips.some((t) => {
-        const hour = new Date(t.departureTime).getHours();
-        if (timeWindowFilter === "MORNING") return hour >= 6 && hour < 12;
-        if (timeWindowFilter === "AFTERNOON") return hour >= 12 && hour < 18;
-        if (timeWindowFilter === "EVENING") return hour >= 18 || hour < 6;
-        return true;
-      });
-      if (!hasTimeMatch) return false;
-    }
-
-    return true;
-  });
-
-  // Open modal wizard for route
-  function handleOpenModalForRoute(route: any) {
-    setSelectedRouteForModal(route);
-    setModalStep(1);
-
-    const routeTrips = trips.filter((t) => t.routeId === route.id);
-    const firstDate = routeTrips[0]
-      ? new Date(routeTrips[0].departureTime).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
-      : availableDates[0] || "ALL";
-
-    setModalSelectedDate(firstDate);
-    setModalFromStop(route.stops?.[0] || "");
-    setModalToStop(route.stops?.[route.stops.length - 1] || "");
-  }
-
-  // Filter modal trips based on selected date & stop range
-  const modalRouteTrips = trips.filter(
-    (t) => t.routeId === selectedRouteForModal?.id
+  const availableDates = useMemo(
+    () => Array.from(new Set(matchingTrips.map((trip) => dateKey(trip.departureTime)))).sort(),
+    [matchingTrips],
   );
 
-  const modalAvailableDates = Array.from(
-    new Set(
-      modalRouteTrips.map((t) =>
-        new Date(t.departureTime).toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
-      )
-    )
-  );
+  const departures = matchingTrips
+    .filter((trip) => !travelDate || dateKey(trip.departureTime) === travelDate)
+    .sort((a, b) => new Date(a.boardingStop?.plannedDeparture ?? a.departureTime).getTime() - new Date(b.boardingStop?.plannedDeparture ?? b.departureTime).getTime());
 
-  const filteredModalTrips = modalRouteTrips.filter((t) => {
-    if (!modalSelectedDate || modalSelectedDate === "ALL") return true;
-    const dateStr = new Date(t.departureTime).toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-    return dateStr === modalSelectedDate;
+  const selectedRoute = routes.find((route) => {
+    const fromIndex = route.stops?.indexOf(fromStop) ?? -1;
+    const toIndex = route.stops?.indexOf(toStop) ?? -1;
+    return fromIndex >= 0 && toIndex > fromIndex;
   });
 
-  function handleSelectDepartureSlot(tripId: string) {
-    const trip = trips.find((candidate) => candidate.id === tripId);
-    const boarding = trip?.tripStops?.find(
-      (stop: { stopName: string }) => stop.stopName === modalFromStop,
-    );
-    const dropOff = trip?.tripStops?.find(
-      (stop: { stopName: string }) => stop.stopName === modalToStop,
-    );
-    if (!boarding || !dropOff) return;
-    setSelectedRouteForModal(null);
-    onOpenSeatModal(tripId, boarding.id, dropOff.id);
+  function chooseFrom(value: string) {
+    setFromStop(value);
+    setToStop("");
+    setTravelDate("");
   }
 
-  function resetFilters() {
-    setRouteSearchQuery("");
-    setFromStopFilter("ALL");
-    setToStopFilter("ALL");
-    setDateFilter("ALL");
-    setTimeWindowFilter("ALL");
-    setAvailabilityFilter("ALL");
+  function chooseTo(value: string) {
+    setToStop(value);
+    setTravelDate("");
+  }
+
+  function chooseDate(value: string) {
+    setTravelDate(value);
+    if (!value || !window.matchMedia("(max-width: 767px)").matches) return;
+    window.requestAnimationFrame(() => {
+      departureSectionRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      });
+    });
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* ══ ADVANCED FILTERS PANEL ══ */}
-      <div
-        className="glass-card p-5 rounded-2xl space-y-4"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-indigo-400" />
-            <h3 className="text-sm font-bold text-white">Route & Schedule Filters</h3>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {(fromStopFilter !== "ALL" ||
-              toStopFilter !== "ALL" ||
-              dateFilter !== "ALL" ||
-              timeWindowFilter !== "ALL" ||
-              availabilityFilter !== "ALL" ||
-              routeSearchQuery !== "") && (
-              <button
-                onClick={resetFilters}
-                className="text-xs text-rose-400 hover:text-rose-300 font-semibold transition-colors"
-              >
-                Reset Filters
-              </button>
-            )}
-            <button
-              autoFocus
-              onClick={onRefresh}
-              className="btn-ghost text-xs flex items-center gap-1.5 shrink-0"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Input Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="space-y-1">
-            <label htmlFor="route-search" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Search Route
-            </label>
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
-              <input
-                id="route-search"
-                type="text"
-                value={routeSearchQuery}
-                onChange={(e) => setRouteSearchQuery(e.target.value)}
-                placeholder="Name or stop..."
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="journey-from" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              From (Boarding Stop)
-            </label>
-            <select
-              id="journey-from"
-              value={fromStopFilter}
-              onChange={(e) => setFromStopFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL">Any Boarding Stop</option>
-              {allCampusStops.map((stop) => (
-                <option key={stop} value={stop}>
-                  {stop}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="journey-to" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              To (Dropoff Stop)
-            </label>
-            <select
-              id="journey-to"
-              value={toStopFilter}
-              onChange={(e) => setToStopFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL">Any Dropoff Stop</option>
-              {allCampusStops.map((stop) => (
-                <option key={stop} value={stop}>
-                  {stop}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="journey-date" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Departure Date
-            </label>
-            <select
-              id="journey-date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL">All Dates</option>
-              {availableDates.map((dStr) => (
-                <option key={dStr} value={dStr}>
-                  {dStr}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="journey-time" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Time Slot
-            </label>
-            <select
-              id="journey-time"
-              value={timeWindowFilter}
-              onChange={(e) => setTimeWindowFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL">All Times</option>
-              <option value="MORNING">Morning (6 AM - 12 PM)</option>
-              <option value="AFTERNOON">Afternoon (12 PM - 6 PM)</option>
-              <option value="EVENING">Evening (6 PM - 12 AM)</option>
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="journey-availability" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Seat Availability
-            </label>
-            <select
-              id="journey-availability"
-              disabled
-              value={availabilityFilter}
-              onChange={(e) => setAvailabilityFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-            >
-              <option value="ALL">Checked after From / To selection</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center">
+    <div className="journey-planner">
+      <header className="planner-header">
         <div>
-          <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
-            Campus Routes ({filteredRoutes.length} Directional Lines)
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Click on any route to select date, boarding & dropoff stops, and seat.
-          </p>
+          <h1 className="section-title">Book your shuttle</h1>
+          <p className="section-subtitle">Choose where you are boarding, where you are going, then select a departure.</p>
+        </div>
+        <button type="button" onClick={onRefresh} className="btn-ghost"><RefreshCw aria-hidden className="size-4" /> Refresh departures</button>
+      </header>
+
+      {isBookingRestricted && (
+        <div className="planner-restriction" role="alert">Reservations are currently restricted by your passenger credit standing. You can still review scheduled departures.</div>
+      )}
+
+      <div className="planner-workspace">
+        <div className="planner-route-rail" aria-hidden="true">
+          <span className={fromStop ? "selected" : ""}>{fromStop || "From"}</span>
+          <i className={fromStop && toStop ? "selected" : ""} />
+          <span className={toStop ? "selected" : ""}>{toStop || "To"}</span>
+          <i className={toStop && travelDate ? "selected" : ""} />
+          <span className={travelDate ? "selected" : ""}>{travelDate ? readableDate(travelDate) : "Date"}</span>
+        </div>
+        <div className="planner-canvas-grid">
+        <div className="planner-primary-flow">
+        <section className="planner-decisions" aria-label="Journey details">
+          <div className={`planner-step ${fromStop ? "completed" : "active"}`}>
+            <span className="step-number">1</span>
+            <label htmlFor="planner-from"><span>From</span><strong>Where will you board?</strong></label>
+            <select id="planner-from" className="input-field" value={fromStop} onChange={(event) => chooseFrom(event.target.value)}>
+              <option value="">Select boarding stop</option>
+              {allStops.map((stop) => <option key={stop}>{stop}</option>)}
+            </select>
+          </div>
+
+          <div className={`planner-step ${toStop ? "completed" : fromStop ? "active" : "locked"}`}>
+            <span className="step-number">2</span>
+            <label htmlFor="planner-to"><span>To</span><strong>Where are you going?</strong></label>
+            <select id="planner-to" className="input-field" value={toStop} disabled={!fromStop} onChange={(event) => chooseTo(event.target.value)}>
+              <option value="">Select destination</option>
+              {destinationStops.map((stop) => <option key={stop}>{stop}</option>)}
+            </select>
+          </div>
+
+          <div className={`planner-step ${travelDate ? "completed" : toStop ? "active" : "locked"}`}>
+            <span className="step-number">3</span>
+            <label htmlFor="planner-date"><span>Date</span><strong>When will you travel?</strong></label>
+            <select id="planner-date" className="input-field" value={travelDate} disabled={!toStop} onChange={(event) => chooseDate(event.target.value)}>
+              <option value="">Select travel date</option>
+              {availableDates.map((date) => <option key={date} value={date}>{readableDate(date)}</option>)}
+            </select>
+          </div>
+        </section>
+
+        <section ref={departureSectionRef} className="departure-section" aria-labelledby="departure-heading">
+          <div className="departure-heading">
+            <div><h2 id="departure-heading">Choose a departure</h2></div>
+            {travelDate && <span><CalendarDays aria-hidden className="size-4" /> {readableDate(travelDate)}</span>}
+          </div>
+
+          {!travelDate ? (
+            <div className="departure-empty"><Clock aria-hidden className="size-6" /><p>Complete From, To and Date to see departures.</p></div>
+          ) : departures.length === 0 ? (
+            <div className="departure-empty"><CalendarDays aria-hidden className="size-6" /><p>No departures are scheduled for this journey on the selected date.</p></div>
+          ) : (
+            <div className="departure-list">
+              {departures.map((trip) => {
+                const boardingTime = new Date(trip.boardingStop?.plannedDeparture ?? trip.departureTime);
+                return (
+                  <article key={trip.id} className="departure-row">
+                    <div className="departure-time-block"><span>Departure</span><time className="departure-time" dateTime={boardingTime.toISOString()}>{boardingTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>
+                    <div className="departure-route"><strong>{trip.routeName}</strong><span>{fromStop} → {toStop}</span></div>
+                    <div className="departure-meta"><span className="badge badge-blue">{trip.status.replaceAll("_", " ")}</span><span>Bus {trip.busPlateNumber}</span>{trip.delayMinutes ? <span className="badge badge-amber">{trip.delayMinutes} min delay</span> : null}</div>
+                    <button type="button" disabled={!!isBookingRestricted} onClick={() => onOpenSeatModal(trip.id, trip.boardingStop.id, trip.dropOffStop.id)} className="btn-secondary departure-seat-action"><Ticket aria-hidden className="size-4" /> Check seats</button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        </div>
+
+        <aside className="planner-summary" aria-label="Selected journey summary">
+          <p className="eyebrow">Your journey</p>
+          {fromStop && toStop ? (
+            <>
+              <div className="summary-route"><MapPin aria-hidden className="size-5" /><div><strong>{fromStop}</strong><ArrowRight aria-hidden className="size-4" /><strong>{toStop}</strong></div></div>
+              {selectedRoute && <div className="summary-topology"><span>{selectedRoute.name}</span><ConnectedRouteLine stops={selectedRoute.stops || []} fromStop={fromStop} toStop={toStop} /></div>}
+              <p className="summary-note">Seat availability is checked for your complete From → To journey after you choose a departure.</p>
+            </>
+          ) : (
+            <div className="planner-empty"><Bus aria-hidden className="size-7" /><p>Your route summary will appear as you choose stops.</p></div>
+          )}
+        </aside>
         </div>
       </div>
-
-      {/* ══ DISPLAY EACH DIRECTIONAL ROUTE LINE ══ */}
-      {filteredRoutes.length === 0 ? (
-        <div className="py-12 text-center rounded-2xl glass-card border border-slate-800 space-y-3">
-          <Bus className="w-10 h-10 mx-auto text-slate-500" />
-          <p className="text-sm font-bold text-slate-300">No routes match your current filter selection.</p>
-          <button onClick={resetFilters} className="btn-ghost text-xs">
-            Clear Filters
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {filteredRoutes.map((r, idx) => {
-            const routeTrips = trips.filter((t) => t.routeId === r.id);
-            const routeTripsCount = routeTrips.length;
-
-            const liveTrip = routeTrips.find(
-              (t) =>
-                t.status === "BOARDING" ||
-                t.status === "DEPARTED" ||
-                (new Date(t.departureTime).getTime() - Date.now() > 0 &&
-                  new Date(t.departureTime).getTime() - Date.now() < 45 * 60 * 1000)
-            );
-
-            return (
-              <div
-                key={r.id}
-                className="glass-card p-5 rounded-2xl space-y-4 flex flex-col justify-between border border-slate-800 hover:border-indigo-500/40 transition-all duration-200 animate-slide-up group relative overflow-hidden"
-                style={{ animationDelay: `${idx * 40}ms` }}
-              >
-                <div className="space-y-3">
-                  <div className="flex justify-between items-start flex-wrap gap-2">
-                    <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                      Directional Route
-                    </span>
-
-                    {liveTrip ? (
-                      <button
-                        onClick={() => setLiveMapTrip(liveTrip)}
-                        className="text-[10px] font-extrabold px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm shadow-emerald-500/20"
-                        title="Click to view real-time bus map location"
-                      >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 live-dot shrink-0" />
-                        <span>LIVE ROUTE MAP</span>
-                      </button>
-                    ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700/60">
-                        {routeTripsCount} Departure Slots
-                      </span>
-                    )}
-                  </div>
-
-                  <h3 className="font-bold text-base text-white group-hover:text-indigo-300 transition-colors flex items-center gap-2">
-                    {r.name}
-                  </h3>
-
-                  {/* CONNECTED ROUTE LINE VISUAL DISPLAY */}
-                  <div className="bg-slate-900/60 rounded-xl p-2 border border-slate-800/80">
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider px-1">
-                      Route Stops Sequence:
-                    </span>
-                    <ConnectedRouteLine stops={r.stops || []} />
-                  </div>
-                </div>
-
-                <div className="space-y-2 pt-2">
-                  {liveTrip && (
-                    <button
-                      onClick={() => setLiveMapTrip(liveTrip)}
-                      className="w-full text-[11px] py-1.5 rounded-xl font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center gap-1.5 transition-all"
-                    >
-                      <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-                      Track Live Bus Location
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => handleOpenModalForRoute(r)}
-                    disabled={!!isBookingRestricted}
-                    className="btn-primary w-full text-xs flex items-center justify-center gap-2"
-                  >
-                    <span>Choose From and To</span>
-                    <ArrowRight className="w-4 h-4 text-indigo-200" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Booking flow: From -> To -> Date -> Departure -> Seat */}
-      {selectedRouteForModal && (
-        <div className="modal-overlay">
-          <div role="dialog" aria-modal="true" aria-labelledby="booking-flow-title" className="modal-content w-full max-w-2xl p-6 relative animate-scale-up space-y-5">
-            <button
-              onClick={() => setSelectedRouteForModal(null)}
-              aria-label="Close booking flow"
-              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {/* Modal Title */}
-            <div>
-              <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase">
-                From → To → Date → Departure → Seat
-              </span>
-              <h2 id="booking-flow-title" className="text-xl font-bold text-white mt-0.5">
-                {selectedRouteForModal.name}
-              </h2>
-            </div>
-
-            {/* Stepper Bar Header */}
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => setModalStep(1)}
-                className={`p-2.5 rounded-xl text-left border transition-all ${
-                  modalStep === 1
-                    ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                    : "bg-slate-900 border-slate-800 text-slate-400"
-                }`}
-              >
-                <span className="text-[10px] block font-extrabold uppercase">Step 1</span>
-                <span className="text-xs font-bold flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5" /> From / To
-                </span>
-              </button>
-
-              <button
-                onClick={() => setModalStep(2)}
-                className={`p-2.5 rounded-xl text-left border transition-all ${
-                  modalStep === 2
-                    ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                    : "bg-slate-900 border-slate-800 text-slate-400"
-                }`}
-              >
-                <span className="text-[10px] block font-extrabold uppercase">Step 2</span>
-                <span className="text-xs font-bold flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" /> Date
-                </span>
-              </button>
-
-              <button
-                onClick={() => setModalStep(3)}
-                className={`p-2.5 rounded-xl text-left border transition-all ${
-                  modalStep === 3
-                    ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                    : "bg-slate-900 border-slate-800 text-slate-400"
-                }`}
-              >
-                <span className="text-[10px] block font-extrabold uppercase">Step 3</span>
-                <span className="text-xs font-bold flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" /> Departure & Seat
-                </span>
-              </button>
-            </div>
-
-            {/* STEP 2: SELECT DATE */}
-            {modalStep === 2 && (
-              <div className="space-y-4 animate-fade-in">
-                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-3">
-                  <div className="flex items-center gap-2 text-xs text-indigo-300 font-semibold">
-                    <Calendar className="w-4 h-4 text-indigo-400" />
-                    <span>Choose Departure Date:</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {modalAvailableDates.map((dateStr) => (
-                      <button
-                        key={dateStr}
-                        onClick={() => {
-                          setModalSelectedDate(dateStr);
-                          setModalStep(3);
-                        }}
-                        className={`p-3 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between border ${
-                          modalSelectedDate === dateStr
-                            ? "bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/25"
-                            : "bg-slate-800/80 text-slate-300 border-slate-700/60 hover:border-indigo-500/50"
-                        }`}
-                      >
-                        <span>{dateStr}</span>
-                        {modalSelectedDate === dateStr && <Check className="w-4 h-4 text-white" />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => setModalStep(3)}
-                    className="btn-primary text-xs flex items-center gap-1.5"
-                  >
-                    Next: Choose Departure <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 1: SELECT FROM & TO DESTINATION STOPS */}
-            {modalStep === 1 && (
-              <div className="space-y-4 animate-fade-in">
-                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-4">
-                  <div className="flex items-center gap-2 text-xs text-indigo-300 font-semibold">
-                    <MapPin className="w-4 h-4 text-indigo-400" />
-                    <span>Select boarding and drop-off stops:</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label htmlFor="booking-from" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Boarding Stop (From)
-                      </label>
-                      <select
-                        id="booking-from"
-                        value={modalFromStop}
-                        onChange={(e) => setModalFromStop(e.target.value)}
-                        className="w-full p-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:border-indigo-500"
-                      >
-                        {selectedRouteForModal.stops?.map((stop: string, i: number) => (
-                          <option key={stop} value={stop} disabled={i === selectedRouteForModal.stops.length - 1}>
-                            {stop} {i === 0 ? "(Origin)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label htmlFor="booking-to" className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Dropoff Stop (To)
-                      </label>
-                      <select
-                        id="booking-to"
-                        value={modalToStop}
-                        onChange={(e) => setModalToStop(e.target.value)}
-                        className="w-full p-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white focus:border-indigo-500"
-                      >
-                        {selectedRouteForModal.stops?.map((stop: string, i: number) => (
-                          <option key={stop} value={stop} disabled={i <= selectedRouteForModal.stops.indexOf(modalFromStop)}>
-                            {stop} {i === selectedRouteForModal.stops.length - 1 ? "(Destination)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* CONNECTED LINE PREVIEW OF SELECTED LEG */}
-                  <div className="pt-2">
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
-                      Selected Leg Preview:
-                    </span>
-                    <ConnectedRouteLine
-                      stops={selectedRouteForModal.stops || []}
-                      fromStop={modalFromStop}
-                      toStop={modalToStop}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-between">
-                  <button onClick={() => setSelectedRouteForModal(null)} className="btn-ghost text-xs">
-                    Cancel
-                  </button>
-                  <button onClick={() => setModalStep(2)} className="btn-primary text-xs flex items-center gap-1.5">
-                    Next: Pick Date <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: SELECT TIME SLOT & SEAT */}
-            {modalStep === 3 && (
-              <div className="space-y-4 animate-fade-in">
-                {/* Summary Banner */}
-                <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs flex items-center justify-between text-indigo-300 font-semibold">
-                  <span>
-                    📅 {modalSelectedDate} • 🚏 {modalFromStop} → {modalToStop}
-                  </span>
-                  <button onClick={() => setModalStep(1)} className="text-[10px] underline text-indigo-400 hover:text-white">
-                    Change From / To
-                  </button>
-                </div>
-
-                {filteredModalTrips.length === 0 ? (
-                  <div className="py-10 text-center rounded-xl bg-slate-900/50 border border-slate-800 space-y-2">
-                    <Calendar className="w-8 h-8 mx-auto text-slate-500" />
-                    <p className="text-xs font-bold text-slate-400">
-                      No departure times scheduled for this date.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
-                    {filteredModalTrips.map((t) => {
-                      const boardingStop = t.tripStops?.find(
-                        (stop: { stopName: string }) => stop.stopName === modalFromStop,
-                      );
-                      const departureTimeStr = new Date(
-                        boardingStop?.plannedDeparture ?? t.departureTime,
-                      ).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      });
-
-                      return (
-                        <div
-                          key={t.id}
-                          className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between gap-3 hover:border-indigo-500/50 transition-all"
-                        >
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between items-center">
-                              <div className="flex items-center gap-1.5 text-sm font-extrabold text-indigo-300">
-                                <Clock className="w-4 h-4 text-indigo-400" />
-                                <span>{departureTimeStr}</span>
-                              </div>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                                {t.busPlateNumber}
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between text-xs text-slate-400 pt-1">
-                              <span>Journey seat status</span>
-                              <span className="font-bold text-indigo-300">
-                                Check complete From / To journey
-                              </span>
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => handleSelectDepartureSlot(t.id)}
-                            disabled={!!isBookingRestricted}
-                            className="btn-primary w-full text-xs py-2 flex items-center justify-center gap-1.5"
-                          >
-                            <Ticket className="w-3.5 h-3.5" />
-                            Check Seats
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="pt-2 flex justify-between">
-                  <button onClick={() => setModalStep(2)} className="btn-ghost text-xs">
-                    Back to Date
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRouteForModal(null)}
-                    className="btn-ghost text-xs"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ══ LIVE BUS MAP LOCATION MODAL ══ */}
-      {liveMapTrip && (
-        <div className="modal-overlay">
-          <div className="modal-content w-full max-w-xl p-6 relative animate-scale-up space-y-4">
-            <button
-              onClick={() => setLiveMapTrip(null)}
-              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800/80 transition-colors z-20"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <BusLocationTracker
-              tripId={liveMapTrip.id}
-              routeName={liveMapTrip.routeName}
-              stops={liveMapTrip.routeStops || []}
-              tripStops={liveMapTrip.tripStops || []}
-              departureTime={liveMapTrip.departureTime}
-              estimatedArrivalTime={liveMapTrip.estimatedArrivalTime}
-              busPlateNumber={liveMapTrip.busPlateNumber}
-              status={liveMapTrip.status || "BOARDING"}
-            />
-
-            <div className="flex justify-end">
-              <button onClick={() => setLiveMapTrip(null)} className="btn-ghost text-xs">
-                Close Map
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

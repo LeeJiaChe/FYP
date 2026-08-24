@@ -356,12 +356,14 @@ describe("Phase 5 boarding authorization and signed purpose", () => {
       "boardingStop",
       "dropOffStop",
       "expectedToAlightHere",
+      "expectedToBoardHere",
       "kind",
       "passengerName",
       "recordId",
       "seatNumber",
       "studentId",
     ]);
+    assert.equal(manifest.manifest[0]!.expectedToBoardHere, true);
   });
 
   it("rejects expired, wrong-purpose, and token-record identity claims", async () => {

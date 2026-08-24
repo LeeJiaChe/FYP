@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bus, DoorOpen, MapPin, Play, QrCode, UserCheck } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { AlertTriangle, Bus, ChevronDown, DoorOpen, MapPin, MoreHorizontal, Play, QrCode, Route, UserCheck, Users } from "lucide-react";
 import toast from "react-hot-toast";
 
+import ConfirmModal from "@/components/ConfirmModal";
+import Modal from "@/components/Modal";
+import MotionSurface from "@/components/MotionSurface";
 import Navbar from "@/components/Navbar";
-import QRScannerModal from "./QRScannerModal";
 import { useCurrentUser } from "@/features/identity/ui";
+import { operationalProgressLabel } from "@/features/trips/public";
 import { useTrips } from "@/features/trips/ui";
 import type { CurrentUser } from "@/shared/ui/current-user";
-import { operationalProgressLabel } from "@/features/trips/public";
+import QRScannerModal from "./QRScannerModal";
 
 interface ManifestPassenger {
   recordId: string;
@@ -21,6 +24,7 @@ interface ManifestPassenger {
   dropOffStop: string;
   boarded: boolean;
   alighted: boolean;
+  expectedToBoardHere: boolean;
   expectedToAlightHere: boolean;
 }
 
@@ -35,23 +39,16 @@ interface DriverManifest {
     standingCapacity: number;
   };
   currentStop: { id: string; position: number; name: string } | null;
-  stops: Array<{
-    id: string;
-    position: number;
-    name: string;
-    actualArrival: string | null;
-    actualDeparture: string | null;
-    passedAt: string | null;
-  }>;
+  stops: Array<{ id: string; position: number; name: string; actualArrival: string | null; actualDeparture: string | null; passedAt: string | null }>;
   manifest: ManifestPassenger[];
 }
+
+type DriverDialog = "delay" | "cancel" | "walkin" | null;
 
 function errorMessage(data: unknown): string {
   if (typeof data !== "object" || data === null) return "Operation failed";
   const value = data as { error?: string | { message?: string } };
-  return typeof value.error === "string"
-    ? value.error
-    : value.error?.message || "Operation failed";
+  return typeof value.error === "string" ? value.error : value.error?.message || "Operation failed";
 }
 
 export default function DriverPortal({ initialUser }: { initialUser: CurrentUser }) {
@@ -61,14 +58,19 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
   const activeTripId = selectedTripId ?? trips[0]?.id ?? null;
   const [manifest, setManifest] = useState<DriverManifest | null>(null);
   const [scannerMode, setScannerMode] = useState<"BOARDING" | "ALIGHTING" | null>(null);
+  const [view, setView] = useState<"trip" | "manifest">("trip");
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
+  const [dialog, setDialog] = useState<DriverDialog>(null);
+  const [delayMinutes, setDelayMinutes] = useState("0");
+  const [reason, setReason] = useState("");
+  const [walkInIntentId, setWalkInIntentId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [pendingProgress, setPendingProgress] = useState<"DEPART_CURRENT_STOP" | "ARRIVE_NEXT_STOP" | null>(null);
 
   async function refreshManifest(tripId: string) {
     const response = await fetch(`/api/trips/${tripId}/manifest`);
     const data = await response.json();
-    if (!response.ok) {
-      toast.error(errorMessage(data));
-      return;
-    }
+    if (!response.ok) { toast.error(errorMessage(data)); return; }
     setManifest(data);
   }
 
@@ -80,11 +82,7 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
   }, [activeTripId]);
 
   async function mutate(path: string, body: unknown) {
-    const response = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await response.json();
     if (!response.ok) throw new Error(errorMessage(data));
     if (activeTripId) await refreshManifest(activeTripId);
@@ -94,162 +92,167 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
 
   async function progress(action: string) {
     if (!activeTripId) return;
-    if (
-      (action === "DEPART_CURRENT_STOP" || action === "ARRIVE_NEXT_STOP") &&
-      !window.confirm(
-        action === "DEPART_CURRENT_STOP"
-          ? "Confirm departure from the current stop? Boarding at this stop will close."
-          : "Confirm arrival at the next stop?",
-      )
-    ) return;
     try {
       await mutate(`/api/trips/${activeTripId}/progress`, { action });
       toast.success("Trip progress updated");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Progress update failed");
-    }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Progress update failed"); }
   }
 
-  async function setDelay() {
-    if (!activeTripId) return;
-    const minutes = Number(window.prompt("Delay in minutes", String(manifest?.trip.delayMinutes ?? 0)));
-    const reason = window.prompt("Delay reason")?.trim();
-    if (!Number.isInteger(minutes) || minutes < 0 || !reason) return;
+  async function submitDialog(event: FormEvent) {
+    event.preventDefault();
+    if (!activeTripId || !dialog) return;
+    setSubmitting(true);
     try {
-      await mutate(`/api/trips/${activeTripId}/progress`, {
-        action: "SET_DELAY",
-        delayMinutes: minutes,
-        reason,
-      });
-      toast.success("Delay metadata updated");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Delay update failed");
-    }
-  }
-
-  async function cancelTrip() {
-    if (!activeTripId) return;
-    const reason = window.prompt("Cancellation reason (required)")?.trim();
-    if (!reason) return;
-    if (!window.confirm(`Cancel this Trip?\n\nReason: ${reason}`)) return;
-    try {
-      await mutate(`/api/trips/${activeTripId}/progress`, { action: "CANCEL", reason });
-      toast.success("Trip cancelled");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Cancellation failed");
-    }
+      if (dialog === "delay") {
+        const minutes = Number(delayMinutes);
+        if (!Number.isInteger(minutes) || minutes < 0 || !reason.trim()) return;
+        await mutate(`/api/trips/${activeTripId}/progress`, { action: "SET_DELAY", delayMinutes: minutes, reason: reason.trim() });
+        toast.success("Delay metadata updated");
+      } else if (dialog === "cancel") {
+        if (!reason.trim()) return;
+        await mutate(`/api/trips/${activeTripId}/progress`, { action: "CANCEL", reason: reason.trim() });
+        toast.success("Trip cancelled");
+      } else {
+        if (!walkInIntentId.trim()) return;
+        await mutate(`/api/trips/${activeTripId}/manual-checkin`, { kind: "WALK_IN", walkInIntentId: walkInIntentId.trim() });
+        toast.success("Walk-in admission processed");
+      }
+      setDialog(null); setReason(""); setWalkInIntentId(""); setSecondaryOpen(false);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Operation failed"); }
+    finally { setSubmitting(false); }
   }
 
   async function manualReservedBoarding(passenger: ManifestPassenger) {
     if (!activeTripId || passenger.kind !== "RESERVED") return;
-    try {
-      await mutate(`/api/trips/${activeTripId}/manual-checkin`, {
-        kind: "RESERVED",
-        bookingId: passenger.recordId,
-      });
-      toast.success("Reserved passenger boarded manually");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Manual boarding failed");
-    }
-  }
-
-  async function manualWalkInBoarding() {
-    if (!activeTripId) return;
-    const walkInIntentId = window.prompt("Walk-in Intent ID")?.trim();
-    if (!walkInIntentId) return;
-    try {
-      await mutate(`/api/trips/${activeTripId}/manual-checkin`, {
-        kind: "WALK_IN",
-        walkInIntentId,
-      });
-      toast.success("Walk-in admission processed");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Walk-in admission failed");
-    }
+    try { await mutate(`/api/trips/${activeTripId}/manual-checkin`, { kind: "RESERVED", bookingId: passenger.recordId }); toast.success("Reserved passenger boarded manually"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Manual boarding failed"); }
   }
 
   async function manualAlight(passenger: ManifestPassenger) {
     if (!activeTripId) return;
-    try {
-      await mutate(`/api/trips/${activeTripId}/alight`, {
-        mode: "MANUAL",
-        kind: passenger.kind,
-        recordId: passenger.recordId,
-      });
-      toast.success("Alighting recorded manually");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Manual alighting failed");
-    }
+    try { await mutate(`/api/trips/${activeTripId}/alight`, { mode: "MANUAL", kind: passenger.kind, recordId: passenger.recordId }); toast.success("Alighting recorded manually"); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Manual alighting failed"); }
   }
 
   const loading = userLoading || loadingTrips;
+  const boardNow = manifest?.manifest.filter((passenger) => !passenger.boarded && passenger.expectedToBoardHere) ?? [];
+  const onBoard = manifest?.manifest.filter((passenger) => passenger.boarded && !passenger.alighted) ?? [];
+  const alightHere = onBoard.filter((passenger) => passenger.expectedToAlightHere);
+  const terminal = manifest?.trip.status === "ARRIVED" || manifest?.trip.status === "CANCELLED";
+
+  function manifestRows(passengers: ManifestPassenger[], kind: "board" | "alight" | "onboard" | "all") {
+    return (
+      <div className="manifest-rows">
+        {passengers.map((passenger) => (
+          <article key={`${kind}-${passenger.kind}-${passenger.recordId}`} className="manifest-row">
+            <div className="manifest-passenger">
+              <span>Passenger</span>
+              <strong>{passenger.passengerName}</strong>
+              {passenger.studentId && <small>{passenger.studentId}</small>}
+            </div>
+            <div className="manifest-seat">
+              <span>Seat</span>
+              <strong>{passenger.kind === "RESERVED" ? passenger.seatNumber : "Standing"}</strong>
+            </div>
+            <div className="manifest-segment">
+              <span>Journey segment</span>
+              <p>{passenger.boardingStop} → {passenger.dropOffStop}</p>
+            </div>
+            <div className="manifest-state">
+              <span>Boarding state</span>
+              <strong className={`manifest-state-label ${passenger.alighted ? "is-alighted" : passenger.boarded ? "is-onboard" : "is-waiting"}`}>
+                {passenger.alighted ? "Alighted" : passenger.boarded ? "On board" : "Waiting"}
+              </strong>
+            </div>
+            {(kind === "board" && passenger.kind === "RESERVED") || kind === "alight" ? (
+              <div className="manifest-action">
+                {kind === "board" && passenger.kind === "RESERVED" && <button type="button" onClick={() => void manualReservedBoarding(passenger)} className="btn-secondary">Manual board</button>}
+                {kind === "alight" && <button type="button" onClick={() => void manualAlight(passenger)} className="btn-secondary">Confirm alighted</button>}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    );
+  }
+
+  function manifestEmptyMessage(kind: "board" | "alight" | "onboard") {
+    if (kind === "board") return manifest?.currentStop ? "No passengers waiting to board at this stop" : "No passengers currently waiting to board";
+    if (kind === "alight") return manifest?.currentStop ? "No passengers alighting at this stop" : "No passengers currently due to alight";
+    return "No passengers currently on board";
+  }
+
+  function primaryAction() {
+    if (!manifest || terminal) return null;
+    if (manifest.trip.status === "NOT_STARTED") return <button type="button" onClick={() => void progress("START_BOARDING")} className="driver-primary-action"><Play aria-hidden /> Start boarding</button>;
+    if (manifest.trip.status === "BOARDING") return <button type="button" onClick={() => setScannerMode("BOARDING")} className="driver-primary-action"><QrCode aria-hidden /> Scan boarding pass</button>;
+    if (manifest.currentStop && alightHere.length > 0) return <button type="button" onClick={() => setScannerMode("ALIGHTING")} className="driver-primary-action"><DoorOpen aria-hidden /> Scan alighting pass</button>;
+    if (manifest.trip.status === "DEPARTED" && !manifest.currentStop) return <button type="button" onClick={() => setPendingProgress("ARRIVE_NEXT_STOP")} className="driver-primary-action"><MapPin aria-hidden /> Arrive next stop</button>;
+    if (manifest.currentStop) return <button type="button" onClick={() => setPendingProgress("DEPART_CURRENT_STOP")} className="driver-primary-action"><Route aria-hidden /> Depart {manifest.currentStop.name}</button>;
+    return null;
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="driver-shell">
       <Navbar initialUser={user} />
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <header className="glass-panel p-6 rounded-3xl border border-slate-800 flex flex-col lg:flex-row gap-4 lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-amber-400">Assigned-driver operations</p>
-            <h1 className="text-2xl font-extrabold">Boarding, alighting and Trip progress</h1>
-          </div>
-          <label className="text-sm font-semibold" htmlFor="assigned-trip">Assigned Trip</label>
-          <select id="assigned-trip" value={activeTripId ?? ""} onChange={(event) => setSelectedTripId(event.target.value)} className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm">
-            {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.routeName} — {new Date(trip.departureTime).toLocaleTimeString()}</option>)}
-          </select>
+      <main id="main-content" className="driver-content">
+        <header className="driver-trip-selector">
+          <div><h1>Today&apos;s operation</h1><p>Select an assigned Trip to begin.</p></div>
+          <label htmlFor="assigned-trip"><span>Assigned Trip</span><select id="assigned-trip" value={activeTripId ?? ""} onChange={(event) => setSelectedTripId(event.target.value)} className="input-field">{trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.routeName} · {new Date(trip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</option>)}</select></label>
         </header>
 
-        {loading && <p className="text-slate-400">Loading assigned Trips…</p>}
-        {!loading && trips.length === 0 && <p className="glass-panel p-8 rounded-3xl text-slate-400">No Trips are assigned to this driver.</p>}
+        <nav className="driver-view-nav" aria-label="Driver workspace"><button type="button" className={view === "trip" ? "active" : ""} aria-current={view === "trip" ? "page" : undefined} onClick={() => setView("trip")}><Bus aria-hidden /> Trip</button><button type="button" className={view === "manifest" ? "active" : ""} aria-current={view === "manifest" ? "page" : undefined} onClick={() => setView("manifest")}><Users aria-hidden /> Manifest <span>{manifest?.manifest.length || 0}</span></button></nav>
 
-        {manifest && (
-          <>
-            <section className="glass-panel p-5 rounded-3xl border border-slate-800 space-y-4">
-              <div className="flex flex-wrap justify-between gap-3">
-                <div>
-                  <h2 className="font-bold text-lg">{manifest.trip.routeName}</h2>
-                  <p className="text-xs text-slate-400"><Bus className="inline w-3 h-3" /> {manifest.trip.busPlateNumber} · {manifest.trip.status} · standing {manifest.trip.standingCapacity}</p>
-                  <p className="text-xs text-blue-300 mt-1"><MapPin className="inline w-3 h-3" /> {operationalProgressLabel(manifest.trip.status, manifest.currentStop?.name ?? null)}</p>
-                  {manifest.trip.delayMinutes > 0 && <p className="text-xs text-amber-300">Delayed {manifest.trip.delayMinutes} min: {manifest.trip.delayReason}</p>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setScannerMode("BOARDING")} className="px-3 py-2 bg-emerald-600 rounded-xl text-xs font-bold"><QrCode className="inline w-4 h-4" /> Scan Boarding</button>
-                  <button onClick={() => setScannerMode("ALIGHTING")} className="px-3 py-2 bg-cyan-700 rounded-xl text-xs font-bold"><DoorOpen className="inline w-4 h-4" /> Scan Exit</button>
-                  <button onClick={() => void manualWalkInBoarding()} className="px-3 py-2 bg-blue-700 rounded-xl text-xs font-bold"><UserCheck className="inline w-4 h-4" /> Manual Walk-in</button>
-                  <button onClick={() => void setDelay()} className="px-3 py-2 bg-amber-700 rounded-xl text-xs font-bold">Set delay</button>
-                  {manifest.trip.status !== "ARRIVED" && manifest.trip.status !== "CANCELLED" && <button onClick={() => void cancelTrip()} className="px-3 py-2 bg-rose-800 rounded-xl text-xs font-bold">Cancel Trip</button>}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-4">
-                {manifest.trip.status === "NOT_STARTED" && <button onClick={() => void progress("START_BOARDING")} className="px-4 py-2 bg-blue-600 rounded-xl text-sm font-bold"><Play className="inline w-4 h-4" /> Start boarding</button>}
-                {manifest.trip.status === "DEPARTED" && !manifest.currentStop && <button onClick={() => void progress("ARRIVE_NEXT_STOP")} className="px-4 py-2 bg-blue-600 rounded-xl text-sm font-bold">Arrive next stop</button>}
-                {(manifest.trip.status === "BOARDING" || manifest.trip.status === "DEPARTED") && manifest.currentStop && <button onClick={() => void progress("DEPART_CURRENT_STOP")} className="px-4 py-2 bg-indigo-600 rounded-xl text-sm font-bold">Depart {manifest.currentStop.name}</button>}
-              </div>
+        <MotionSurface motionKey={view}>
+        {loading && <div className="driver-empty">Loading assigned Trips…</div>}
+        {!loading && trips.length === 0 && <div className="driver-empty">No Trips are assigned to this driver.</div>}
+
+        {manifest && view === "trip" && (
+          <section className="driver-mission-surface">
+            <header className="driver-mission-header">
+              <div className="driver-mission-identity"><span><Bus aria-hidden /></span><div><strong>{manifest.trip.routeName}</strong><small>{manifest.trip.busPlateNumber}</small></div></div>
+              <div className="driver-mission-controls"><div className="active-trip-status"><span className="badge badge-blue">{manifest.trip.status.replace("_", " ")}</span>{manifest.trip.delayMinutes > 0 && <span className="badge badge-amber">Delayed {manifest.trip.delayMinutes} min</span>}</div><button type="button" aria-expanded={secondaryOpen} onClick={() => setSecondaryOpen((value) => !value)} className="driver-overflow"><MoreHorizontal aria-hidden /><span>More operations</span><ChevronDown aria-hidden /></button>{secondaryOpen && <div className="driver-secondary-menu"><button type="button" onClick={() => { setDialog("walkin"); setSecondaryOpen(false); }}><UserCheck aria-hidden /> Manual walk-in</button><button type="button" onClick={() => { setDelayMinutes(String(manifest.trip.delayMinutes)); setDialog("delay"); setSecondaryOpen(false); }}><AlertTriangle aria-hidden /> Set delay</button><button type="button" className="danger" onClick={() => { setDialog("cancel"); setSecondaryOpen(false); }}>Cancel Trip</button></div>}</div>
+            </header>
+            <div className="driver-trip-workspace">
+            <section className="active-trip-panel">
+              <div className="driver-current-stop"><MapPin aria-hidden /><div><span>Current stop</span><h2><span className="sr-only">Current stop: </span>{manifest.currentStop?.name || "Between stops"}</h2><p className="active-trip-progress">{operationalProgressLabel(manifest.trip.status, manifest.currentStop?.name ?? null)}</p></div></div>
+              <div className="driver-passenger-load"><span><strong className="tabular-nums">{boardNow.length}</strong> waiting</span><span><strong className="tabular-nums">{onBoard.length}</strong> on board</span></div>
+              {manifest.trip.delayReason && <p className="delay-reason">{manifest.trip.delayReason}</p>}
+              <div className="driver-primary-area"><span className="driver-action-label">{terminal ? "Current state" : "Next operation"}</span>{primaryAction() || <p>This Trip is complete. No operational action is available.</p>}</div>
+              {!terminal && <div className="driver-context-actions">{manifest.trip.status === "BOARDING" && manifest.currentStop && <button type="button" className="btn-secondary" onClick={() => setPendingProgress("DEPART_CURRENT_STOP")}>Depart stop</button>}{manifest.trip.status !== "BOARDING" && manifest.currentStop && <button type="button" className="btn-secondary" onClick={() => setScannerMode("BOARDING")}><QrCode aria-hidden className="size-4" /> Scan boarding</button>}{alightHere.length > 0 && <button type="button" className="btn-secondary" onClick={() => setScannerMode("ALIGHTING")}><DoorOpen aria-hidden className="size-4" /> Scan alighting</button>}</div>}
             </section>
 
-            <section className="glass-panel p-5 rounded-3xl border border-slate-800">
-              <h2 className="font-bold mb-4">Operational manifest</h2>
-              <div className="space-y-2">
-                {manifest.manifest.map((passenger) => (
-                  <div key={`${passenger.kind}-${passenger.recordId}`} className="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
-                    <div>
-                      <p className="font-bold text-white">{passenger.passengerName} · {passenger.kind}{passenger.seatNumber ? ` · Seat ${passenger.seatNumber}` : " · Standing"}</p>
-                      <p className="text-slate-400">ID {passenger.studentId || "—"} · {passenger.boardingStop} → {passenger.dropOffStop}</p>
-                      <p className="text-slate-300">{passenger.alighted ? "Alighted" : passenger.boarded ? "Boarded" : "Not boarded"}{passenger.expectedToAlightHere && !passenger.alighted ? " · Expected to alight here" : ""}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      {!passenger.boarded && passenger.kind === "RESERVED" && <button onClick={() => void manualReservedBoarding(passenger)} className="px-3 py-2 bg-blue-700 rounded-lg font-bold">Manual board</button>}
-                      {passenger.boarded && !passenger.alighted && passenger.expectedToAlightHere && <button onClick={() => void manualAlight(passenger)} className="px-3 py-2 bg-cyan-700 rounded-lg font-bold">Confirm alighted</button>}
-                    </div>
-                  </div>
-                ))}
-                {manifest.manifest.length === 0 && <p className="text-slate-500">No reserved or admitted walk-in passengers.</p>}
-              </div>
+            <section className="driver-progress-panel" aria-labelledby="driver-route-progress">
+              <div className="driver-panel-heading"><div><h2 id="driver-route-progress">Route progress</h2></div></div>
+              <ol className="driver-stop-list">{manifest.stops.map((stop) => { const current = manifest.currentStop?.id === stop.id; const passed = !!(stop.actualDeparture || stop.passedAt); return <li key={stop.id} className={current ? "current" : passed ? "passed" : ""}><span>{stop.position + 1}</span><div><strong>{stop.name}</strong><small>{current ? "Current stop" : passed ? "Completed" : "Upcoming"}</small></div></li>; })}</ol>
             </section>
-          </>
+            </div>
+          </section>
         )}
+
+        {manifest && view === "manifest" && (
+          <section className="driver-manifest">
+            <header><div><h2>Passenger worklist</h2><p>{manifest.trip.routeName} · {manifest.trip.busPlateNumber}</p></div><strong>{manifest.currentStop ? `At ${manifest.currentStop.name}` : "Between stops"}</strong></header>
+            {[{ title: "Board now", items: boardNow, kind: "board" as const }, { title: "Alight here", items: alightHere, kind: "alight" as const }, { title: "On board", items: onBoard.filter((passenger) => !passenger.expectedToAlightHere), kind: "onboard" as const }].map((group) => (
+              <section key={group.title} className={`manifest-group group-${group.kind} ${group.items.length === 0 ? "empty" : ""} ${group.kind === "board" && group.items.length > 0 ? "priority" : group.kind === "alight" && boardNow.length === 0 && group.items.length > 0 ? "priority" : ""}`}><h3>{group.title}<span>{group.items.length}</span></h3>{group.items.length === 0 ? <p className="manifest-empty">{manifestEmptyMessage(group.kind)}</p> : manifestRows(group.items, group.kind)}</section>
+            ))}
+            <details className="manifest-archive"><summary><span>All passengers</span><span className="tabular-nums">{manifest.manifest.length}</span></summary>{manifest.manifest.length > 0 ? manifestRows(manifest.manifest, "all") : <p className="manifest-empty">No passengers are attached to this Trip</p>}</details>
+          </section>
+        )}
+        </MotionSurface>
       </main>
 
-      {scannerMode && activeTripId && <QRScannerModal tripId={activeTripId} mode={scannerMode} onClose={() => setScannerMode(null)} onSuccess={() => void refreshManifest(activeTripId)} />}
+      {scannerMode && activeTripId && <QRScannerModal tripId={activeTripId} routeName={manifest?.trip.routeName} currentStopName={manifest?.currentStop?.name ?? undefined} mode={scannerMode} onClose={() => setScannerMode(null)} onSuccess={() => void refreshManifest(activeTripId)} />}
+
+      <Modal isOpen={dialog !== null} onClose={() => !submitting && setDialog(null)} title={dialog === "delay" ? "Set Trip delay" : dialog === "cancel" ? "Cancel Trip" : "Manual walk-in admission"} description={dialog === "cancel" ? "This destructive action requires an operational reason." : undefined} maxWidth="sm">
+        <form onSubmit={submitDialog} className="driver-operation-form">
+          {dialog === "delay" && <label><span>Delay in minutes</span><input className="input-field tabular-nums" type="number" min="0" step="1" required value={delayMinutes} onChange={(event) => setDelayMinutes(event.target.value)} /></label>}
+          {(dialog === "delay" || dialog === "cancel") && <label><span>{dialog === "cancel" ? "Cancellation reason" : "Delay reason"}</span><textarea className="input-field" rows={3} required value={reason} onChange={(event) => setReason(event.target.value)} /></label>}
+          {dialog === "walkin" && <label><span>Walk-in Intent ID</span><input className="input-field" required value={walkInIntentId} onChange={(event) => setWalkInIntentId(event.target.value)} autoComplete="off" /></label>}
+          <div className="driver-form-actions"><button type="button" className="btn-ghost" onClick={() => setDialog(null)}>Back</button><button disabled={submitting} className={dialog === "cancel" ? "btn-danger" : "btn-primary"}>{submitting ? "Saving…" : dialog === "cancel" ? "Cancel Trip" : "Confirm"}</button></div>
+        </form>
+      </Modal>
+      <ConfirmModal isOpen={pendingProgress !== null} onClose={() => setPendingProgress(null)} onConfirm={() => { if (pendingProgress) void progress(pendingProgress); setPendingProgress(null); }} title={pendingProgress === "DEPART_CURRENT_STOP" ? "Depart current stop?" : "Arrive at next stop?"} message={pendingProgress === "DEPART_CURRENT_STOP" ? "Boarding at this stop will close when the Trip departs." : "Confirm that the shuttle has arrived at the next stop."} confirmText="Confirm progress" cancelText="Go back" />
     </div>
   );
 }

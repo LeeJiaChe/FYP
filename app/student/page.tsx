@@ -10,6 +10,7 @@ export default async function StudentPage() {
 
   return (
     <StudentPortal
+      initialTime={new Date().toISOString()}
       initialUser={{
         id: user.id,
         name: user.name,

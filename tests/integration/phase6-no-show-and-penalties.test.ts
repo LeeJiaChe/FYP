@@ -422,15 +422,21 @@ describe("Phase 6 PostgreSQL penalty appeals", () => {
     const appeal = await submitPenaltyAppeal(studentActor(studentId), penalty.id, {
       reason: "There was a documented operational issue at boarding.",
     });
-    const results = await Promise.all([
+    const results = await Promise.allSettled([
       resolvePenaltyAppeal(adminActor(firstAdmin), appeal.id, { status: "APPROVED", adminComment: "Evidence accepted" }, fixed(scenario.departure)),
       resolvePenaltyAppeal(adminActor(secondAdmin), appeal.id, { status: "APPROVED", adminComment: "Concurrent retry" }, fixed(scenario.departure)),
     ]);
-    assert.equal(results.filter((result) => result.outcome === "RESOLVED").length, 1);
-    assert.equal(results.filter((result) => result.outcome === "ALREADY_RESOLVED").length, 1);
+    assert.equal(results.filter((result) => result.status === "fulfilled" && result.value.outcome === "RESOLVED").length, 1);
+    assert.equal(results.filter((result) => result.status === "rejected" && result.reason instanceof ApplicationError && result.reason.code === "CONFLICT").length, 1);
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: studentId } })).creditScore, 100);
     assert.equal((await prisma.penalty.findUniqueOrThrow({ where: { id: penalty.id } })).status, "OVERTURNED");
     assert.equal(await prisma.notification.count({ where: { deduplicationKey: `appeal-resolved:${appeal.id}` } }), 1);
+    await assert.rejects(
+      resolvePenaltyAppeal(adminActor(secondAdmin), appeal.id, { status: "REJECTED", adminComment: "Conflicting later decision" }, fixed(scenario.departure)),
+      (error) => error instanceof ApplicationError && error.code === "CONFLICT",
+    );
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: studentId } })).creditScore, 100);
+    assert.equal((await prisma.penaltyAppeal.findUniqueOrThrow({ where: { id: appeal.id } })).status, "APPROVED");
   });
 
   it("caps approved restoration at 100", async () => {
@@ -472,6 +478,12 @@ describe("Phase 6 PostgreSQL penalty appeals", () => {
     assert.equal(result.outcome, "RESOLVED");
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: studentId } })).creditScore, 85);
     assert.equal((await prisma.penalty.findUniqueOrThrow({ where: { id: penalty.id } })).status, "UPHELD");
+    assert.equal((await prisma.penaltyAppeal.findUniqueOrThrow({ where: { id: appeal.id } })).status, "REJECTED");
+    await assert.rejects(
+      resolvePenaltyAppeal(adminActor(adminId), appeal.id, { status: "APPROVED", adminComment: "Conflicting later decision" }, fixed(scenario.departure)),
+      (error) => error instanceof ApplicationError && error.code === "CONFLICT",
+    );
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: studentId } })).creditScore, 85);
     assert.equal((await prisma.penaltyAppeal.findUniqueOrThrow({ where: { id: appeal.id } })).status, "REJECTED");
   });
 });

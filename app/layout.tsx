@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import "./globals.css";
-import { ThemeProvider } from "@/lib/theme";
+import { ThemeProvider, type ThemeId } from "@/lib/theme";
 import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
@@ -11,21 +12,30 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#080d1a",
-  width: "device-width",
-  initialScale: 1,
-};
+export async function generateViewport(): Promise<Viewport> {
+  const cookieStore = await cookies();
+  const isDark = cookieStore.get("fyp-theme")?.value !== "light";
+  return {
+    themeColor: isDark ? "#0b0e12" : "#f3f1ed",
+    width: "device-width",
+    initialScale: 1,
+  };
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const savedTheme = cookieStore.get("fyp-theme")?.value;
+  const initialTheme: ThemeId = savedTheme === "light" ? "light" : "dark";
+
   return (
-    <html lang="en" className="h-full theme-dark" data-theme="dark" data-theme-preference="system" suppressHydrationWarning>
+    <html lang="en" className={`h-full theme-${initialTheme}`} data-theme={initialTheme}>
       <body className="font-sans min-h-full flex flex-col antialiased">
-        <ThemeProvider>
+        <a className="skip-link" href="#main-content">Skip to main content</a>
+        <ThemeProvider initialTheme={initialTheme}>
           {children}
           <Toaster 
             position="bottom-center" 

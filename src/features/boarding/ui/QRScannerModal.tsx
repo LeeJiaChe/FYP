@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Camera, CheckCircle2, QrCode, RefreshCw } from "lucide-react";
+import { AlertCircle, Camera, CheckCircle2, DoorOpen, QrCode, RefreshCw } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import Modal from "@/components/Modal";
 import {
   startQrCamera,
@@ -11,6 +12,8 @@ import {
 
 interface QRScannerModalProps {
   tripId: string;
+  routeName?: string;
+  currentStopName?: string;
   mode?: "BOARDING" | "ALIGHTING";
   onClose: () => void;
   onSuccess: () => void;
@@ -18,6 +21,8 @@ interface QRScannerModalProps {
 
 export default function QRScannerModal({
   tripId,
+  routeName,
+  currentStopName,
   mode = "BOARDING",
   onClose,
   onSuccess,
@@ -31,6 +36,8 @@ export default function QRScannerModal({
   const [result, setResult] = useState<{ outcome?: string; passengerName?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cameraStatus, setCameraStatus] = useState("Starting camera…");
+  const [cameraSession, setCameraSession] = useState(0);
+  const reduceMotion = useReducedMotion();
 
   async function handleScan(tokenToVerify?: string) {
     const token = tokenToVerify?.trim() || tokenInput.trim();
@@ -49,7 +56,7 @@ export default function QRScannerModal({
       });
       if (!ok) {
         if (data.outcome === "FULL") {
-          setError("FULL — standing capacity is unavailable for the complete journey.");
+          setError("FULL: standing capacity is unavailable for the complete journey.");
         } else {
           setError(
             (typeof data.error === "string" ? data.error : data.error?.message) ||
@@ -90,7 +97,7 @@ export default function QRScannerModal({
           return;
         }
         cameraRef.current = camera;
-        setCameraStatus("Camera active — hold a pass QR inside the frame.");
+        setCameraStatus("Camera active. Hold a pass QR inside the frame.");
       } catch (cameraError) {
         if (!active) return;
         const name = cameraError instanceof DOMException ? cameraError.name : "";
@@ -114,40 +121,50 @@ export default function QRScannerModal({
     // handleScan deliberately reads the latest component state; restarting the
     // camera for each fallback-token keystroke would make scanning unusable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripId, mode]);
+  }, [tripId, mode, cameraSession]);
+
+  function continueScanning() {
+    acceptedRef.current = false;
+    scanningRef.current = false;
+    setResult(null);
+    setError(null);
+    setTokenInput("");
+    setCameraStatus("Restarting camera…");
+    setCameraSession((session) => session + 1);
+  }
 
   return (
     <Modal
       isOpen
       onClose={onClose}
       title={mode === "BOARDING" ? "Boarding Pass Scanner" : "Exit / Alighting Scanner"}
+      description={`${mode === "BOARDING" ? "Boarding" : "Alighting"} verification is authoritative on the server.`}
       maxWidth="lg"
     >
-      <div className="p-5 sm:p-6">
-        <div className="text-center space-y-2 mb-5">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
-            {mode === "BOARDING" ? <QrCode className="w-6 h-6" /> : <Camera className="w-6 h-6" />}
-          </div>
-          <p className="text-xs text-slate-400">The server verifies the pass, assigned Trip, passenger journey, and current boarding state.</p>
+      <div className={`scanner-view ${mode === "ALIGHTING" ? "alighting" : "boarding"}`}>
+        <div className="scanner-context">
+          <span>{mode === "BOARDING" ? <QrCode aria-hidden /> : <DoorOpen aria-hidden />}</span>
+          <div><p className="eyebrow">{mode === "BOARDING" ? "Boarding operation" : "Alighting operation"}</p><strong>{routeName || "Active Trip"}</strong>{currentStopName && <small>{currentStopName}</small>}</div>
         </div>
 
-        <div className="rounded-2xl overflow-hidden border border-slate-700 bg-black aspect-video mb-3">
+        <div className="scanner-camera">
           <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
+          <div className="scanner-frame" aria-hidden />
         </div>
-        <p className="text-[11px] text-slate-400 mb-4">{cameraStatus}</p>
+        <p className="scanner-status" role="status"><Camera aria-hidden className="size-4" />{cameraStatus}</p>
 
-        {error && <div className="p-3 mb-4 bg-red-500/10 border border-red-500/30 text-xs text-red-300 rounded-xl flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span></div>}
-        {result && <div className="p-4 mb-4 bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 rounded-xl text-center"><CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-1" /><div className="font-bold text-sm text-white">{result.outcome || "Accepted"}</div>{result.passengerName && <div className="text-slate-400">{result.passengerName}</div>}</div>}
+        {error && <motion.div initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="scan-result error" role="alert"><AlertCircle aria-hidden /><div><strong>Pass not accepted</strong><p>{error}</p></div></motion.div>}
+        {result && <motion.div initial={reduceMotion ? false : { opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }} transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 26 }} className="scan-result success" role="status"><CheckCircle2 aria-hidden /><div><span>{mode === "BOARDING" ? "Boarding recorded" : "Alighting recorded"}</span><strong>{result.passengerName || result.outcome || "Pass accepted"}</strong>{result.passengerName && result.outcome && <p>{result.outcome}</p>}</div><button type="button" onClick={continueScanning} className="btn-primary">Continue scanning</button></motion.div>}
 
-        <details className="border-t border-slate-800 pt-4">
-          <summary className="cursor-pointer text-xs font-semibold text-amber-300">Development / Demo fallback: paste pass token</summary>
+        {!result && <details className="scanner-fallback">
+          <summary>Development / Demo fallback: paste pass token</summary>
           <div className="space-y-3 mt-3">
-            <textarea rows={3} aria-label="Development token fallback" placeholder="Paste the short-lived signed token copied from the displayed demo pass" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 font-mono" />
-            <button onClick={() => void handleScan()} disabled={loading || !tokenInput.trim()} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 disabled:opacity-50">
+            <textarea rows={3} aria-label="Development token fallback" placeholder="Paste the short-lived signed token copied from the displayed demo pass" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="input-field font-mono" />
+            <button onClick={() => void handleScan()} disabled={loading || !tokenInput.trim()} className="btn-primary w-full">
               {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Validate fallback token"}
             </button>
           </div>
-        </details>
+        </details>}
       </div>
     </Modal>
   );

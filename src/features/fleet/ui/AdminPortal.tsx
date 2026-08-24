@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import io from "socket.io-client";
 import Navbar from "@/components/Navbar";
+import ConfirmModal from "@/components/ConfirmModal";
+import Modal from "@/components/Modal";
 import { DriversTab, useCurrentUser } from "@/features/identity/ui";
 import { TripsTab, useTrips } from "@/features/trips/ui";
 import { LiveMonitoringTab } from "@/features/location/ui";
@@ -16,20 +18,27 @@ import type { CurrentUser } from "@/shared/ui/current-user";
 
 import {
   Activity,
+  LayoutDashboard,
   Bus,
   MapPin,
   Calendar,
   CreditCard,
   BarChart3,
   UserRound,
+  Menu,
+  Route as RouteIcon,
+  X,
 } from "lucide-react";
+
+type AdminView = "dashboard" | "live" | "stops" | "buses" | "routes" | "trips" | "drivers" | "appeals" | "analytics";
 
 export default function AdminPortal({ initialUser }: { initialUser: CurrentUser }) {
   const { user } = useCurrentUser(initialUser);
   const { trips, fetchTrips } = useTrips();
-  const [activeTab, setActiveTab] = useState<
-    "live" | "stops" | "buses" | "routes" | "trips" | "drivers" | "appeals" | "analytics"
-  >("live");
+  const [activeTab, setActiveTab] = useState<AdminView>("dashboard");
+  const [adminNavOpen, setAdminNavOpen] = useState(false);
+  const adminMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const adminSidebarRef = useRef<HTMLElement>(null);
 
   // Realtime Live Seat Monitoring state
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
@@ -78,6 +87,11 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
 
   const [selectedAppeal, setSelectedAppeal] = useState<any>(null);
   const [adminComment, setAdminComment] = useState("");
+  const [stopForm, setStopForm] = useState<any | null>(null);
+  const [driverForm, setDriverForm] = useState<any | null>(null);
+  const [destructiveTarget, setDestructiveTarget] = useState<{ kind: "stop" | "route" | "bus"; item: any } | null>(null);
+  const [cancelTripTarget, setCancelTripTarget] = useState<any | null>(null);
+  const [cancelTripReason, setCancelTripReason] = useState("");
 
   useEffect(() => {
     fetchBuses();
@@ -98,6 +112,40 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [showBusModal, showRouteModal, showTripModal]);
+
+  useEffect(() => {
+    if (!adminNavOpen) return;
+    const menuButton = adminMenuButtonRef.current;
+    const closeNavigation = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setAdminNavOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const sidebar = adminSidebarRef.current;
+      if (!sidebar) return;
+      const items = Array.from(sidebar.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])",
+      ));
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    adminSidebarRef.current?.querySelector<HTMLElement>("button")?.focus();
+    document.addEventListener("keydown", closeNavigation);
+    return () => {
+      document.removeEventListener("keydown", closeNavigation);
+      menuButton?.focus();
+    };
+  }, [adminNavOpen]);
 
   useEffect(() => {
     if (activeTab === "analytics" && utilizationData.length === 0) {
@@ -192,9 +240,17 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
       const res = await fetch("/api/appeals");
       if (res.ok) {
         const data = await res.json();
-        setAppeals(data.appeals || []);
+        const nextAppeals = data.appeals || [];
+        setAppeals(nextAppeals);
+        setSelectedAppeal((current: any) =>
+          current
+            ? nextAppeals.find((appeal: any) => appeal.id === current.id) ?? null
+            : null,
+        );
+        return nextAppeals;
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); }
+    return null;
   }
 
   async function fetchAnalytics() {
@@ -316,60 +372,75 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
     return data;
   }
 
-  async function handleCreateStop(existing?: any) {
-    const code = window.prompt("Stable stop code", existing?.code ?? "");
-    if (code === null) return;
-    const name = window.prompt("Display name", existing?.name ?? "");
-    if (name === null) return;
-    const latitude = Number(window.prompt("Latitude (-90 to 90)", String(existing?.latitude ?? "3.215")));
-    const longitude = Number(window.prompt("Longitude (-180 to 180)", String(existing?.longitude ?? "101.728")));
+  function handleCreateStop(existing?: any) {
+    setStopForm({ id: existing?.id, code: existing?.code ?? "", name: existing?.name ?? "", latitude: String(existing?.latitude ?? "3.215"), longitude: String(existing?.longitude ?? "101.728") });
+  }
+
+  async function submitStop(event: React.FormEvent) {
+    event.preventDefault();
+    if (!stopForm) return;
     try {
-      await mutateSimple("/api/admin/stops", existing ? "PATCH" : "POST", { ...(existing ? { id: existing.id } : {}), code, name, latitude, longitude });
-      toast.success(existing ? "Stop updated" : "Stop created");
-      fetchStops();
+      setIsSubmitting(true);
+      await mutateSimple("/api/admin/stops", stopForm.id ? "PATCH" : "POST", { ...(stopForm.id ? { id: stopForm.id } : {}), code: stopForm.code, name: stopForm.name, latitude: Number(stopForm.latitude), longitude: Number(stopForm.longitude) });
+      toast.success(stopForm.id ? "Stop updated" : "Stop created");
+      setStopForm(null); fetchStops();
+    } catch (error: any) { toast.error(error.message); }
+    finally { setIsSubmitting(false); }
+  }
+
+  function handleDeactivateStop(stop: any) {
+    setDestructiveTarget({ kind: "stop", item: stop });
+  }
+
+  function handleDeactivateRoute(route: any) {
+    setDestructiveTarget({ kind: "route", item: route });
+  }
+
+  function handleRetireBus(bus: any) {
+    setDestructiveTarget({ kind: "bus", item: bus });
+  }
+
+  function handleDriver(existing?: any) {
+    setDriverForm({ id: existing?.id, name: existing?.name ?? "", email: existing?.email ?? "", password: "" });
+  }
+
+  async function submitDriver(event: React.FormEvent) {
+    event.preventDefault();
+    if (!driverForm) return;
+    try {
+      setIsSubmitting(true);
+      await mutateSimple("/api/admin/drivers", driverForm.id ? "PATCH" : "POST", { ...(driverForm.id ? { id: driverForm.id } : { password: driverForm.password }), name: driverForm.name, email: driverForm.email });
+      toast.success(driverForm.id ? "Driver updated" : "Driver created"); setDriverForm(null); fetchDrivers();
+    } catch (error: any) { toast.error(error.message); }
+    finally { setIsSubmitting(false); }
+  }
+
+  function handleCancelTrip(trip: any) {
+    setCancelTripReason("");
+    setCancelTripTarget(trip);
+  }
+
+  async function confirmDestructive() {
+    if (!destructiveTarget) return;
+    const { kind, item } = destructiveTarget;
+    try {
+      if (kind === "stop") { await mutateSimple(`/api/admin/stops?id=${item.id}`, "DELETE"); await Promise.all([fetchStops(), fetchRoutes()]); toast.success("Stop deactivated"); }
+      if (kind === "route") { await mutateSimple(`/api/admin/routes?id=${item.id}`, "DELETE"); await fetchRoutes(); toast.success("Route deactivated"); }
+      if (kind === "bus") { await mutateSimple(`/api/admin/buses?id=${item.id}`, "DELETE"); await Promise.all([fetchBuses(), fetchTrips()]); toast.success("Bus retired"); }
+      setDestructiveTarget(null);
     } catch (error: any) { toast.error(error.message); }
   }
 
-  async function handleDeactivateStop(stop: any) {
-    if (!window.confirm(`Deactivate ${stop.code}? Historical Trip snapshots remain readable.`)) return;
-    try { await mutateSimple(`/api/admin/stops?id=${stop.id}`, "DELETE"); toast.success("Stop deactivated"); fetchStops(); fetchRoutes(); }
+  async function submitCancelTrip(event: React.FormEvent) {
+    event.preventDefault();
+    if (!cancelTripTarget || !cancelTripReason.trim()) return;
+    try { setIsSubmitting(true); await mutateSimple(`/api/trips/${cancelTripTarget.id}`, "DELETE", { reason: cancelTripReason.trim() }); toast.success("Trip cancelled"); setCancelTripTarget(null); fetchTrips(); }
     catch (error: any) { toast.error(error.message); }
-  }
-
-  async function handleDeactivateRoute(route: any) {
-    if (!window.confirm(`Deactivate ${route.name}? Existing Trips are not rewritten.`)) return;
-    try { await mutateSimple(`/api/admin/routes?id=${route.id}`, "DELETE"); toast.success("Route deactivated"); fetchRoutes(); }
-    catch (error: any) { toast.error(error.message); }
-  }
-
-  async function handleRetireBus(bus: any) {
-    if (!window.confirm(`Retire ${bus.plateNumber}? Future NOT_STARTED Trips will be cancelled.`)) return;
-    try { await mutateSimple(`/api/admin/buses?id=${bus.id}`, "DELETE"); toast.success("Bus retired"); fetchBuses(); fetchTrips(); }
-    catch (error: any) { toast.error(error.message); }
-  }
-
-  async function handleDriver(existing?: any) {
-    const name = window.prompt("Driver name", existing?.name ?? "");
-    if (name === null) return;
-    const email = window.prompt("Driver email", existing?.email ?? "");
-    if (email === null) return;
-    const password = existing ? undefined : window.prompt("Temporary password (8+ chars, upper/lower/number)");
-    if (!existing && password === null) return;
-    try {
-      await mutateSimple("/api/admin/drivers", existing ? "PATCH" : "POST", { ...(existing ? { id: existing.id } : { password }), name, email });
-      toast.success(existing ? "Driver updated" : "Driver created"); fetchDrivers();
-    } catch (error: any) { toast.error(error.message); }
-  }
-
-  async function handleCancelTrip(trip: any) {
-    const reason = window.prompt("Cancellation reason (required)");
-    if (!reason) return;
-    try { await mutateSimple(`/api/trips/${trip.id}`, "DELETE", { reason }); toast.success("Trip cancelled"); fetchTrips(); }
-    catch (error: any) { toast.error(error.message); }
+    finally { setIsSubmitting(false); }
   }
 
 
-    async function handleReviewAppeal(
+  async function handleReviewAppeal(
     appealId: string,
     status: "APPROVED" | "REJECTED"
   ) {
@@ -382,108 +453,66 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
       });
 
       if (res.ok) {
-        toast.success(`Appeal ${status.toLowerCase()} successfully`);
-        setSelectedAppeal(null);
+        const data = await res.json();
+        const resolvedStatus = data.result.status;
+        const resolvedAt = new Date().toISOString();
+        setAppeals((current) => current.map((appeal) =>
+          appeal.id === appealId
+            ? { ...appeal, status: resolvedStatus, adminComment, resolvedAt, reviewedBy: user?.name ?? null }
+            : appeal,
+        ));
+        setSelectedAppeal((current: any) =>
+          current?.id === appealId
+            ? { ...current, status: resolvedStatus, adminComment, resolvedAt, reviewedBy: user?.name ?? null }
+            : current,
+        );
+        toast.success(`Appeal ${resolvedStatus.toLowerCase()} successfully`);
         setAdminComment("");
-        fetchAppeals();
+        await fetchAppeals();
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to process appeal");
+        toast.error(data.error?.message || "Failed to process appeal");
+        await fetchAppeals();
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); } finally { setIsSubmitting(false); }
   }
 
+  const pendingAppeals = appeals.filter((appeal) => appeal.status === "PENDING").length;
+  const activeTrips = trips.filter((trip) => trip.status === "BOARDING" || trip.status === "DEPARTED");
+  const upcomingTrips = trips.filter((trip) => trip.status === "NOT_STARTED");
+  const attentionBuses = buses.filter((bus) => bus.status !== "ACTIVE");
+  const adminNavigation: Array<{ label: string; items: Array<{ id: AdminView; label: string; icon: React.ComponentType<{ className?: string }> }> }> = [
+    { label: "Overview", items: [{ id: "dashboard", label: "Dashboard", icon: LayoutDashboard }, { id: "live", label: "Live Operations", icon: Activity }] },
+    { label: "Operations", items: [{ id: "trips", label: "Timetable", icon: Calendar }, { id: "buses", label: "Buses", icon: Bus }, { id: "routes", label: "Routes", icon: RouteIcon }, { id: "stops", label: "Stops", icon: MapPin }, { id: "drivers", label: "Drivers", icon: UserRound }] },
+    { label: "Passengers", items: [{ id: "appeals", label: "Appeals", icon: CreditCard }] },
+    { label: "Insights", items: [{ id: "analytics", label: "Analytics", icon: BarChart3 }] },
+  ];
+
   return (
-    <div
-      className="min-h-screen flex flex-col"
-      style={{
-        background: "var(--bg-base)",
-        color: "var(--text-primary)",
-      }}
-    >
+    <div className="admin-shell">
       <Navbar initialUser={user} />
+      <button ref={adminMenuButtonRef} type="button" onClick={() => setAdminNavOpen(true)} aria-expanded={adminNavOpen} aria-controls="admin-navigation-drawer" className="admin-mobile-menu"><Menu aria-hidden className="size-5" /> Administration menu</button>
+      <div className="admin-layout">
+        {adminNavOpen && <button type="button" className="admin-nav-scrim" aria-label="Close administration menu" onClick={() => setAdminNavOpen(false)} />}
+        <aside ref={adminSidebarRef} id="admin-navigation-drawer" aria-label="Administration navigation" className={`admin-sidebar ${adminNavOpen ? "open" : ""}`}>
+          <div className="admin-sidebar-heading"><div><p className="eyebrow">Operations</p><strong>Administration</strong></div><button type="button" onClick={() => setAdminNavOpen(false)} aria-label="Close administration menu"><X aria-hidden /></button></div>
+          <nav aria-label="Administration sections">
+            {adminNavigation.map((group) => <section key={group.label}><h2>{group.label}</h2>{group.items.map(({ id, label, icon: Icon }) => <button type="button" key={id} onClick={() => { setActiveTab(id); setAdminNavOpen(false); }} aria-current={activeTab === id ? "page" : undefined} className={activeTab === id ? "active" : ""}><Icon aria-hidden className="size-4" /><span>{label}</span>{id === "appeals" && pendingAppeals > 0 && <small>{pendingAppeals}</small>}</button>)}</section>)}
+          </nav>
+        </aside>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        <header>
-          <h1 className="section-title">Shuttle Administration</h1>
-          <p className="section-subtitle">Manage operational fleet, topology, schedules, drivers, appeals, and truthful analytics.</p>
-        </header>
-        {/* Admin Navigation Tabs */}
-        <div
-          className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b"
-          style={{ borderColor: "var(--border)" }}
-        >
-          <div className="tab-bar" role="tablist" aria-label="Administration sections">
-            {(
-              [
-                "live",
-                "stops",
-                "buses",
-                "routes",
-                "trips",
-                "drivers",
-                "appeals",
-                "analytics",
-              ] as const
-            ).map((tab) => {
-              const icons: Record<string, React.ReactNode> = {
-                live: (
-                  <Activity
-                    className="w-4 h-4 live-dot"
-                    style={{ color: "#4ade80" }}
-                  />
-                ),
-                buses: <Bus className="w-4 h-4" />,
-                stops: <MapPin className="w-4 h-4" />,
-                routes: <MapPin className="w-4 h-4" />,
-                trips: <Calendar className="w-4 h-4" />,
-                drivers: <UserRound className="w-4 h-4" />,
-                appeals: <CreditCard className="w-4 h-4" />,
-                analytics: <BarChart3 className="w-4 h-4" />,
-              };
-              const labels: Record<string, string> = {
-                live: "Dashboard / Live",
-                buses: "Buses",
-                stops: "Stops",
-                routes: "Routes",
-                trips: "Timetable",
-                drivers: "Drivers",
-                appeals: "Appeals",
-                analytics: "Analytics",
-              };
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  className={`tab-item ${activeTab === tab ? "active" : ""}`}
-                >
-                  {icons[tab]}
-                  {labels[tab]}
-                  {tab === "appeals" &&
-                    appeals.filter((a) => a.status === "PENDING").length >
-                      0 && (
-                      <span
-                        className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                        style={
-                          activeTab === "appeals"
-                            ? { background: "rgba(255,255,255,0.25)" }
-                            : { background: "#f59e0b", color: "#1a1a1a" }
-                        }
-                      >
-                        {
-                          appeals.filter((a) => a.status === "PENDING").length
-                        }
-                      </span>
-                    )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <main id="main-content" className="admin-content">
+          {activeTab === "dashboard" && (
+            <div className="admin-dashboard animate-fade-in">
+              <header className="admin-dashboard-header"><div><h1>What requires attention now</h1><p>Live Trip state, upcoming work and passenger review queues from current system data.</p></div><time>{new Date().toLocaleDateString("en-MY", { weekday: "long", day: "numeric", month: "long" })}</time></header>
+              <section className="admin-command-stage">
+                <section className="operations-anchor"><div className="dashboard-section-heading"><div><h2>Active operations</h2><span className={`operations-live-count ${activeTrips.length > 0 ? "is-live" : "is-quiet"}`}><i />{activeTrips.length} active</span></div><button type="button" className="btn-secondary" onClick={() => setActiveTab("live")}>Open Live Operations</button></div>{activeTrips.length === 0 ? <p className="dashboard-empty">No Trips are boarding or departed right now.</p> : <div className="active-operation-list">{activeTrips.slice(0, 5).map((trip) => <article key={trip.id}><time>{new Date(trip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><div><strong>{trip.routeName}</strong><p>{trip.busPlateNumber}</p></div><span className="badge badge-blue">{trip.status}</span><button type="button" onClick={() => { setSelectedTripId(trip.id); setActiveTab("live"); }}>Monitor</button></article>)}</div>}</section>
+                <aside className="attention-queue"><p>Attention queue</p><button type="button" onClick={() => setActiveTab("appeals")}><span>Pending appeals</span><strong className="tabular-nums">{pendingAppeals}</strong></button><button type="button" onClick={() => setActiveTab("buses")}><span>Buses requiring attention</span><strong className="tabular-nums">{attentionBuses.length}</strong></button><button type="button" onClick={() => setActiveTab("trips")}><span>Upcoming Trips</span><strong className="tabular-nums">{upcomingTrips.length}</strong></button></aside>
+              </section>
+              <section className="upcoming-strip"><div><h2>Upcoming Trips</h2><p>Next scheduled departures</p></div><div>{upcomingTrips.length === 0 ? <p className="upcoming-empty">No upcoming Trips are scheduled.</p> : upcomingTrips.slice(0, 4).map((trip) => <article key={trip.id}><time>{new Date(trip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><strong>{trip.routeName}</strong><span>{trip.busPlateNumber}</span></article>)}</div></section>
+            </div>
+          )}
 
-        {/* TAB 1: LIVE FLEET */}
         {activeTab === "live" && (
           <LiveMonitoringTab
             trips={trips}
@@ -494,14 +523,12 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
           />
         )}
 
-        {/* TAB 2: BUSES CRUD */}
         {activeTab === "buses" && (
           <BusesTab buses={buses} onOpenModal={() => { setEditingBusId(null); setNewBus({ plateNumber: "", seatedCapacity: 20, standingCapacity: 8, status: "ACTIVE" }); setShowBusModal(true); }} onEditBus={(bus) => { setEditingBusId(bus.id); setNewBus({ plateNumber: bus.plateNumber, seatedCapacity: bus.seatedCapacity, standingCapacity: bus.standingCapacity, status: bus.status }); setShowBusModal(true); }} onRetireBus={handleRetireBus} />
         )}
 
         {activeTab === "stops" && <StopsTab stops={stops} onCreate={() => handleCreateStop()} onEdit={handleCreateStop} onDeactivate={handleDeactivateStop} />}
 
-        {/* TAB 3: ROUTES CRUD */}
         {activeTab === "routes" && (
           <RoutesTab
             routes={routes}
@@ -511,14 +538,12 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
           />
         )}
 
-        {/* TAB 4: TIMETABLE & TRIPS */}
         {activeTab === "trips" && (
           <TripsTab trips={trips} onOpenModal={() => { setEditingTripId(null); setNewTrip({ routeId: "", busId: "", driverId: "", departureTime: "" }); setShowTripModal(true); }} onEditTrip={(trip) => { setEditingTripId(trip.id); setNewTrip({ routeId: trip.routeId, busId: trip.busId, driverId: trip.driverId || "", departureTime: new Date(trip.departureTime).toISOString().slice(0, 16) }); setShowTripModal(true); }} onCancelTrip={handleCancelTrip} />
         )}
 
         {activeTab === "drivers" && <DriversTab drivers={drivers} onCreate={() => handleDriver()} onEdit={handleDriver} />}
 
-        {/* TAB 5: PENALTY APPEALS */}
         {activeTab === "appeals" && (
           <AppealsTab
             appeals={appeals}
@@ -527,10 +552,10 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
             adminComment={adminComment}
             setAdminComment={setAdminComment}
             onReviewAppeal={handleReviewAppeal}
+            isReviewing={isSubmitting}
           />
         )}
 
-        {/* TAB 6: DATA ANALYTICS */}
         {activeTab === "analytics" && (
           <AnalyticsTab
             recommendation={recommendation}
@@ -538,28 +563,23 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
             noShowData={noShowData}
           />
         )}
-      </main>
+        </main>
+      </div>
 
       {/* CREATE BUS MODAL */}
       {showBusModal && (
-        <div className="modal-overlay">
-          <div role="dialog" aria-modal="true" aria-labelledby="bus-dialog-title" className="modal-content w-full max-w-md p-6 space-y-4">
-            <h2
-              id="bus-dialog-title"
-              className="text-lg font-bold"
-              style={{ color: "var(--text-primary)" }}
-            >
-              {editingBusId ? "Edit Bus" : "Add New Bus to Fleet"}
-            </h2>
-            <form onSubmit={handleCreateBus} className="space-y-4">
+        <Modal isOpen onClose={() => setShowBusModal(false)} title={editingBusId ? "Edit Bus" : "Add bus to fleet"} maxWidth="md">
+            <form onSubmit={handleCreateBus} className="admin-form">
               <div>
                 <label
+                  htmlFor="bus-plate-number"
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   Plate Number
                 </label>
                 <input
+                  id="bus-plate-number"
                   type="text"
                   required
                   placeholder="e.g. TAR-1004"
@@ -572,8 +592,8 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
               </div>
               {editingBusId && (
                 <div>
-                  <label className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Fleet Status</label>
-                  <select value={newBus.status} onChange={(e) => setNewBus({ ...newBus, status: e.target.value })} className="input-field">
+                  <label htmlFor="bus-fleet-status" className="block text-xs font-bold mb-1.5" style={{ color: "var(--text-secondary)" }}>Fleet Status</label>
+                  <select id="bus-fleet-status" value={newBus.status} onChange={(e) => setNewBus({ ...newBus, status: e.target.value })} className="input-field">
                     <option value="ACTIVE">ACTIVE</option>
                     <option value="MAINTENANCE">MAINTENANCE</option>
                   </select>
@@ -582,12 +602,14 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
               )}
               <div>
                 <label
+                  htmlFor="bus-seated-capacity"
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   Seated Capacity
                 </label>
                 <input
+                  id="bus-seated-capacity"
                   type="number"
                   required
                   min={1}
@@ -603,12 +625,14 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
               </div>
               <div>
                 <label
+                  htmlFor="bus-standing-capacity"
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   Standing Capacity
                 </label>
                 <input
+                  id="bus-standing-capacity"
                   type="number"
                   required
                   min={0}
@@ -622,7 +646,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                   className="input-field"
                 />
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="admin-form-actions">
                 <button
                   type="button"
                   onClick={() => setShowBusModal(false)}
@@ -635,30 +659,23 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* CREATE ROUTE MODAL */}
       {showRouteModal && (
-        <div className="modal-overlay">
-          <div role="dialog" aria-modal="true" aria-labelledby="route-dialog-title" className="modal-content w-full max-w-md p-6 space-y-4">
-            <h2
-              id="route-dialog-title"
-              className="text-lg font-bold"
-              style={{ color: "var(--text-primary)" }}
-            >
-              {editingRouteId ? "Edit Route" : "Add New Route"}
-            </h2>
-            <form onSubmit={handleCreateRoute} className="space-y-4">
+        <Modal isOpen onClose={() => setShowRouteModal(false)} title={editingRouteId ? "Edit Route" : "Add route"} description="Ordered stops and travel durations define the route topology." maxWidth="md">
+            <form onSubmit={handleCreateRoute} className="admin-form">
               <div>
                 <label
+                  htmlFor="route-name"
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   Route Name
                 </label>
                 <input
+                  id="route-name"
                   type="text"
                   required
                   placeholder="Example: TAR UMT → Melati Utama"
@@ -670,16 +687,17 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 />
               </div>
               <div>
-                <label
+                <p
                   className="block text-xs font-bold mb-1.5"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   Ordered Stops and Travel Time to Next Stop
-                </label>
+                </p>
                 <div className="space-y-2">
                   {newRoute.routeStops.map((routeStop, index) => (
                     <div key={index} className="grid grid-cols-[1fr_8rem] gap-2">
                       <select
+                        aria-label={`Stop ${index + 1}`}
                         required
                         value={routeStop.stopId}
                         onChange={(e) => setNewRoute({
@@ -692,7 +710,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                       >
                         <option value="">Select stop</option>
                         {stops.map((stop) => (
-                          <option key={stop.id} value={stop.id}>{stop.code} — {stop.name}</option>
+                          <option key={stop.id} value={stop.id}>{stop.code} · {stop.name}</option>
                         ))}
                       </select>
                       {index < newRoute.routeStops.length - 1 ? (
@@ -757,7 +775,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="admin-form-actions">
                 <button
                   type="button"
                   onClick={() => setShowRouteModal(false)}
@@ -770,22 +788,13 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* SCHEDULE TRIP MODAL */}
       {showTripModal && (
-        <div className="modal-overlay">
-          <div role="dialog" aria-modal="true" aria-labelledby="trip-dialog-title" className="modal-content w-full max-w-md p-6 space-y-4">
-            <h2
-              id="trip-dialog-title"
-              className="text-lg font-bold"
-              style={{ color: "var(--text-primary)" }}
-            >
-              {editingTripId ? "Reschedule / Reassign Trip" : "Schedule New Trip"}
-            </h2>
-            <form onSubmit={handleCreateTrip} className="space-y-4">
+        <Modal isOpen onClose={() => setShowTripModal(false)} title={editingTripId ? "Reschedule / reassign Trip" : "Schedule new Trip"} maxWidth="md">
+            <form onSubmit={handleCreateTrip} className="admin-form">
               {[
                 {
                   label: "Route",
@@ -867,7 +876,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 Intermediate and final times are derived from the Route travel-time offsets.
               </p>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="admin-form-actions">
                 <button
                   type="button"
                   onClick={() => setShowTripModal(false)}
@@ -880,9 +889,22 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
+
+      <Modal isOpen={stopForm !== null} onClose={() => setStopForm(null)} title={stopForm?.id ? "Edit stop" : "Add stop"} maxWidth="sm">
+        {stopForm && <form onSubmit={submitStop} className="admin-form"><label><span>Stable stop code</span><input className="input-field" required value={stopForm.code} onChange={(event) => setStopForm({ ...stopForm, code: event.target.value })} /></label><label><span>Display name</span><input className="input-field" required value={stopForm.name} onChange={(event) => setStopForm({ ...stopForm, name: event.target.value })} /></label><div className="admin-form-grid"><label><span>Latitude</span><input className="input-field tabular-nums" type="number" min="-90" max="90" step="any" required value={stopForm.latitude} onChange={(event) => setStopForm({ ...stopForm, latitude: event.target.value })} /></label><label><span>Longitude</span><input className="input-field tabular-nums" type="number" min="-180" max="180" step="any" required value={stopForm.longitude} onChange={(event) => setStopForm({ ...stopForm, longitude: event.target.value })} /></label></div><div className="admin-form-actions"><button type="button" className="btn-ghost" onClick={() => setStopForm(null)}>Cancel</button><button className="btn-primary" disabled={isSubmitting}>{isSubmitting ? "Saving…" : "Save stop"}</button></div></form>}
+      </Modal>
+
+      <Modal isOpen={driverForm !== null} onClose={() => setDriverForm(null)} title={driverForm?.id ? "Edit driver" : "Add driver"} maxWidth="sm">
+        {driverForm && <form onSubmit={submitDriver} className="admin-form"><label><span>Driver name</span><input className="input-field" required value={driverForm.name} onChange={(event) => setDriverForm({ ...driverForm, name: event.target.value })} /></label><label><span>Email</span><input className="input-field" type="email" required value={driverForm.email} onChange={(event) => setDriverForm({ ...driverForm, email: event.target.value })} /></label>{!driverForm.id && <label><span>Temporary password</span><input className="input-field" type="password" minLength={8} required value={driverForm.password} onChange={(event) => setDriverForm({ ...driverForm, password: event.target.value })} /><small>At least 8 characters with upper/lowercase and a number.</small></label>}<div className="admin-form-actions"><button type="button" className="btn-ghost" onClick={() => setDriverForm(null)}>Cancel</button><button className="btn-primary" disabled={isSubmitting}>{isSubmitting ? "Saving…" : "Save driver"}</button></div></form>}
+      </Modal>
+
+      <Modal isOpen={cancelTripTarget !== null} onClose={() => setCancelTripTarget(null)} title="Cancel Trip" description="This action uses the existing cancellation workflow and requires a reason." maxWidth="sm">
+        <form onSubmit={submitCancelTrip} className="admin-form"><label><span>Cancellation reason</span><textarea className="input-field" rows={4} required value={cancelTripReason} onChange={(event) => setCancelTripReason(event.target.value)} /></label><div className="admin-form-actions"><button type="button" className="btn-ghost" onClick={() => setCancelTripTarget(null)}>Keep Trip</button><button className="btn-danger" disabled={isSubmitting}>{isSubmitting ? "Cancelling…" : "Cancel Trip"}</button></div></form>
+      </Modal>
+
+      <ConfirmModal isOpen={destructiveTarget !== null} onClose={() => setDestructiveTarget(null)} onConfirm={() => void confirmDestructive()} title={destructiveTarget?.kind === "bus" ? "Retire bus?" : destructiveTarget?.kind === "route" ? "Deactivate route?" : "Deactivate stop?"} message={destructiveTarget?.kind === "bus" ? `Retire ${destructiveTarget.item.plateNumber}? Future NOT_STARTED Trips will be cancelled.` : destructiveTarget?.kind === "route" ? `Deactivate ${destructiveTarget.item.name}? Existing Trips are not rewritten.` : destructiveTarget ? `Deactivate ${destructiveTarget.item.code}? Historical Trip snapshots remain readable.` : ""} confirmText={destructiveTarget?.kind === "bus" ? "Retire bus" : "Deactivate"} cancelText="Go back" isDestructive />
     </div>
   );
 }
