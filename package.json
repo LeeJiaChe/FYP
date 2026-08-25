@@ -15,6 +15,7 @@
     "test:architecture": "node --import tsx --test tests/architecture/*.test.ts",
     "test:e2e": "playwright test",
     "verify": "npm run lint && npm run typecheck && npm run test:unit && npm run test:architecture",
+    "db:check": "prisma generate && prisma validate && prisma migrate status",
     "db:seed": "tsx prisma/seed.ts",
     "realtime": "node realtime/server.js"
   },

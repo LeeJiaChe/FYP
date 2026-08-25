@@ -116,7 +116,7 @@ describes the existing runtime at a high level, not the completed Architecture v
 
 - **Node.js** ≥ 20.9 (required by Next.js 16)
 - **npm** ≥ 9
-- **PostgreSQL** (a reachable development database)
+- Access to the dedicated shared **Supabase PostgreSQL** instance
 
 ---
 
@@ -127,59 +127,57 @@ describes the existing runtime at a high level, not the completed Architecture v
 ```bash
 git clone https://github.com/LeeJiaChe/FYP.git
 cd FYP
-git checkout architecture-v2
 npm ci
-npx prisma generate
 ```
 
 ### 2. Environment Variables
 
-Copy the documented safe template and replace every secret placeholder with a
-distinct random value of at least 32 characters:
+Copy the documented template and populate the privately supplied team environment values (shared Supabase connection URL and secrets):
 
 ```bash
 cp .env.example .env
 ```
 
-Required server values are:
+The template documents placeholders for:
 
 ```env
-# Durable PostgreSQL development database
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fyp_bus_system?schema=public"
+# Shared Supabase PostgreSQL Session Pooler connection URL (port 5432)
+DATABASE_URL="postgresql://postgres.<PROJECT_REF>:<DB_PASSWORD>@<SESSION_POOLER_HOST>:5432/postgres?sslmode=require&connection_limit=3&pool_timeout=30"
 
-# Use separate, strong random secrets outside local development
-JWT_SECRET="replace-with-a-strong-session-secret"
-QR_SECRET="replace-with-a-different-strong-qr-secret"
+# Distinct random secrets (shared team secret or local development secret)
+JWT_SECRET="<TEAM_OR_LOCAL_SECRET>"
+QR_SECRET="<TEAM_OR_LOCAL_SECRET>"
+REALTIME_SERVICE_SECRET="<TEAM_OR_LOCAL_SECRET>"
 
-# Realtime service (server-side only — never exposed to browser)
+# Local Next.js and standalone Socket.io service endpoints
 REALTIME_URL="http://localhost:4000"
-REALTIME_SERVICE_SECRET="replace-with-a-strong-service-secret"
-
-# Realtime service (browser-side Socket.io connection)
 NEXT_PUBLIC_REALTIME_URL="http://localhost:4000"
 CORS_ORIGIN="http://localhost:3000"
-
-# Internal URL used by realtime service to call Next.js cron endpoints
 NEXTJS_INTERNAL_URL="http://localhost:3000"
 ```
 
-`TEST_DATABASE_URL` and `TEST_DATABASE_CONFIRM` are deliberately absent from
-normal development/production setup; they are opt-in fail-closed integration
-test settings described in `.env.example`.
+`TEST_DATABASE_URL` and `TEST_DATABASE_CONFIRM` are deliberately absent from normal development setup; they are opt-in fail-closed integration test settings described in `.env.example`.
 
-### 3. Set up and seed PostgreSQL
+### 3. Verify Database Connection
+
+Generate the Prisma client and verify that the shared Supabase database schema is up to date:
 
 ```bash
-# Apply the committed PostgreSQL migrations
-npx prisma migrate deploy
-
-# Confirm the schema and migration state
-npx prisma validate
+npx prisma generate
 npx prisma migrate status
-
-# Seed with demo data (routes, buses, drivers, students)
-npm run db:seed
 ```
+
+Or run the non-destructive check convenience command:
+
+```bash
+npm run db:check
+```
+
+> [!CAUTION]
+> **IMPORTANT FOR TEAMMATES:**
+> - Do **NOT** run `npm run db:seed` against the shared Supabase database. The shared database is already initialized and seeded.
+> - Do **NOT** run `npx prisma migrate reset`.
+> - Do **NOT** run `npx prisma db push`.
 
 ### 4. Run the Application
 
@@ -264,7 +262,8 @@ See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md),
 | `npm run build` | Build production bundle |
 | `npm run start` | Start production server |
 | `npm run realtime` | Start standalone Socket.io service on port `4000` |
-| `npm run db:seed` | Seed the database with demo data |
+| `npm run db:check` | Run non-destructive database check (`prisma generate`, `prisma validate`, `prisma migrate status`) |
+| `npm run db:seed` | Seed the database with demo data (initial setup only — do not run on shared DB) |
 | `npm run lint` | Zero-warning Architecture v2/new-code ESLint gate |
 | `npm run lint:legacy` | Report the inherited full-repository lint baseline |
 | `npm run typecheck` | Run the strict TypeScript check |
