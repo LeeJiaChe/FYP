@@ -154,24 +154,27 @@ REALTIME_URL="http://localhost:4000"
 NEXT_PUBLIC_REALTIME_URL="http://localhost:4000"
 CORS_ORIGIN="http://localhost:3000"
 NEXTJS_INTERNAL_URL="http://localhost:3000"
+
+# Schedulers & GPS simulator flag (default "false" for teammate safety)
+RUN_SCHEDULED_JOBS="false"
 ```
+
+> [!IMPORTANT]
+> **Multi-Developer Realtime / Scheduler Rule:**
+> Normal teammate development `.env` MUST keep `RUN_SCHEDULED_JOBS="false"`. This ensures the Socket.IO service and invalidation `/emit` bridge start normally while disabling duplicate background cron jobs (no-show reconciliation, location retention) and duplicate GPS simulator writes against the shared Supabase database.
+> Only **ONE** designated machine (the demo or central operator) should set `RUN_SCHEDULED_JOBS="true"`.
 
 `TEST_DATABASE_URL` and `TEST_DATABASE_CONFIRM` are deliberately absent from normal development setup; they are opt-in fail-closed integration test settings described in `.env.example`.
 
 ### 3. Verify Database Connection
 
-Generate the Prisma client and verify that the shared Supabase database schema is up to date:
-
-```bash
-npx prisma generate
-npx prisma migrate status
-```
-
-Or run the non-destructive check convenience command:
+Generate the Prisma client, validate schema, and verify that the shared Supabase database schema is up to date:
 
 ```bash
 npm run db:check
 ```
+
+*(Alternatively, run `npx prisma generate && npx prisma migrate status`)*
 
 > [!CAUTION]
 > **IMPORTANT FOR TEAMMATES:**
@@ -283,6 +286,7 @@ Implemented controls and honest limitations are recorded in
 [`framework/FINAL_SECURITY_EVIDENCE.md`](./framework/FINAL_SECURITY_EVIDENCE.md).
 
 - **JWT sessions** stored in HTTP-only cookies (`fyp_session`) — inaccessible to JavaScript
+- **Server-side Prisma ORM isolation** — All application CRUD and domain logic execute server-side via Next.js Server Components, Route Handlers, and Prisma ORM. The application does NOT use Supabase Auth, `@supabase/supabase-js` browser SDK, or Supabase Data APIs for client-side CRUD; public Prisma tables must never be consumed directly from browser Supabase APIs
 - **QR tokens** have explicit Reserved/Walk-in/Alighting purposes and short expiry; rotation reduces replay risk but does not guarantee screenshot prevention
 - **QR scanning** initializes the available browser camera; it uses native QR detection where supported and the maintained `qr-scanner` decoder fallback otherwise. Token paste/copy remains visibly restricted to development/demo use
 - **Internal jobs and realtime publication** authenticate bounded, validated requests in every environment

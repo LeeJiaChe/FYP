@@ -142,16 +142,31 @@ function postTrusted(nextjsHost, path, secret, headerName, body) {
 }
 
 function startSchedulers({ nextjsHost, serviceSecret, simulatorIntervalMs }) {
-  cron.schedule("* * * * *", () => {
+  const noShowTask = cron.schedule("* * * * *", () => {
     void postTrusted(nextjsHost, "/api/admin/cron/no-show", serviceSecret, "x-cron-secret");
   });
-  cron.schedule("17 3 * * *", () => {
+  const retentionTask = cron.schedule("17 3 * * *", () => {
     void postTrusted(nextjsHost, "/api/admin/cron/location-retention", serviceSecret, "x-service-secret");
   });
   const simulator = setInterval(() => {
     void postTrusted(nextjsHost, "/api/location/simulate", serviceSecret, "x-service-secret");
   }, simulatorIntervalMs);
   simulator.unref();
+
+  return {
+    noShowTask,
+    retentionTask,
+    simulator,
+    stop() {
+      noShowTask.stop();
+      retentionTask.stop();
+      clearInterval(simulator);
+    },
+  };
+}
+
+function shouldRunScheduledJobs(flag) {
+  return typeof flag === "string" && flag.trim().toLowerCase() === "true";
 }
 
 if (require.main === module) {
@@ -166,13 +181,23 @@ if (require.main === module) {
     process.exit(1);
   }
   const service = createRealtimeService({ serviceSecret, corsOrigins });
-  startSchedulers({
-    nextjsHost: process.env.NEXTJS_INTERNAL_URL || "http://localhost:3000",
-    serviceSecret,
-    simulatorIntervalMs: Number(
-      process.env.GPS_SIMULATOR_INTERVAL_MS || productPolicy.gpsSimulatorIntervalMs,
-    ),
-  });
+
+  const runScheduledJobs = shouldRunScheduledJobs(process.env.RUN_SCHEDULED_JOBS);
+  if (runScheduledJobs) {
+    startSchedulers({
+      nextjsHost: process.env.NEXTJS_INTERNAL_URL || "http://localhost:3000",
+      serviceSecret,
+      simulatorIntervalMs: Number(
+        process.env.GPS_SIMULATOR_INTERVAL_MS || productPolicy.gpsSimulatorIntervalMs,
+      ),
+    });
+    console.log("[Realtime Service] Scheduled jobs enabled (no-show, retention, GPS simulator)");
+  } else {
+    console.log(
+      `[Realtime Service] Scheduled jobs disabled (RUN_SCHEDULED_JOBS="${process.env.RUN_SCHEDULED_JOBS ?? "false"}")`,
+    );
+  }
+
   service.server.listen(port, () => {
     console.log(`[Realtime Service] listening on port ${port}`);
   });
@@ -183,4 +208,6 @@ module.exports = {
   createRealtimeService,
   secretMatches,
   verifySubscriptionToken,
+  shouldRunScheduledJobs,
+  startSchedulers,
 };

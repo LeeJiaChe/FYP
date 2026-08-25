@@ -9,9 +9,25 @@ import {
 } from "../../../src/shared/realtime/event-contract.js";
 
 const require = createRequire(import.meta.url);
-const { secretMatches, verifySubscriptionToken } = require("../../../realtime/server.js") as {
+const {
+  secretMatches,
+  verifySubscriptionToken,
+  shouldRunScheduledJobs,
+  startSchedulers,
+  createRealtimeService,
+} = require("../../../realtime/server.js") as {
   verifySubscriptionToken: (token: string, secret: string) => { room: string } | null;
   secretMatches: (candidate: string, expected: string) => boolean;
+  shouldRunScheduledJobs: (flag: unknown) => boolean;
+  startSchedulers: (options: {
+    nextjsHost: string;
+    serviceSecret: string;
+    simulatorIntervalMs: number;
+  }) => { stop: () => void };
+  createRealtimeService: (options: {
+    serviceSecret: string;
+    corsOrigins: string[];
+  }) => { server: { listen: (port: number, cb: () => void) => void; close: (cb?: () => void) => void } };
 };
 const tripId = "11111111-1111-4111-8111-111111111111";
 const userId = "22222222-2222-4222-8222-222222222222";
@@ -47,5 +63,38 @@ describe("realtime contracts", () => {
       algorithm: "HS256", expiresIn: 60, issuer: "fyp-nextjs", audience: "fyp-realtime",
     });
     assert.equal(verifySubscriptionToken(wrongPurpose, secret), null);
+  });
+
+  it("evaluates RUN_SCHEDULED_JOBS environment flag with safe-by-default behavior", () => {
+    assert.equal(shouldRunScheduledJobs("true"), true);
+    assert.equal(shouldRunScheduledJobs("TRUE"), true);
+    assert.equal(shouldRunScheduledJobs(" true "), true);
+    assert.equal(shouldRunScheduledJobs("false"), false);
+    assert.equal(shouldRunScheduledJobs("FALSE"), false);
+    assert.equal(shouldRunScheduledJobs(""), false);
+    assert.equal(shouldRunScheduledJobs(undefined), false);
+    assert.equal(shouldRunScheduledJobs(null), false);
+    assert.equal(shouldRunScheduledJobs("1"), false);
+    assert.equal(shouldRunScheduledJobs("yes"), false);
+  });
+
+  it("starts and cleanly stops schedulers when explicitly enabled", () => {
+    const schedulers = startSchedulers({
+      nextjsHost: "http://localhost:3000",
+      serviceSecret: secret,
+      simulatorIntervalMs: 60_000,
+    });
+    assert.ok(schedulers);
+    assert.equal(typeof schedulers.stop, "function");
+    schedulers.stop();
+  });
+
+  it("allows realtime service to initialize without schedulers running", () => {
+    const service = createRealtimeService({
+      serviceSecret: secret,
+      corsOrigins: ["http://localhost:3000"],
+    });
+    assert.ok(service);
+    assert.ok(service.server);
   });
 });
