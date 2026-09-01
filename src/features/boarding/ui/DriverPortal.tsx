@@ -374,9 +374,9 @@ export default function DriverPortal({
   }
 
   const activeTrip = trips.find((trip) => trip.id === activeTripId);
-  const formattedDepartureTime = new Date(
-    activeTrip?.departureTime,
-  ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const formattedDepartureTime = activeTrip
+    ? new Date(activeTrip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
 
   return (
     <div className="driver-shell">
