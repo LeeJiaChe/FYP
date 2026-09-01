@@ -55,8 +55,12 @@ export default function LoginPage() {
               <Bus className="w-6 h-6 text-white" />
             </div>
           </Link>
-          <h1 className="text-2xl font-extrabold tracking-tight">Welcome back</h1>
-          <p className="text-xs text-[var(--text-secondary)]">Sign in to TAR UMT Shuttle with your email or Student ID</p>
+          <h1 className="text-2xl font-extrabold tracking-tight">
+            Welcome back
+          </h1>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Sign in to TAR UMT Shuttle with your email or Student ID
+          </p>
         </div>
 
         {/* Login Form Card */}
@@ -70,7 +74,12 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="login-identity" className="block text-xs font-semibold text-slate-300 mb-1.5">Email or Student ID</label>
+              <label
+                htmlFor="login-identity"
+                className="block text-xs font-semibold text-slate-300 mb-1.5"
+              >
+                Email or Student ID
+              </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
@@ -82,13 +91,18 @@ export default function LoginPage() {
                   placeholder="student1@student.tarc.edu.my or your Student ID"
                   value={emailOrStudentId}
                   onChange={(e) => setEmailOrStudentId(e.target.value)}
-                  className="input-field pl-10"
+                  className="input-field pl-10!"
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="login-password" className="block text-xs font-semibold text-slate-300 mb-1.5">Password</label>
+              <label
+                htmlFor="login-password"
+                className="block text-xs font-semibold text-slate-300 mb-1.5"
+              >
+                Password
+              </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                 <input
@@ -100,7 +114,7 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input-field pl-10"
+                  className="input-field pl-10!"
                 />
               </div>
             </div>
@@ -110,14 +124,16 @@ export default function LoginPage() {
               disabled={loading}
               className="btn-primary w-full"
             >
-              {loading ? "Signing in..." : "Sign In"} <ArrowRight className="w-4 h-4" />
+              {loading ? "Signing in..." : "Sign In"}{" "}
+              <ArrowRight className="w-4 h-4" />
             </button>
           </form>
 
           {/* Quick Seed Credentials Box */}
           <div className="pt-4 border-t border-slate-800/80 space-y-2">
             <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
-              <Info className="w-3.5 h-3.5 text-blue-400" /> Demo Quick Login Accounts:
+              <Info className="w-3.5 h-3.5 text-blue-400" /> Demo Quick Login
+              Accounts:
             </div>
             <div className="grid grid-cols-3 gap-1.5 text-[11px]">
               <button
@@ -143,14 +159,19 @@ export default function LoginPage() {
               </button>
             </div>
             <p className="text-[10px] text-slate-500 text-center">
-              Student/driver password: <code className="text-slate-400">password123</code>. Admin: <code className="text-slate-400">admin1</code>.
+              Student/driver password:{" "}
+              <code className="text-slate-400">password123</code>. Admin:{" "}
+              <code className="text-slate-400">admin1</code>.
             </p>
           </div>
         </div>
 
         <p className="text-center text-xs text-slate-400">
           Don&apos;t have a student account?{" "}
-          <Link href="/register" className="text-blue-400 hover:underline font-semibold">
+          <Link
+            href="/register"
+            className="text-blue-400 hover:underline font-semibold"
+          >
             Register here
           </Link>
         </p>
