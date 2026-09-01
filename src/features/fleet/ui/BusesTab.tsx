@@ -34,7 +34,6 @@ export default function BusesTab({
           <thead>
             <tr>
               <th>Plate number</th>
-              <th>Assigned Driver</th>
               <th>Status</th>
               <th>Seated</th>
               <th>Standing</th>
@@ -49,15 +48,6 @@ export default function BusesTab({
               <tr key={bus.id}>
                 <td>
                   <strong>{bus.plateNumber}</strong>
-                </td>
-                <td>
-                  <strong>
-                    {bus.assignedDriverId
-                      ? drivers.find(
-                          (driver) => driver.id === bus.assignedDriverId,
-                        )?.name
-                      : "Not Assigned"}
-                  </strong>
                 </td>
                 <td>
                   <span
