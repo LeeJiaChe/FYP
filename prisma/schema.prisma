@@ -159,7 +159,7 @@ model Route {
   routeStops RouteStop[]
   trips      Trip[]
 
-  @@unique([lineId, direction])
+  @@index([lineId, direction, deletedAt])
   @@index([lineId])
 }
 

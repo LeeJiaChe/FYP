@@ -30,3 +30,22 @@ export function canEditSchedule(
 ): boolean {
   return status === "NOT_STARTED" && !hasPassengerState(state);
 }
+
+const malaysiaDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kuala_Lumpur",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+export function toServiceDateKey(date: Date | string): string {
+  const parsed = typeof date === "string" ? new Date(date) : date;
+  return malaysiaDateFormatter.format(parsed);
+}
+
+export function isSameServiceDate(
+  first: Date | string,
+  second: Date | string,
+): boolean {
+  return toServiceDateKey(first) === toServiceDateKey(second);
+}

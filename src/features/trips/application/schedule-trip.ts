@@ -51,6 +51,8 @@ function mapPersistenceFailure(error: TripPersistenceError): never {
       throw notFound("ServiceBlock not found");
     case "SERVICE_BLOCK_BUS_MISMATCH":
       throw conflict("Trip Bus must match the selected ServiceBlock Bus");
+    case "SERVICE_BLOCK_DATE_MISMATCH":
+      throw conflict("Trip departure date must match the selected ServiceBlock service date.");
     case "INVENTORY_COUNT_MISMATCH":
       throw invariantViolation("Trip inventory could not be created completely");
     case "TRIP_NOT_FOUND":
@@ -288,8 +290,8 @@ export async function cancelTrip(
   input: CancelTripInput,
   clock: Clock = systemClock,
 ) {
-  if (actor.role !== "ADMIN" && actor.role !== "DRIVER") {
-    throw forbidden("Admin or assigned Driver role required");
+  if (actor.role !== "ADMIN") {
+    throw forbidden("Admin role required");
   }
   try {
     return await cancelTripRecord({
@@ -297,7 +299,6 @@ export async function cancelTrip(
       actorId: actor.userId,
       reason: input.reason,
       now: clock.now(),
-      allowAssignedDriver: actor.role === "DRIVER",
     });
   } catch (error) {
     if (error instanceof TripPersistenceError) mapPersistenceFailure(error);

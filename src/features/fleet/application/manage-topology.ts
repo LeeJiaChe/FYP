@@ -120,6 +120,9 @@ function fleetFailure(error: unknown): never {
   if (error instanceof FleetPersistenceError) {
     if (error.code === "NOT_FOUND") throw notFound("Fleet asset not found");
     if (error.code === "DUPLICATE") throw conflict("Fleet asset already exists");
+    if (error.code === "DUPLICATE_ACTIVE_ROUTE") {
+      throw conflict("This Service Line already has a Route for that direction");
+    }
     if (error.code === "STOP_IN_ACTIVE_ROUTE") {
       throw conflict("Deactivate or edit active Routes that use this Stop first");
     }

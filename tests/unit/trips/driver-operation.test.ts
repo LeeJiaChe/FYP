@@ -93,4 +93,16 @@ describe("server-authoritative Driver operation resolution", () => {
     ]);
     assert.equal(result.currentTrip?.id, "earliest");
   });
+
+  it("retains an overdue unperformed NOT_STARTED Trip instead of silently skipping it", () => {
+    // 08:00 Trip was never started/cancelled; at 10:05 another Trip is scheduled at 10:00
+    const result = resolve("2026-09-01T10:05:00.000Z", [
+      trip("overdue", "NOT_STARTED", new Date("2026-09-01T08:00:00.000Z")),
+      trip("scheduled-10am", "NOT_STARTED", new Date("2026-09-01T10:00:00.000Z")),
+    ]);
+    assert.equal(result.state, "CURRENT_OPERATION");
+    assert.equal(result.currentTrip?.id, "overdue");
+    assert.equal(result.nextTrip?.id, "scheduled-10am");
+    assert.equal(result.reason, "BOARDING_WINDOW_OPEN");
+  });
 });

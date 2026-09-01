@@ -35,10 +35,6 @@ export const tripProgressSchema = z.discriminatedUnion("action", [
     delayMinutes: z.number().int().min(0).max(24 * 60),
     reason: z.string().trim().min(1).max(500),
   }),
-  z.object({
-    action: z.literal("CANCEL"),
-    reason: z.string().trim().min(1).max(500),
-  }),
 ]);
 
 export type ManualBoardingInput = z.infer<typeof manualBoardingSchema>;

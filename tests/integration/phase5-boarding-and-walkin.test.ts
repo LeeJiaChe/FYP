@@ -13,7 +13,7 @@ import {
 } from "../../src/features/boarding/application/boarding";
 import { issueSignedPass } from "../../src/features/boarding/infrastructure/pass-token.server";
 import { createReservedBooking } from "../../src/features/bookings/application/reservations";
-import { scheduleTrip } from "../../src/features/trips/application/schedule-trip";
+import { cancelTrip, scheduleTrip } from "../../src/features/trips/application/schedule-trip";
 import {
   createWalkInIntent,
   issueWalkInPass,
@@ -43,7 +43,7 @@ const fixed = (instant: Date) => ({ now: () => new Date(instant) });
 const studentActor = (userId: string) => ({ userId, role: "STUDENT" } as const);
 const driverActor = (userId: string) => ({ userId, role: "DRIVER" } as const);
 
-async function createUser(role: "STUDENT" | "DRIVER", label: string) {
+async function createUser(role: "ADMIN" | "STUDENT" | "DRIVER", label: string) {
   const suffix = randomUUID();
   const user = await prisma.user.create({
     data: {
@@ -529,6 +529,7 @@ describe("Phase 5 alighting and Trip progress", () => {
   });
 
   it("rejects illegal transitions and cannot reverse ARRIVED or CANCELLED", async () => {
+    const adminId = await createUser("ADMIN", `Admin ${randomUUID().slice(0, 8)}`);
     const arrived = await createScenario();
     await assert.rejects(
       progressTrip(driverActor(arrived.driverId), arrived.tripId, { action: "ARRIVE_NEXT_STOP" }, fixed(arrived.departure)),
@@ -542,12 +543,12 @@ describe("Phase 5 alighting and Trip progress", () => {
       await progressTrip(driverActor(arrived.driverId), arrived.tripId, { action: "DEPART_CURRENT_STOP" }, fixed(new Date(time.getTime() + 1_000)));
     }
     await assert.rejects(
-      progressTrip(driverActor(arrived.driverId), arrived.tripId, { action: "CANCEL", reason: "Too late" }, fixed(new Date(arrived.departure.getTime() + 30 * 60 * 1_000))),
+      cancelTrip({ userId: adminId, role: "ADMIN" }, arrived.tripId, { reason: "Too late" }, fixed(new Date(arrived.departure.getTime() + 30 * 60 * 1_000))),
       (error) => error instanceof ApplicationError && error.code === "CONFLICT",
     );
 
     const cancelled = await createScenario();
-    await progressTrip(driverActor(cancelled.driverId), cancelled.tripId, { action: "CANCEL", reason: "Vehicle unavailable" }, fixed(cancelled.departure));
+    await cancelTrip({ userId: adminId, role: "ADMIN" }, cancelled.tripId, { reason: "Vehicle unavailable" }, fixed(cancelled.departure));
     await assert.rejects(
       progressTrip(driverActor(cancelled.driverId), cancelled.tripId, { action: "START_BOARDING" }, fixed(cancelled.departure)),
       (error) => error instanceof ApplicationError && error.code === "CONFLICT",

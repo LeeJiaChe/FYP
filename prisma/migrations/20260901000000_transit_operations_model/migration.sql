@@ -94,7 +94,7 @@ ALTER TABLE "Route" ALTER COLUMN "lineId" SET NOT NULL;
 ALTER TABLE "Route" ALTER COLUMN "direction" SET NOT NULL;
 
 CREATE INDEX "Route_lineId_idx" ON "Route"("lineId");
-CREATE UNIQUE INDEX "Route_lineId_direction_key" ON "Route"("lineId", "direction");
+CREATE INDEX "Route_lineId_direction_deletedAt_idx" ON "Route"("lineId", "direction", "deletedAt");
 
 ALTER TABLE "Route"
   ADD CONSTRAINT "Route_lineId_fkey"

@@ -414,6 +414,13 @@ export default function DriverPortal({
   }
 
   const assignment = operation?.currentTrip ?? operation?.nextTrip ?? null;
+  const isOverdueNotStarted =
+    operation?.currentTrip?.status === "NOT_STARTED" &&
+    Boolean(
+      operation.serverNow &&
+        new Date(operation.currentTrip.departureTime).getTime() <
+          new Date(operation.serverNow).getTime(),
+    );
   const formattedDepartureTime = assignment
     ? new Date(assignment.departureTime).toLocaleTimeString([], {
         hour: "2-digit",
@@ -457,6 +464,11 @@ export default function DriverPortal({
                     : ""}
                   {formattedDepartureTime} departure
                 </small>
+                {isOverdueNotStarted ? (
+                  <p className="text-amber-400 font-semibold mt-1 text-xs">
+                    Scheduled departure passed — action required
+                  </p>
+                ) : null}
               </div>
             ) : (
               <div>
@@ -545,6 +557,11 @@ export default function DriverPortal({
                     <span className="badge badge-blue">
                       {manifest.trip.status.replace("_", " ")}
                     </span>
+                    {isOverdueNotStarted && (
+                      <span className="badge badge-amber">
+                        Scheduled departure passed — action required
+                      </span>
+                    )}
                     {manifest.trip.delayMinutes > 0 && (
                       <span className="badge badge-amber">
                         Delayed {manifest.trip.delayMinutes} min

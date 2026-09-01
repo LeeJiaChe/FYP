@@ -21,6 +21,7 @@ import { cancelTripInTransaction } from "@/features/trips/server";
 export type FleetPersistenceFailureCode =
   | "NOT_FOUND"
   | "DUPLICATE"
+  | "DUPLICATE_ACTIVE_ROUTE"
   | "STOP_IN_ACTIVE_ROUTE"
   | "INVALID_STATUS_TRANSITION";
 
@@ -186,6 +187,9 @@ export async function createRouteRecord(input: CreateRouteInput) {
   const stops = positionRouteStops(input.stops);
   return prisma.$transaction(async (transaction) => {
     await transaction.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`route-slot:${input.lineId}:${input.direction}`}))
+    `;
+    await transaction.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`route-name:${input.name}`}))
     `;
 
@@ -203,6 +207,16 @@ export async function createRouteRecord(input: CreateRouteInput) {
       select: { id: true },
     });
     if (!line) throw new FleetPersistenceError("NOT_FOUND");
+
+    const existingActive = await transaction.route.findFirst({
+      where: {
+        lineId: input.lineId,
+        direction: input.direction,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (existingActive) throw new FleetPersistenceError("DUPLICATE_ACTIVE_ROUTE");
 
     return transaction.route.create({
       data: {
@@ -232,6 +246,36 @@ export async function updateRouteRecord(input: UpdateRouteInput) {
     await transaction.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`route:${input.id}`}))
     `;
+
+    const current = await transaction.route.findFirst({
+      where: { id: input.id, deletedAt: null },
+      select: { id: true, lineId: true, direction: true },
+    });
+    if (!current) throw new FleetPersistenceError("NOT_FOUND");
+
+    const targetLineId = input.lineId ?? current.lineId;
+    const targetDirection = input.direction ?? current.direction;
+    if (targetLineId !== current.lineId || targetDirection !== current.direction) {
+      await transaction.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`route-slot:${targetLineId}:${targetDirection}`}))
+      `;
+      const targetLine = await transaction.serviceLine.findUnique({
+        where: { id: targetLineId },
+        select: { id: true },
+      });
+      if (!targetLine) throw new FleetPersistenceError("NOT_FOUND");
+
+      const existingActive = await transaction.route.findFirst({
+        where: {
+          lineId: targetLineId,
+          direction: targetDirection,
+          deletedAt: null,
+          id: { not: input.id },
+        },
+        select: { id: true },
+      });
+      if (existingActive) throw new FleetPersistenceError("DUPLICATE_ACTIVE_ROUTE");
+    }
 
     if (positionedStops) {
       const activeStopCount = await transaction.stop.count({
