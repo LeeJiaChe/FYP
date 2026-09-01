@@ -373,6 +373,11 @@ export default function DriverPortal({
     return null;
   }
 
+  const activeTrip = trips.find((trip) => trip.id === activeTripId);
+  const formattedDepartureTime = new Date(
+    activeTrip?.departureTime,
+  ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
   return (
     <div className="driver-shell">
       <Navbar initialUser={user} />
@@ -384,23 +389,17 @@ export default function DriverPortal({
           </div>
           <label htmlFor="assigned-trip">
             <span>Assigned Trip</span>
-            <select
+            <input
               id="assigned-trip"
-              value={activeTripId ?? ""}
               onChange={(event) => setSelectedTripId(event.target.value)}
+              value={
+                activeTrip
+                  ? `${activeTrip.routeName} · ${formattedDepartureTime}`
+                  : ""
+              }
               className="input-field"
               disabled
-            >
-              {trips.map((trip) => (
-                <option key={trip.id} value={trip.id}>
-                  {trip.routeName} ·{" "}
-                  {new Date(trip.departureTime).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </option>
-              ))}
-            </select>
+            ></input>
           </label>
         </header>
 
