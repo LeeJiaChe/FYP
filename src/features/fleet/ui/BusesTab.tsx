@@ -52,9 +52,9 @@ export default function BusesTab({
                 </td>
                 <td>
                   <strong>
-                    {bus.assigned_driver_id
+                    {bus.assignedDriverId
                       ? drivers.find(
-                          (driver) => driver.id === bus.assigned_driver_id,
+                          (driver) => driver.id === bus.assignedDriverId,
                         )?.name
                       : "Not Assigned"}
                   </strong>
