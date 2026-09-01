@@ -197,8 +197,29 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
       <Navbar initialUser={user} />
       <main id="main-content" className="driver-content">
         <header className="driver-trip-selector">
-          <div><h1>Today&apos;s operation</h1><p>Select an assigned Trip to begin.</p></div>
-          <label htmlFor="assigned-trip"><span>Assigned Trip</span><select id="assigned-trip" value={activeTripId ?? ""} onChange={(event) => setSelectedTripId(event.target.value)} className="input-field">{trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.routeName} · {new Date(trip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</option>)}</select></label>
+          <div>
+            <h1>Today&apos;s operation</h1>
+            <p>Select an assigned Trip to begin.</p>
+          </div>
+          <label htmlFor="assigned-trip">
+            <span>Assigned Trip</span>
+            <select
+              id="assigned-trip"
+              value={activeTripId ?? ""}
+              onChange={(event) => setSelectedTripId(event.target.value)}
+              className="input-field"
+            >
+              {trips.map((trip) => (
+                <option key={trip.id} value={trip.id}>
+                  {trip.routeName} ·{" "}
+                  {new Date(trip.departureTime).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </option>
+              ))}
+            </select>
+          </label>
         </header>
 
         <nav className="driver-view-nav" aria-label="Driver workspace"><button type="button" className={view === "trip" ? "active" : ""} aria-current={view === "trip" ? "page" : undefined} onClick={() => setView("trip")}><Bus aria-hidden /> Trip</button><button type="button" className={view === "manifest" ? "active" : ""} aria-current={view === "manifest" ? "page" : undefined} onClick={() => setView("manifest")}><Users aria-hidden /> Manifest <span>{manifest?.manifest.length || 0}</span></button></nav>
