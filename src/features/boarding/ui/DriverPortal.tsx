@@ -389,6 +389,7 @@ export default function DriverPortal({
               value={activeTripId ?? ""}
               onChange={(event) => setSelectedTripId(event.target.value)}
               className="input-field"
+              disabled
             >
               {trips.map((trip) => (
                 <option key={trip.id} value={trip.id}>
