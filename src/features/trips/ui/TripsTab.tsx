@@ -34,9 +34,11 @@ export default function TripsTab({
             {trips.length} scheduled Trips with route snapshots and assignments.
           </p>
         </div>
-        <button onClick={onOpenModal} className="btn-primary">
-          <Plus aria-hidden className="size-4" /> Schedule Trip
-        </button>
+        {!isDriverPortal && (
+          <button onClick={onOpenModal} className="btn-primary">
+            <Plus aria-hidden className="size-4" /> Schedule Trip
+          </button>
+        )}
       </header>
       <div className="timetable-days">
         {Object.entries(grouped).map(([date, dateTrips]) => (
