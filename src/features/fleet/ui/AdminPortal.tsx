@@ -61,6 +61,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newBus, setNewBus] = useState({
     plateNumber: "",
+    assignedDriverId: "",
     seatedCapacity: 20,
     standingCapacity: 8,
     status: "ACTIVE",
@@ -531,6 +532,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 setEditingBusId(null);
                 setNewBus({
                   plateNumber: "",
+                  assignedDriverId: "",
                   seatedCapacity: 20,
                   standingCapacity: 8,
                   status: "ACTIVE",
@@ -541,6 +543,7 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
                 setEditingBusId(bus.id);
                 setNewBus({
                   plateNumber: bus.plateNumber,
+                  assignedDriverId: bus.assignedDriverId || "",
                   seatedCapacity: bus.seatedCapacity,
                   standingCapacity: bus.standingCapacity,
                   status: bus.status,
@@ -629,19 +632,19 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
               </label>
               <select
                 id="assign-driver"
-                value={newRoute.driverId}
-                required
+                value={newBus.assignedDriverId}
                 onChange={(e) =>
-                  setNewRoute({ ...newRoute, driverId: e.target.value })
+                  setNewBus({ ...newBus, assignedDriverId: e.target.value })
                 }
                 className="input-field"
               >
                 <option value="">Not Assigned</option>
-                {drivers.map((driver) => (
-                  <option key={driver.id} value={driver.id}>
-                    {driver.name}
-                  </option>
-                ))}
+                {newBus.status === "ACTIVE" &&
+                  drivers.map((driver) => (
+                    <option key={driver.id} value={driver.id}>
+                      {driver.name}
+                    </option>
+                  ))}
               </select>
             </div>
             {editingBusId && (

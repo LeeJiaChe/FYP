@@ -89,6 +89,7 @@ export async function updateBusRecord(
         ...(input.seatedCapacity === undefined ? {} : { seatedCapacity: input.seatedCapacity }),
         ...(input.standingCapacity === undefined ? {} : { standingCapacity: input.standingCapacity }),
         ...(input.status === undefined ? {} : { status: input.status }),
+        ...(input.assignedDriverId !== undefined ? { assignedDriverId: input.assignedDriverId } : {}),
       },
       include: busInclude,
     });
