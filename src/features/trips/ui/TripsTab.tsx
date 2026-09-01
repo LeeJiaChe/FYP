@@ -9,11 +9,11 @@ export default function TripsTab({
   onEditTrip,
   onCancelTrip,
 }: {
-  isDriverPortal: boolean;
+  isDriverPortal?: boolean;
   trips: any[];
-  onOpenModal: (() => void) | null;
-  onEditTrip: ((trip: any) => void) | null;
-  onCancelTrip: ((trip: any) => void) | null;
+  onOpenModal?: (() => void) | null;
+  onEditTrip?: ((trip: any) => void) | null;
+  onCancelTrip?: ((trip: any) => void) | null;
 }) {
   const grouped = trips.reduce<Record<string, any[]>>((result, trip) => {
     const key = new Date(trip.departureTime).toLocaleDateString("en-MY", {
@@ -34,7 +34,7 @@ export default function TripsTab({
             {trips.length} scheduled Trips with route snapshots and assignments.
           </p>
         </div>
-        {!isDriverPortal && (
+        {!isDriverPortal && onOpenModal && (
           <button onClick={onOpenModal} className="btn-primary">
             <Plus aria-hidden className="size-4" /> Schedule Trip
           </button>
@@ -85,7 +85,7 @@ export default function TripsTab({
                       {trip.delayMinutes ? ` +${trip.delayMinutes} min` : ""}
                     </span>
                     <div className="row-actions">
-                      {trip.status === "NOT_STARTED" && !isDriverPortal && (
+                      {trip.status === "NOT_STARTED" && !isDriverPortal && onEditTrip && (
                         <button
                           onClick={() => onEditTrip(trip)}
                           className="btn-ghost"
@@ -95,7 +95,8 @@ export default function TripsTab({
                         </button>
                       )}
                       {!["ARRIVED", "CANCELLED"].includes(trip.status) &&
-                        !isDriverPortal && (
+                        !isDriverPortal &&
+                        onCancelTrip && (
                           <button
                             onClick={() => onCancelTrip(trip)}
                             className="btn-ghost danger"

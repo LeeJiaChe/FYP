@@ -127,11 +127,9 @@ model Bus {
   plateNumber      String    @unique
   seatedCapacity   Int
   standingCapacity Int
-  status             BusStatus @default(ACTIVE)
-  deletedAt          DateTime?
-  assignedDriverId   String?   @map("assigned_driver_id")
-  assignedDriver     User?     @relation("BusAssignedDriver", fields: [assignedDriverId], references: [id], onDelete: SetNull)
-  trips              Trip[]
+  status           BusStatus @default(ACTIVE)
+  deletedAt        DateTime?
+  trips            Trip[]
 }
 
 model Route {

@@ -41,11 +41,6 @@ export const createBusSchema = z.object({
   seatedCapacity: z.number().int().positive(),
   standingCapacity: z.number().int().nonnegative(),
   status: z.enum(["ACTIVE", "MAINTENANCE", "RETIRED"]).default("ACTIVE"),
-  assignedDriverId: z
-    .union([z.string().uuid("Invalid driver ID"), z.literal("")])
-    .optional()
-    .nullable()
-    .transform((value) => value === "" ? null : value),
 });
 
 export const updateBusSchema = createBusSchema.partial().extend({

@@ -88,7 +88,6 @@ function busDto(bus: Awaited<ReturnType<typeof createBusRecord>>) {
     seatedCapacity: bus.seatedCapacity,
     standingCapacity: bus.standingCapacity,
     status: bus.status,
-    assignedDriverId: bus.assignedDriverId,
     tripsCount: bus._count.trips,
     _count: bus._count,
   };

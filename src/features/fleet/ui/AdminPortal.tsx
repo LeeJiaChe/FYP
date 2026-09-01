@@ -885,7 +885,6 @@ export default function AdminPortal({
           {activeTab === "buses" && (
             <BusesTab
               buses={buses}
-              drivers={drivers}
               onOpenModal={() => {
                 setEditingBusId(null);
                 setNewBus({

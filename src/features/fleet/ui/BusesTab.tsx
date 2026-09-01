@@ -4,13 +4,11 @@ import { Edit, Plus, Trash2 } from "lucide-react";
 
 export default function BusesTab({
   buses,
-  drivers,
   onOpenModal,
   onEditBus,
   onRetireBus,
 }: {
   buses: any[];
-  drivers: any[];
   onOpenModal: () => void;
   onEditBus: (bus: any) => void;
   onRetireBus: (bus: any) => void;
