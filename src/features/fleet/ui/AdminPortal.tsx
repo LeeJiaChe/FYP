@@ -523,9 +523,33 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
           />
         )}
 
-        {activeTab === "buses" && (
-          <BusesTab buses={buses} onOpenModal={() => { setEditingBusId(null); setNewBus({ plateNumber: "", seatedCapacity: 20, standingCapacity: 8, status: "ACTIVE" }); setShowBusModal(true); }} onEditBus={(bus) => { setEditingBusId(bus.id); setNewBus({ plateNumber: bus.plateNumber, seatedCapacity: bus.seatedCapacity, standingCapacity: bus.standingCapacity, status: bus.status }); setShowBusModal(true); }} onRetireBus={handleRetireBus} />
-        )}
+          {activeTab === "buses" && (
+            <BusesTab
+              buses={buses}
+              drivers={drivers}
+              onOpenModal={() => {
+                setEditingBusId(null);
+                setNewBus({
+                  plateNumber: "",
+                  seatedCapacity: 20,
+                  standingCapacity: 8,
+                  status: "ACTIVE",
+                });
+                setShowBusModal(true);
+              }}
+              onEditBus={(bus) => {
+                setEditingBusId(bus.id);
+                setNewBus({
+                  plateNumber: bus.plateNumber,
+                  seatedCapacity: bus.seatedCapacity,
+                  standingCapacity: bus.standingCapacity,
+                  status: bus.status,
+                });
+                setShowBusModal(true);
+              }}
+              onRetireBus={handleRetireBus}
+            />
+          )}
 
         {activeTab === "stops" && <StopsTab stops={stops} onCreate={() => handleCreateStop()} onEdit={handleCreateStop} onDeactivate={handleDeactivateStop} />}
 
@@ -568,8 +592,59 @@ export default function AdminPortal({ initialUser }: { initialUser: CurrentUser 
 
       {/* CREATE BUS MODAL */}
       {showBusModal && (
-        <Modal isOpen onClose={() => setShowBusModal(false)} title={editingBusId ? "Edit Bus" : "Add bus to fleet"} maxWidth="md">
-            <form onSubmit={handleCreateBus} className="admin-form">
+        <Modal
+          isOpen
+          onClose={() => setShowBusModal(false)}
+          title={editingBusId ? "Edit Bus" : "Add bus to fleet"}
+          maxWidth="md"
+        >
+          <form onSubmit={handleCreateBus} className="admin-form">
+            <div>
+              <label
+                htmlFor="bus-plate-number"
+                className="block text-xs font-bold mb-1.5"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Plate Number
+              </label>
+              <input
+                id="bus-plate-number"
+                type="text"
+                required
+                placeholder="e.g. TAR-1004"
+                value={newBus.plateNumber}
+                onChange={(e) =>
+                  setNewBus({ ...newBus, plateNumber: e.target.value })
+                }
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="assign-driver"
+                className="block text-xs font-bold mb-1.5"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Assign Driver
+              </label>
+              <select
+                id="assign-driver"
+                value={newRoute.driverId}
+                required
+                onChange={(e) =>
+                  setNewRoute({ ...newRoute, driverId: e.target.value })
+                }
+                className="input-field"
+              >
+                <option value="">Not Assigned</option>
+                {drivers.map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {editingBusId && (
               <div>
                 <label
                   htmlFor="bus-plate-number"
