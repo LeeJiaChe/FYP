@@ -46,7 +46,7 @@ interface DriverManifest {
     id: string;
     routeName: string;
     busPlateNumber: string;
-    status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
+    status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED";
     delayMinutes: number;
     delayReason: string | null;
     standingCapacity: number;
@@ -63,7 +63,7 @@ interface DriverManifest {
   manifest: ManifestPassenger[];
 }
 
-type DriverDialog = "delay" | "cancel" | "walkin" | null;
+type DriverDialog = "delay" | "walkin" | null;
 
 function errorMessage(data: unknown): string {
   if (typeof data !== "object" || data === null) return "Operation failed";
@@ -162,13 +162,6 @@ export default function DriverPortal({
           reason: reason.trim(),
         });
         toast.success("Delay metadata updated");
-      } else if (dialog === "cancel") {
-        if (!reason.trim()) return;
-        await mutate(`/api/trips/${activeTripId}/progress`, {
-          action: "CANCEL",
-          reason: reason.trim(),
-        });
-        toast.success("Trip cancelled");
       } else {
         if (!walkInIntentId.trim()) return;
         await mutate(`/api/trips/${activeTripId}/manual-checkin`, {
@@ -231,9 +224,7 @@ export default function DriverPortal({
   const alightHere = onBoard.filter(
     (passenger) => passenger.expectedToAlightHere,
   );
-  const terminal =
-    manifest?.trip.status === "ARRIVED" ||
-    manifest?.trip.status === "CANCELLED";
+  const terminal = manifest?.trip.status === "ARRIVED";
 
   function manifestRows(
     passengers: ManifestPassenger[],
@@ -375,7 +366,10 @@ export default function DriverPortal({
 
   const activeTrip = trips.find((trip) => trip.id === activeTripId);
   const formattedDepartureTime = activeTrip
-    ? new Date(activeTrip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    ? new Date(activeTrip.departureTime).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
     : "";
 
   return (
@@ -494,16 +488,6 @@ export default function DriverPortal({
                         }}
                       >
                         <AlertTriangle aria-hidden /> Set delay
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => {
-                          setDialog("cancel");
-                          setSecondaryOpen(false);
-                        }}
-                      >
-                        Cancel Trip
                       </button>
                     </div>
                   )}
@@ -703,7 +687,6 @@ export default function DriverPortal({
               trips={trips}
               onOpenModal={null}
               onEditTrip={null}
-              onCancelTrip={null}
             />
           )}
         </MotionSurface>
@@ -724,16 +707,7 @@ export default function DriverPortal({
         isOpen={dialog !== null}
         onClose={() => !submitting && setDialog(null)}
         title={
-          dialog === "delay"
-            ? "Set Trip delay"
-            : dialog === "cancel"
-              ? "Cancel Trip"
-              : "Manual walk-in admission"
-        }
-        description={
-          dialog === "cancel"
-            ? "This destructive action requires an operational reason."
-            : undefined
+          dialog === "delay" ? "Set Trip delay" : "Manual walk-in admission"
         }
         maxWidth="sm"
       >
@@ -752,11 +726,9 @@ export default function DriverPortal({
               />
             </label>
           )}
-          {(dialog === "delay" || dialog === "cancel") && (
+          {dialog === "delay" && (
             <label>
-              <span>
-                {dialog === "cancel" ? "Cancellation reason" : "Delay reason"}
-              </span>
+              <span>{"Delay reason"}</span>
               <textarea
                 className="input-field"
                 rows={3}
@@ -786,15 +758,8 @@ export default function DriverPortal({
             >
               Back
             </button>
-            <button
-              disabled={submitting}
-              className={dialog === "cancel" ? "btn-danger" : "btn-primary"}
-            >
-              {submitting
-                ? "Saving…"
-                : dialog === "cancel"
-                  ? "Cancel Trip"
-                  : "Confirm"}
+            <button disabled={submitting} className={"btn-primary"}>
+              {submitting ? "Saving…" : "Confirm"}
             </button>
           </div>
         </form>
