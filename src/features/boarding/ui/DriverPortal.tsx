@@ -550,6 +550,7 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
 
           {view === "timetable" && (
             <TripsTab
+              isDriverPortal={true}
               trips={trips}
               onOpenModal={null}
               onEditTrip={null}

@@ -3,11 +3,13 @@
 import { CalendarClock, Plus, XCircle } from "lucide-react";
 
 export default function TripsTab({
+  isDriverPortal = false,
   trips,
   onOpenModal,
   onEditTrip,
   onCancelTrip,
 }: {
+  isDriverPortal: boolean;
   trips: any[];
   onOpenModal: (() => void) | null;
   onEditTrip: ((trip: any) => void) | null;
@@ -58,8 +60,9 @@ export default function TripsTab({
                     <div className="timetable-route">
                       <strong>{trip.routeName}</strong>
                       <span>
-                        {trip.busPlateNumber} ·{" "}
-                        {trip.driverName || "Unassigned driver"}
+                        {trip.busPlateNumber} {!isDriverPortal && "· "}
+                        {!isDriverPortal &&
+                          (trip.driverName || "Unassigned driver")}
                       </span>
                     </div>
                     <div className="timetable-load">
@@ -80,7 +83,7 @@ export default function TripsTab({
                       {trip.delayMinutes ? ` +${trip.delayMinutes} min` : ""}
                     </span>
                     <div className="row-actions">
-                      {trip.status === "NOT_STARTED" && (
+                      {trip.status === "NOT_STARTED" && !isDriverPortal && (
                         <button
                           onClick={() => onEditTrip(trip)}
                           className="btn-ghost"
@@ -89,14 +92,15 @@ export default function TripsTab({
                           Reschedule
                         </button>
                       )}
-                      {!["ARRIVED", "CANCELLED"].includes(trip.status) && (
-                        <button
-                          onClick={() => onCancelTrip(trip)}
-                          className="btn-ghost danger"
-                        >
-                          <XCircle aria-hidden className="size-3.5" /> Cancel
-                        </button>
-                      )}
+                      {!["ARRIVED", "CANCELLED"].includes(trip.status) &&
+                        !isDriverPortal && (
+                          <button
+                            onClick={() => onCancelTrip(trip)}
+                            className="btn-ghost danger"
+                          >
+                            <XCircle aria-hidden className="size-3.5" /> Cancel
+                          </button>
+                        )}
                     </div>
                   </article>
                 ))}
