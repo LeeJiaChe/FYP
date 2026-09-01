@@ -61,6 +61,8 @@ export default function AdminPortal({
   // CRUD Data State
   const [buses, setBuses] = useState<any[]>([]);
   const [routes, setRoutes] = useState<any[]>([]);
+  const [lines, setLines] = useState<any[]>([]);
+  const [serviceBlocks, setServiceBlocks] = useState<any[]>([]);
   const [stops, setStops] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [appeals, setAppeals] = useState<any[]>([]);
@@ -82,6 +84,8 @@ export default function AdminPortal({
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
   const [newRoute, setNewRoute] = useState({
+    lineId: "",
+    direction: "OUTBOUND" as "OUTBOUND" | "INBOUND",
     name: "",
     routeStops: [
       { stopId: "", travelDurationToNextMinutes: 10 },
@@ -90,12 +94,20 @@ export default function AdminPortal({
   });
 
   const [showTripModal, setShowTripModal] = useState(false);
+  const [showBlockModal, setShowBlockModal] = useState(false);
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
   const [newTrip, setNewTrip] = useState({
+    lineId: "",
     routeId: "",
     busId: "",
     driverId: "",
+    blockId: "",
     departureTime: "",
+  });
+  const [newBlock, setNewBlock] = useState({
+    code: "",
+    serviceDate: "",
+    busId: "",
   });
 
   const [selectedAppeal, setSelectedAppeal] = useState<any>(null);
@@ -112,22 +124,25 @@ export default function AdminPortal({
   useEffect(() => {
     fetchBuses();
     fetchRoutes();
+    fetchLines();
+    fetchServiceBlocks();
     fetchStops();
     fetchDrivers();
     fetchAppeals();
   }, []);
 
   useEffect(() => {
-    if (!showBusModal && !showRouteModal && !showTripModal) return;
+    if (!showBusModal && !showRouteModal && !showTripModal && !showBlockModal) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setShowBusModal(false);
       setShowRouteModal(false);
       setShowTripModal(false);
+      setShowBlockModal(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [showBusModal, showRouteModal, showTripModal]);
+  }, [showBlockModal, showBusModal, showRouteModal, showTripModal]);
 
   useEffect(() => {
     if (!adminNavOpen) return;
@@ -237,6 +252,24 @@ export default function AdminPortal({
         const data = await res.json();
         setRoutes(data.routes || []);
       }
+    } catch (err: any) {
+      toast.error(err.message || "An error occurred");
+    }
+  }
+
+  async function fetchLines() {
+    try {
+      const res = await fetch("/api/admin/lines");
+      if (res.ok) setLines((await res.json()).lines || []);
+    } catch (err: any) {
+      toast.error(err.message || "An error occurred");
+    }
+  }
+
+  async function fetchServiceBlocks() {
+    try {
+      const res = await fetch("/api/admin/service-blocks");
+      if (res.ok) setServiceBlocks((await res.json()).serviceBlocks || []);
     } catch (err: any) {
       toast.error(err.message || "An error occurred");
     }
@@ -353,6 +386,8 @@ export default function AdminPortal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...(editingRouteId ? { id: editingRouteId } : {}),
+          lineId: newRoute.lineId,
+          direction: newRoute.direction,
           name: newRoute.name,
           stops: newRoute.routeStops,
         }),
@@ -367,6 +402,8 @@ export default function AdminPortal({
         setShowRouteModal(false);
         setEditingRouteId(null);
         setNewRoute({
+          lineId: "",
+          direction: "OUTBOUND",
           name: "",
           routeStops: [
             { stopId: "", travelDurationToNextMinutes: 10 },
@@ -399,8 +436,10 @@ export default function AdminPortal({
               : "",
           }
         : {
-            ...newTrip,
+            routeId: newTrip.routeId,
+            busId: newTrip.busId,
             driverId: newTrip.driverId || undefined,
+            blockId: newTrip.blockId || undefined,
             departureTime: newTrip.departureTime
               ? new Date(newTrip.departureTime).toISOString()
               : "",
@@ -424,12 +463,14 @@ export default function AdminPortal({
         setShowTripModal(false);
         setEditingTripId(null);
         setNewTrip({
+          lineId: "",
           routeId: "",
           busId: "",
           driverId: "",
+          blockId: "",
           departureTime: "",
         });
-        fetchTrips();
+        await Promise.all([fetchTrips(), fetchServiceBlocks()]);
       } else {
         const errData = await res.json();
         toast.error(
@@ -438,6 +479,22 @@ export default function AdminPortal({
       }
     } catch (err: any) {
       toast.error(err.message || "An error occurred");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleCreateBlock(event: React.FormEvent) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    try {
+      await mutateSimple("/api/admin/service-blocks", "POST", newBlock);
+      toast.success("ServiceBlock created");
+      setShowBlockModal(false);
+      setNewBlock({ code: "", serviceDate: "", busId: "" });
+      await fetchServiceBlocks();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create ServiceBlock");
     } finally {
       setIsSubmitting(false);
     }
@@ -921,9 +978,12 @@ export default function AdminPortal({
           {activeTab === "routes" && (
             <RoutesTab
               routes={routes}
+              lines={lines}
               onOpenModal={() => {
                 setEditingRouteId(null);
                 setNewRoute({
+                  lineId: lines[0]?.id ?? "",
+                  direction: "OUTBOUND",
                   name: "",
                   routeStops: [
                     { stopId: "", travelDurationToNextMinutes: 10 },
@@ -935,6 +995,8 @@ export default function AdminPortal({
               onEditRoute={(route) => {
                 setEditingRouteId(route.id);
                 setNewRoute({
+                  lineId: route.lineId,
+                  direction: route.direction,
                   name: route.name,
                   routeStops: route.routeStops.map((item: any) => ({
                     stopId: item.stop.id,
@@ -955,19 +1017,27 @@ export default function AdminPortal({
               onOpenModal={() => {
                 setEditingTripId(null);
                 setNewTrip({
+                  lineId: lines[0]?.id ?? "",
                   routeId: "",
                   busId: "",
                   driverId: "",
+                  blockId: "",
                   departureTime: "",
                 });
                 setShowTripModal(true);
               }}
+              onCreateBlock={() => {
+                setNewBlock({ code: "", serviceDate: "", busId: "" });
+                setShowBlockModal(true);
+              }}
               onEditTrip={(trip) => {
                 setEditingTripId(trip.id);
                 setNewTrip({
+                  lineId: trip.lineId,
                   routeId: trip.routeId,
                   busId: trip.busId,
                   driverId: trip.driverId || "",
+                  blockId: trip.blockId || "",
                   departureTime: new Date(trip.departureTime)
                     .toISOString()
                     .slice(0, 16),
@@ -1037,28 +1107,6 @@ export default function AdminPortal({
                 className="input-field"
               />
             </div>
-            {editingBusId && (
-              <div>
-                <label
-                  htmlFor="bus-plate-number"
-                  className="block text-xs font-bold mb-1.5"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  Plate Number
-                </label>
-                <input
-                  id="bus-plate-number"
-                  type="text"
-                  required
-                  placeholder="e.g. TAR-1004"
-                  value={newBus.plateNumber}
-                  onChange={(e) =>
-                    setNewBus({ ...newBus, plateNumber: e.target.value })
-                  }
-                  className="input-field"
-                />
-              </div>
-            )}
             {editingBusId && (
               <div>
                 <label
@@ -1171,6 +1219,43 @@ export default function AdminPortal({
           maxWidth="md"
         >
           <form onSubmit={handleCreateRoute} className="admin-form">
+            <div className="grid grid-cols-2 gap-3">
+              <label>
+                <span className="block text-xs font-bold mb-1.5">Service Line</span>
+                <select
+                  required
+                  value={newRoute.lineId}
+                  onChange={(event) =>
+                    setNewRoute({ ...newRoute, lineId: event.target.value })
+                  }
+                  className="input-field"
+                >
+                  <option value="">Select Service Line</option>
+                  {lines.map((line) => (
+                    <option key={line.id} value={line.id}>
+                      {line.code} · {line.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="block text-xs font-bold mb-1.5">Direction</span>
+                <select
+                  required
+                  value={newRoute.direction}
+                  onChange={(event) =>
+                    setNewRoute({
+                      ...newRoute,
+                      direction: event.target.value as "OUTBOUND" | "INBOUND",
+                    })
+                  }
+                  className="input-field"
+                >
+                  <option value="OUTBOUND">OUTBOUND</option>
+                  <option value="INBOUND">INBOUND</option>
+                </select>
+              </label>
+            </div>
             <div>
               <label
                 htmlFor="route-name"
@@ -1347,10 +1432,25 @@ export default function AdminPortal({
           <form onSubmit={handleCreateTrip} className="admin-form">
             {[
               {
-                label: "Route",
+                label: "Service Line",
+                key: "lineId",
+                opts: lines.map((line: any) => ({
+                  v: line.id,
+                  l: `${line.code} · ${line.name}`,
+                })),
+                ph: "Select Service Line",
+                req: true,
+              },
+              {
+                label: "Direction / Route",
                 key: "routeId",
-                opts: routes.map((r: any) => ({ v: r.id, l: r.name })),
-                ph: "Select Route",
+                opts: routes
+                  .filter((route: any) => route.lineId === newTrip.lineId)
+                  .map((route: any) => ({
+                    v: route.id,
+                    l: `${route.direction} · ${route.name}`,
+                  })),
+                ph: "Select Directional Route",
                 req: true,
               },
               {
@@ -1375,6 +1475,16 @@ export default function AdminPortal({
                 ph: "Assign Driver (Optional)",
                 req: false,
               },
+              {
+                label: "ServiceBlock",
+                key: "blockId",
+                opts: serviceBlocks.map((block: any) => ({
+                  v: block.id,
+                  l: `${block.code} · ${block.busPlateNumber} · ${new Date(block.serviceDate).toLocaleDateString("en-MY")}`,
+                })),
+                ph: "No ServiceBlock",
+                req: false,
+              },
             ].map(({ label, key, opts, ph, req }) => (
               <div key={key}>
                 <label
@@ -1388,12 +1498,28 @@ export default function AdminPortal({
                   id={`trip-${key}`}
                   required={req}
                   disabled={Boolean(
-                    editingTripId && (key === "routeId" || key === "busId"),
+                    (editingTripId && ["lineId", "routeId", "busId", "blockId"].includes(key)) ||
+                      (key === "busId" && newTrip.blockId),
                   )}
                   value={(newTrip as any)[key]}
-                  onChange={(e) =>
-                    setNewTrip({ ...newTrip, [key]: e.target.value })
-                  }
+                  onChange={(e) => {
+                    if (key === "lineId") {
+                      setNewTrip({ ...newTrip, lineId: e.target.value, routeId: "" });
+                      return;
+                    }
+                    if (key === "blockId") {
+                      const block = serviceBlocks.find(
+                        (item: any) => item.id === e.target.value,
+                      );
+                      setNewTrip({
+                        ...newTrip,
+                        blockId: e.target.value,
+                        busId: block?.busId ?? newTrip.busId,
+                      });
+                      return;
+                    }
+                    setNewTrip({ ...newTrip, [key]: e.target.value });
+                  }}
                   className="input-field"
                 >
                   <option value="">{ph}</option>
@@ -1428,7 +1554,8 @@ export default function AdminPortal({
 
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               Intermediate and final times are derived from the Route
-              travel-time offsets.
+              travel-time offsets. A selected ServiceBlock locks the Trip to
+              that Block&apos;s Bus and assigns the next sequence automatically.
             </p>
 
             <div className="admin-form-actions">
@@ -1449,6 +1576,75 @@ export default function AdminPortal({
                   : editingTripId
                     ? "Save Schedule"
                     : "Schedule Trip"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showBlockModal && (
+        <Modal
+          isOpen
+          onClose={() => setShowBlockModal(false)}
+          title="Create ServiceBlock"
+          description="Group consecutive Trips that use the same physical Bus. Drivers remain assigned per Trip."
+          maxWidth="sm"
+        >
+          <form onSubmit={handleCreateBlock} className="admin-form">
+            <label>
+              <span>Block code</span>
+              <input
+                required
+                className="input-field"
+                placeholder="BLOCK-001"
+                value={newBlock.code}
+                onChange={(event) =>
+                  setNewBlock({ ...newBlock, code: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              <span>Service date</span>
+              <input
+                required
+                type="date"
+                className="input-field"
+                value={newBlock.serviceDate}
+                onChange={(event) =>
+                  setNewBlock({ ...newBlock, serviceDate: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              <span>Bus</span>
+              <select
+                required
+                className="input-field"
+                value={newBlock.busId}
+                onChange={(event) =>
+                  setNewBlock({ ...newBlock, busId: event.target.value })
+                }
+              >
+                <option value="">Select Bus</option>
+                {buses
+                  .filter((bus: any) => bus.status === "ACTIVE")
+                  .map((bus: any) => (
+                    <option key={bus.id} value={bus.id}>
+                      {bus.plateNumber}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="admin-form-actions">
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setShowBlockModal(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn-primary" disabled={isSubmitting}>
+                {isSubmitting ? "Creating…" : "Create ServiceBlock"}
               </button>
             </div>
           </form>

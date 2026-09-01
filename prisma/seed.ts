@@ -24,8 +24,10 @@ async function resetDemoData() {
   await prisma.tripSegment.deleteMany();
   await prisma.tripStop.deleteMany();
   await prisma.trip.deleteMany();
+  await prisma.serviceBlock.deleteMany();
   await prisma.routeStop.deleteMany();
   await prisma.route.deleteMany();
+  await prisma.serviceLine.deleteMany();
   await prisma.stop.deleteMany();
   await prisma.bus.deleteMany();
   await prisma.user.deleteMany();
@@ -36,6 +38,8 @@ async function createDemoTrip(input: {
   busId: string;
   driverId: string;
   departureTime: Date;
+  blockId?: string;
+  blockSequence?: number;
 }) {
   return prisma.$transaction(async (transaction) => {
     const route = await transaction.route.findUniqueOrThrow({
@@ -72,6 +76,8 @@ async function createDemoTrip(input: {
         routeId: input.routeId,
         busId: input.busId,
         driverId: input.driverId,
+        blockId: input.blockId,
+        blockSequence: input.blockSequence,
         departureTime: input.departureTime,
         estimatedArrivalTime: snapshot.estimatedArrivalTime,
         boardingDeadline: snapshot.stops[0]!.boardingDeadline,
@@ -419,11 +425,15 @@ async function main() {
   ] = stopRecords;
 
   async function createRoute(
+    lineId: string,
+    direction: "OUTBOUND" | "INBOUND",
     name: string,
     stops: Array<{ id: string; minutesToNext: number | null }>,
   ) {
     return prisma.route.create({
       data: {
+        lineId,
+        direction,
         name,
         routeStops: {
           create: stops.map((stop, position) => ({
@@ -435,6 +445,45 @@ async function main() {
       },
     });
   }
+
+  const [wangsaLine, terataiLine, gentingLine, melatiLine, pvLine] =
+    await Promise.all([
+      prisma.serviceLine.create({
+        data: {
+          id: "00000000-0000-4000-8000-000000000001",
+          code: "WANGSA_MAJU",
+          name: "TAR UMT ↔ Wangsa Maju Section 2",
+        },
+      }),
+      prisma.serviceLine.create({
+        data: {
+          id: "00000000-0000-4000-8000-000000000002",
+          code: "TERATAI",
+          name: "TAR UMT ↔ Teratai Residency",
+        },
+      }),
+      prisma.serviceLine.create({
+        data: {
+          id: "00000000-0000-4000-8000-000000000003",
+          code: "GENTING_KLANG",
+          name: "TAR UMT ↔ Jalan Genting Klang",
+        },
+      }),
+      prisma.serviceLine.create({
+        data: {
+          id: "00000000-0000-4000-8000-000000000004",
+          code: "MELATI_UTAMA",
+          name: "TAR UMT ↔ Melati Utama",
+        },
+      }),
+      prisma.serviceLine.create({
+        data: {
+          id: "00000000-0000-4000-8000-000000000005",
+          code: "PV_CORRIDOR",
+          name: "TAR UMT ↔ PV10/PV12/PV13 Corridor",
+        },
+      }),
+    ]);
 
   const [
     wangsaInbound,
@@ -448,68 +497,68 @@ async function main() {
     pvInbound,
     pvOutbound,
   ] = await Promise.all([
-    createRoute("Wangsa Maju Section 2 → TAR UMT", [
+    createRoute(wangsaLine.id, "INBOUND", "Wangsa Maju Section 2 → TAR UMT", [
       { id: wangsaMajuSection2.id, minutesToNext: 4 },
       { id: hospitalMizan.id, minutesToNext: 4 },
       { id: wangsaMetroview.id, minutesToNext: 4 },
       { id: wangsaLrt.id, minutesToNext: 7 },
       { id: tarGate7.id, minutesToNext: null },
     ]),
-    createRoute("TAR UMT → Wangsa Maju Section 2", [
+    createRoute(wangsaLine.id, "OUTBOUND", "TAR UMT → Wangsa Maju Section 2", [
       { id: tarGate7.id, minutesToNext: 5 },
       { id: tarvilla.id, minutesToNext: 4 },
       { id: wangsaLrt.id, minutesToNext: 4 },
       { id: wangsaMetroview.id, minutesToNext: 4 },
       { id: wangsaMajuSection2.id, minutesToNext: null },
     ]),
-    createRoute("Teratai Residency → TAR UMT", [
+    createRoute(terataiLine.id, "INBOUND", "Teratai Residency → TAR UMT", [
       { id: pv18.id, minutesToNext: 4 },
       { id: terataiResidency.id, minutesToNext: 5 },
       { id: primaSetapak.id, minutesToNext: 5 },
       { id: setapakCentral.id, minutesToNext: 7 },
       { id: tarGate7.id, minutesToNext: null },
     ]),
-    createRoute("TAR UMT → Teratai Residency", [
+    createRoute(terataiLine.id, "OUTBOUND", "TAR UMT → Teratai Residency", [
       { id: tarGate7.id, minutesToNext: 7 },
       { id: setapakCentral.id, minutesToNext: 5 },
       { id: primaSetapak.id, minutesToNext: 5 },
       { id: terataiResidency.id, minutesToNext: 4 },
       { id: pv18.id, minutesToNext: null },
     ]),
-    createRoute("Jalan Genting Klang → TAR UMT", [
+    createRoute(gentingLine.id, "INBOUND", "Jalan Genting Klang → TAR UMT", [
       { id: gentingKelangBusStop.id, minutesToNext: 5 },
       { id: primaSetapak.id, minutesToNext: 5 },
       { id: setapakCentral.id, minutesToNext: 7 },
       { id: tarGate7.id, minutesToNext: null },
     ]),
-    createRoute("TAR UMT → Jalan Genting Klang", [
+    createRoute(gentingLine.id, "OUTBOUND", "TAR UMT → Jalan Genting Klang", [
       { id: tarGate7.id, minutesToNext: 7 },
       { id: setapakCentral.id, minutesToNext: 5 },
       { id: primaSetapak.id, minutesToNext: 5 },
       { id: gentingKelangBusStop.id, minutesToNext: null },
     ]),
-    createRoute("Melati Utama → TAR UMT", [
+    createRoute(melatiLine.id, "INBOUND", "Melati Utama → TAR UMT", [
       { id: melatiUtama.id, minutesToNext: 5 },
       { id: melatiLrtJunction.id, minutesToNext: 5 },
       { id: danauKotaSuite.id, minutesToNext: 4 },
       { id: pv10.id, minutesToNext: 7 },
       { id: tarGate7.id, minutesToNext: null },
     ]),
-    createRoute("TAR UMT → Melati Utama", [
+    createRoute(melatiLine.id, "OUTBOUND", "TAR UMT → Melati Utama", [
       { id: tarGate7.id, minutesToNext: 7 },
       { id: pv10.id, minutesToNext: 4 },
       { id: danauKotaSuite.id, minutesToNext: 5 },
       { id: melatiLrtJunction.id, minutesToNext: 5 },
       { id: melatiUtama.id, minutesToNext: null },
     ]),
-    createRoute("PV10/PV12/PV13 corridor → TAR UMT", [
+    createRoute(pvLine.id, "INBOUND", "PV10/PV12/PV13 corridor → TAR UMT", [
       { id: pv13.id, minutesToNext: 4 },
       { id: pv10.id, minutesToNext: 4 },
       { id: pv12.id, minutesToNext: 5 },
       { id: setapakCentral.id, minutesToNext: 7 },
       { id: tarGate7.id, minutesToNext: null },
     ]),
-    createRoute("TAR UMT → PV10/PV12/PV13 corridor", [
+    createRoute(pvLine.id, "OUTBOUND", "TAR UMT → PV10/PV12/PV13 corridor", [
       { id: tarGate7.id, minutesToNext: 7 },
       { id: setapakCentral.id, minutesToNext: 5 },
       { id: pv12.id, minutesToNext: 4 },
@@ -519,11 +568,20 @@ async function main() {
   ]);
 
   const now = new Date();
+  const prototypeBlock = await prisma.serviceBlock.create({
+    data: {
+      code: "BLOCK-001",
+      serviceDate: new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+      ),
+      busId: bus1.id,
+    },
+  });
   // Relative offsets make these prototype Trips useful whenever the database is
   // reseeded. They are not the published TAR UMT timetable.
   const tripInputs = [
     [pvOutbound.id, bus1.id, driver1.id, 2],
-    [pvInbound.id, bus2.id, driver2.id, 4],
+    [pvInbound.id, bus1.id, driver2.id, 2.5],
     [wangsaOutbound.id, bus2.id, driver2.id, 26],
     [wangsaInbound.id, bus1.id, driver1.id, 29],
     [pvInbound.id, bus2.id, driver2.id, -3],
@@ -537,12 +595,15 @@ async function main() {
     [wangsaInbound.id, bus2.id, driver2.id, -0.5],
   ] as const;
   const demoTrips = [];
-  for (const [routeId, busId, driverId, hoursFromNow] of tripInputs) {
+  for (const [index, [routeId, busId, driverId, hoursFromNow]] of tripInputs.entries()) {
     demoTrips.push(await createDemoTrip({
       routeId,
       busId,
       driverId,
       departureTime: new Date(now.getTime() + hoursFromNow * 60 * 60 * 1_000),
+      ...(index < 2
+        ? { blockId: prototypeBlock.id, blockSequence: index + 1 }
+        : {}),
     }));
   }
 
@@ -818,7 +879,7 @@ async function main() {
   });
 
   console.log(
-    "Seeded 17 source-based Stops, 10 directional canonical Routes, 3 Buses, and 13 prototype Trip snapshots.",
+    "Seeded 5 prototype ServiceLines, 17 source-based Stops, 10 directional canonical Routes, 3 Buses, 1 ServiceBlock, and 13 prototype Trip snapshots.",
   );
   console.log(
     "Route families and stop names are source-based; coordinates, travel durations, Trip times, assignments, and passenger records are prototype data.",

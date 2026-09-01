@@ -8,13 +8,17 @@ import { notifyRealtime } from "@/lib/realtime-client";
 
 export {
   cancelTripSchema,
+  createServiceBlockSchema,
   listTripsQuerySchema,
   scheduleTripSchema,
   tripIdSchema,
   updateScheduledTripSchema,
 } from "./contracts/trip.schemas";
 export {
+  createServiceBlock,
+  getDriverOperation,
   getTripDetail,
+  listServiceBlocks,
   listTrips,
   scheduleTrip,
 } from "./application/schedule-trip";

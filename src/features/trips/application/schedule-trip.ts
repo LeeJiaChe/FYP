@@ -1,5 +1,6 @@
 import type {
   CancelTripInput,
+  CreateServiceBlockInput,
   ListTripsQuery,
   ScheduleTripInput,
   UpdateScheduledTripInput,
@@ -7,9 +8,12 @@ import type {
 import { TripSnapshotError } from "../domain/build-trip-snapshot";
 import {
   createScheduledTripRecord,
+  createServiceBlockRecord,
   cancelTripRecord,
   findTripDetailRecord,
   listTripRecords,
+  listDriverOperationRecords,
+  listServiceBlockRecords,
   TripPersistenceError,
   updateScheduledTripRecord,
 } from "../infrastructure/trip.prisma.server";
@@ -23,6 +27,8 @@ import {
 import { productPolicy } from "@/shared/config/policies";
 import { systemClock, type Clock } from "@/shared/time/clock";
 import { currentOperationalSegmentPosition } from "../domain/operational-segment";
+import { resolveDriverOperation } from "../domain/driver-operation";
+import { evaluateServiceBlockContinuity } from "../domain/service-block-continuity";
 
 export interface TripActor {
   readonly userId: string;
@@ -41,6 +47,10 @@ function mapPersistenceFailure(error: TripPersistenceError): never {
       throw conflict("Bus is already assigned to an overlapping Trip");
     case "DRIVER_SCHEDULE_CONFLICT":
       throw conflict("Driver is already assigned to an overlapping Trip");
+    case "SERVICE_BLOCK_NOT_FOUND":
+      throw notFound("ServiceBlock not found");
+    case "SERVICE_BLOCK_BUS_MISMATCH":
+      throw conflict("Trip Bus must match the selected ServiceBlock Bus");
     case "INVENTORY_COUNT_MISMATCH":
       throw invariantViolation("Trip inventory could not be created completely");
     case "TRIP_NOT_FOUND":
@@ -83,6 +93,19 @@ export async function scheduleTrip(
 export async function listTrips(actor: TripActor, query: ListTripsQuery) {
   const enforcedDriverId = actor.role === "DRIVER" ? actor.userId : undefined;
   const trips = await listTripRecords(query, enforcedDriverId);
+  const blockTrips = new Map<string, typeof trips>();
+  for (const trip of trips) {
+    if (!trip.blockId) continue;
+    const values = blockTrips.get(trip.blockId) ?? [];
+    values.push(trip);
+    blockTrips.set(trip.blockId, values);
+  }
+  for (const values of blockTrips.values()) {
+    values.sort(
+      (left, right) =>
+        (left.blockSequence ?? 0) - (right.blockSequence ?? 0),
+    );
+  }
 
   return trips.map((trip) => {
     const routeStops =
@@ -102,11 +125,17 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
     const waitlistWaiting = trip.waitlistEntries.filter(
       (entry) => entry.status === "WAITING",
     ).length;
+    const tripsInBlock = trip.blockId ? blockTrips.get(trip.blockId) : undefined;
+    const blockIndex = tripsInBlock?.findIndex((item) => item.id === trip.id) ?? -1;
 
     return {
       id: trip.id,
       routeId: trip.routeId,
       routeName: trip.route.name,
+      lineId: trip.route.lineId,
+      lineCode: trip.route.line.code,
+      lineName: trip.route.line.name,
+      direction: trip.route.direction,
       routeStops,
       tripStops: trip.tripStops.map((stop) => ({
         id: stop.id,
@@ -127,6 +156,16 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       standingCapacity: trip.standingCapacity,
       driverId: trip.driverId,
       driverName: trip.driver?.name ?? "Unassigned",
+      blockId: trip.blockId,
+      blockCode: trip.block?.code ?? null,
+      blockSequence: trip.blockSequence,
+      continuityFromPrevious:
+        tripsInBlock && blockIndex > 0
+          ? evaluateServiceBlockContinuity(
+              tripsInBlock[blockIndex - 1]!,
+              trip,
+            )
+          : null,
       departureTime: trip.departureTime,
       estimatedArrivalTime: trip.estimatedArrivalTime,
       boardingDeadline: trip.boardingDeadline,
@@ -143,6 +182,104 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
       },
     };
   });
+}
+
+export async function createServiceBlock(
+  actor: TripActor,
+  input: CreateServiceBlockInput,
+) {
+  if (actor.role !== "ADMIN") throw forbidden("Admin role required");
+  try {
+    const block = await createServiceBlockRecord(input);
+    return {
+      id: block.id,
+      code: block.code,
+      serviceDate: block.serviceDate,
+      busId: block.busId,
+      busPlateNumber: block.bus.plateNumber,
+      trips: [],
+    };
+  } catch (error) {
+    if (error instanceof TripPersistenceError) mapPersistenceFailure(error);
+    if (
+      error instanceof Error &&
+      (error.message.includes("Unique constraint") || error.message.includes("P2002"))
+    ) {
+      throw conflict("A ServiceBlock with this code already exists for that date");
+    }
+    throw error;
+  }
+}
+
+export async function listServiceBlocks(actor: TripActor) {
+  if (actor.role !== "ADMIN") throw forbidden("Admin role required");
+  return (await listServiceBlockRecords()).map((block) => ({
+    id: block.id,
+    code: block.code,
+    serviceDate: block.serviceDate,
+    busId: block.busId,
+    busPlateNumber: block.bus.plateNumber,
+    trips: block.trips.map((trip, index) => ({
+      id: trip.id,
+      blockSequence: trip.blockSequence,
+      departureTime: trip.departureTime,
+      routeName: trip.route.name,
+      lineCode: trip.route.line.code,
+      direction: trip.route.direction,
+      driverName: trip.driver?.name ?? "Unassigned",
+      continuityFromPrevious:
+        index === 0
+          ? null
+          : evaluateServiceBlockContinuity(block.trips[index - 1]!, trip),
+    })),
+  }));
+}
+
+function driverOperationTripDto(
+  trip: Awaited<ReturnType<typeof listDriverOperationRecords>>[number],
+) {
+  return {
+    id: trip.id,
+    routeId: trip.routeId,
+    routeName: trip.route.name,
+    lineCode: trip.route.line.code,
+    lineName: trip.route.line.name,
+    direction: trip.route.direction,
+    busId: trip.busId,
+    busPlateNumber: trip.bus.plateNumber,
+    driverId: trip.driverId,
+    departureTime: trip.departureTime,
+    estimatedArrivalTime: trip.estimatedArrivalTime,
+    status: trip.status,
+    blockCode: trip.block?.code ?? null,
+    blockSequence: trip.blockSequence,
+  };
+}
+
+export async function getDriverOperation(
+  actor: TripActor,
+  clock: Clock = systemClock,
+) {
+  if (actor.role !== "DRIVER") throw forbidden("Driver role required");
+  const now = clock.now();
+  const trips = await listDriverOperationRecords(actor.userId);
+  const resolved = resolveDriverOperation({
+    driverId: actor.userId,
+    trips,
+    now,
+    boardingOpenLeadMs: productPolicy.boardingOpenLeadMs,
+  });
+  return {
+    state: resolved.state,
+    reason: resolved.reason,
+    serverNow: now,
+    activationAt: resolved.activationAt,
+    currentTrip: resolved.currentTrip
+      ? driverOperationTripDto(resolved.currentTrip)
+      : null,
+    nextTrip: resolved.nextTrip ? driverOperationTripDto(resolved.nextTrip) : null,
+    conflictTripIds: resolved.conflictTripIds,
+  };
 }
 
 export async function cancelTrip(
@@ -244,6 +381,10 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
     id: trip.id,
     routeId: trip.routeId,
     routeName: trip.route.name,
+    lineId: trip.route.line.id,
+    lineCode: trip.route.line.code,
+    lineName: trip.route.line.name,
+    direction: trip.route.direction,
     routeStops: trip.tripStops.map((stop) => stop.stopName),
     tripStops: trip.tripStops.map((stop) => ({
       id: stop.id,
@@ -266,6 +407,9 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
     standingCapacity: trip.standingCapacity,
     driverId: trip.driverId,
     driverName: trip.driver?.name ?? "Unassigned",
+    blockId: trip.blockId,
+    blockCode: trip.block?.code ?? null,
+    blockSequence: trip.blockSequence,
     departureTime: trip.departureTime,
     estimatedArrivalTime: trip.estimatedArrivalTime,
     status: trip.status,

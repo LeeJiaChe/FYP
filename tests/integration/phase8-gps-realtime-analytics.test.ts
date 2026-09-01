@@ -20,7 +20,7 @@ const { verifySubscriptionToken } = require("../../realtime/server.js") as {
   verifySubscriptionToken: (token: string, secret: string) => { room: string } | null;
 };
 const suffix = randomUUID().slice(0, 8).toUpperCase();
-const created = { tripId: "", routeId: "", busId: "", stopIds: [] as string[], userIds: [] as string[] };
+const created = { tripId: "", routeId: "", lineId: "", busId: "", stopIds: [] as string[], userIds: [] as string[] };
 const fixed = (instant: Date) => ({ now: () => new Date(instant) });
 let departure: Date;
 
@@ -34,7 +34,9 @@ before(async () => {
     data: { code: `P8_${suffix}_${position}`, name: `Phase 8 Stop ${position}`, latitude: 3.2 + position * 0.01, longitude: 101.7 + position * 0.01 },
   })));
   created.stopIds.push(...stops.map((stop) => stop.id));
-  const route = await prisma.route.create({ data: { name: `Phase 8 Route ${suffix}`, routeStops: { create: stops.map((stop, position) => ({ stopId: stop.id, position, travelDurationToNextMinutes: position === 2 ? null : 5 })) } } });
+  const line = await prisma.serviceLine.create({ data: { code: `P8_${suffix}`, name: `Phase 8 Line ${suffix}` } });
+  created.lineId = line.id;
+  const route = await prisma.route.create({ data: { lineId: line.id, direction: "OUTBOUND", name: `Phase 8 Route ${suffix}`, routeStops: { create: stops.map((stop, position) => ({ stopId: stop.id, position, travelDurationToNextMinutes: position === 2 ? null : 5 })) } } });
   created.routeId = route.id;
   const bus = await prisma.bus.create({ data: { plateNumber: `P8-${suffix}`, seatedCapacity: 2, standingCapacity: 2, status: "ACTIVE" } });
   created.busId = bus.id;
@@ -70,6 +72,7 @@ after(async () => {
   await prisma.trip.deleteMany({ where: { id: created.tripId } });
   await prisma.routeStop.deleteMany({ where: { routeId: created.routeId } });
   await prisma.route.deleteMany({ where: { id: created.routeId } });
+  await prisma.serviceLine.deleteMany({ where: { id: created.lineId } });
   await prisma.stop.deleteMany({ where: { id: { in: created.stopIds } } });
   await prisma.bus.deleteMany({ where: { id: created.busId } });
   await prisma.user.deleteMany({ where: { id: { in: created.userIds } } });

@@ -7,9 +7,11 @@ import { prisma } from "@/shared/db/prisma.server";
 import type {
   CreateBusInput,
   CreateRouteInput,
+  CreateServiceLineInput,
   CreateStopInput,
   UpdateBusInput,
   UpdateRouteInput,
+  UpdateServiceLineInput,
   UpdateStopInput,
 } from "../contracts/fleet.schemas";
 import { assertBusStatusTransition, unavailableBusCancelsFutureTrips } from "../domain/asset-policy";
@@ -138,12 +140,36 @@ export async function retireStopRecord(id: string) {
 }
 
 const routeInclude = {
+  line: true,
   routeStops: {
     orderBy: { position: "asc" },
     include: { stop: true },
   },
   _count: { select: { trips: true } },
 } satisfies Prisma.RouteInclude;
+
+export async function listServiceLinesRecord() {
+  return prisma.serviceLine.findMany({
+    include: { _count: { select: { routes: true } } },
+    orderBy: { code: "asc" },
+  });
+}
+
+export async function createServiceLineRecord(input: CreateServiceLineInput) {
+  return prisma.serviceLine.create({
+    data: input,
+    include: { _count: { select: { routes: true } } },
+  });
+}
+
+export async function updateServiceLineRecord(input: UpdateServiceLineInput) {
+  const { id, ...data } = input;
+  return prisma.serviceLine.update({
+    where: { id },
+    data,
+    include: { _count: { select: { routes: true } } },
+  });
+}
 
 export async function listActiveRoutesRecord() {
   return prisma.route.findMany({
@@ -172,9 +198,16 @@ export async function createRouteRecord(input: CreateRouteInput) {
     if (activeStopCount !== stops.length) {
       throw new Error("ROUTE_CONTAINS_INACTIVE_STOP");
     }
+    const line = await transaction.serviceLine.findUnique({
+      where: { id: input.lineId },
+      select: { id: true },
+    });
+    if (!line) throw new FleetPersistenceError("NOT_FOUND");
 
     return transaction.route.create({
       data: {
+        lineId: input.lineId,
+        direction: input.direction,
         name: input.name,
         routeStops: {
           create: stops.map((stop) => ({
@@ -218,6 +251,8 @@ export async function updateRouteRecord(input: UpdateRouteInput) {
     return transaction.route.update({
       where: { id: input.id, deletedAt: null },
       data: {
+        ...(input.lineId === undefined ? {} : { lineId: input.lineId }),
+        ...(input.direction === undefined ? {} : { direction: input.direction }),
         ...(input.name === undefined ? {} : { name: input.name }),
         ...(positionedStops === undefined
           ? {}

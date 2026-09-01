@@ -10,6 +10,7 @@ const suffix = randomUUID().slice(0, 8).toUpperCase();
 
 let busId: string;
 let routeId: string;
+let lineId: string;
 let driverId: string;
 let stopIds: string[];
 let tripId: string;
@@ -21,6 +22,7 @@ async function cleanPhase3Fixtures() {
   await prisma.trip.deleteMany({ where: { routeId } });
   await prisma.routeStop.deleteMany({ where: { routeId } });
   if (routeId) await prisma.route.deleteMany({ where: { id: routeId } });
+  if (lineId) await prisma.serviceLine.deleteMany({ where: { id: lineId } });
   if (stopIds?.length) {
     await prisma.stop.deleteMany({ where: { id: { in: stopIds } } });
   }
@@ -65,8 +67,14 @@ before(async () => {
     },
   });
   driverId = driver.id;
+  const line = await prisma.serviceLine.create({
+    data: { code: `P3_${suffix}`, name: `Integration Line ${suffix}` },
+  });
+  lineId = line.id;
   const route = await prisma.route.create({
     data: {
+      lineId,
+      direction: "OUTBOUND",
       name: `Integration Route ${suffix}`,
       routeStops: {
         create: [

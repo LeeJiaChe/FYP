@@ -5,11 +5,13 @@ import { Edit, Plus, Trash2 } from "lucide-react";
 
 export default function RoutesTab({
   routes,
+  lines,
   onOpenModal,
   onEditRoute,
   onDeactivateRoute,
 }: {
   routes: any[];
+  lines: any[];
   onOpenModal: () => void;
   onEditRoute: (route: any) => void;
   onDeactivateRoute: (route: any) => void;
@@ -37,17 +39,25 @@ export default function RoutesTab({
       ) : (
         <div className="route-workspace">
           <nav aria-label="Route list">
-            {routes.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                onClick={() => setSelectedId(item.id)}
-                aria-current={route?.id === item.id ? "true" : undefined}
-                className={route?.id === item.id ? "active" : ""}
-              >
-                <strong>{item.name}</strong>
-                <span>{item.routeStops?.length || 0} stops</span>
-              </button>
+            {lines.map((line) => (
+              <section key={line.id} className="route-line-group">
+                <h3>{line.name}</h3>
+                <small>{line.code}</small>
+                {routes
+                  .filter((item) => item.lineId === line.id)
+                  .map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => setSelectedId(item.id)}
+                      aria-current={route?.id === item.id ? "true" : undefined}
+                      className={route?.id === item.id ? "active" : ""}
+                    >
+                      <strong>{item.direction}</strong>
+                      <span>{item.routeStops?.length || 0} stops</span>
+                    </button>
+                  ))}
+              </section>
             ))}
           </nav>
           {route && (
@@ -55,7 +65,14 @@ export default function RoutesTab({
               <header>
                 <div>
                   <p className="eyebrow">Selected route</p>
+                  <span className="badge badge-blue">
+                    {route.line.code} · {route.direction}
+                  </span>
                   <h2>{route.name}</h2>
+                  <p className="section-subtitle">
+                    {route.tripsCount ?? 0} scheduled Trip
+                    {(route.tripsCount ?? 0) === 1 ? "" : "s"}
+                  </p>
                 </div>
                 <div className="row-actions">
                   <button

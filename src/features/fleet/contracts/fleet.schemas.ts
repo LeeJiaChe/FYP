@@ -21,12 +21,28 @@ export const updateStopSchema = stopInputSchema.partial().extend({
 });
 
 export const createRouteSchema = z.object({
+  lineId: uuidSchema,
+  direction: z.enum(["OUTBOUND", "INBOUND"]),
   name: z.string().trim().min(2).max(120),
   stops: z.array(routeStopSchema).min(2).max(5),
 });
 
 export const updateRouteSchema = createRouteSchema.partial().extend({
   id: z.string().uuid(),
+});
+
+export const createServiceLineSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(2)
+    .max(40)
+    .transform((value) => value.toUpperCase()),
+  name: z.string().trim().min(2).max(120),
+});
+
+export const updateServiceLineSchema = createServiceLineSchema.partial().extend({
+  id: uuidSchema,
 });
 
 const plateNumberSchema = z
@@ -51,5 +67,7 @@ export type CreateStopInput = z.infer<typeof createStopSchema>;
 export type UpdateStopInput = z.infer<typeof updateStopSchema>;
 export type CreateRouteInput = z.infer<typeof createRouteSchema>;
 export type UpdateRouteInput = z.infer<typeof updateRouteSchema>;
+export type CreateServiceLineInput = z.infer<typeof createServiceLineSchema>;
+export type UpdateServiceLineInput = z.infer<typeof updateServiceLineSchema>;
 export type CreateBusInput = z.infer<typeof createBusSchema>;
 export type UpdateBusInput = z.infer<typeof updateBusSchema>;

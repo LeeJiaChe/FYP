@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 
 import { buildTripSnapshot } from "../domain/build-trip-snapshot";
 import type {
+  CreateServiceBlockInput,
   ListTripsQuery,
   ScheduleTripInput,
   UpdateScheduledTripInput,
@@ -19,6 +20,8 @@ export type TripPersistenceFailureCode =
   | "DRIVER_NOT_VALID"
   | "BUS_SCHEDULE_CONFLICT"
   | "DRIVER_SCHEDULE_CONFLICT"
+  | "SERVICE_BLOCK_NOT_FOUND"
+  | "SERVICE_BLOCK_BUS_MISMATCH"
   | "INVENTORY_COUNT_MISMATCH"
   | "TRIP_NOT_FOUND"
   | "TRIP_NOT_CANCELLABLE"
@@ -233,6 +236,9 @@ export async function createScheduledTripRecord(
   return prisma.$transaction(async (transaction) => {
     await lockScheduleKey(transaction, `route:${input.routeId}`);
     await lockScheduleKey(transaction, `bus:${input.busId}`);
+    if (input.blockId) {
+      await lockScheduleKey(transaction, `block:${input.blockId}`);
+    }
     if (input.driverId) {
       await lockScheduleKey(transaction, `driver:${input.driverId}`);
     }
@@ -254,6 +260,19 @@ export async function createScheduledTripRecord(
       where: { id: input.busId, deletedAt: null, status: "ACTIVE" },
     });
     if (!bus) throw new TripPersistenceError("BUS_NOT_ACTIVE");
+
+    const block = input.blockId
+      ? await transaction.serviceBlock.findUnique({
+          where: { id: input.blockId },
+          select: { id: true, busId: true },
+        })
+      : null;
+    if (input.blockId && !block) {
+      throw new TripPersistenceError("SERVICE_BLOCK_NOT_FOUND");
+    }
+    if (block && block.busId !== input.busId) {
+      throw new TripPersistenceError("SERVICE_BLOCK_BUS_MISMATCH");
+    }
 
     if (input.driverId) {
       const driver = await transaction.user.findUnique({
@@ -310,6 +329,13 @@ export async function createScheduledTripRecord(
         routeId: input.routeId,
         busId: input.busId,
         driverId: input.driverId ?? null,
+        blockId: block?.id ?? null,
+        blockSequence: block
+          ? ((await transaction.trip.aggregate({
+              where: { blockId: block.id },
+              _max: { blockSequence: true },
+            }))._max.blockSequence ?? 0) + 1
+          : null,
         departureTime,
         estimatedArrivalTime: snapshot.estimatedArrivalTime,
         boardingDeadline: snapshot.stops[0]!.boardingDeadline,
@@ -363,9 +389,10 @@ export async function createScheduledTripRecord(
     return transaction.trip.findUniqueOrThrow({
       where: { id: trip.id },
       include: {
-        route: true,
+        route: { include: { line: true } },
         bus: true,
         driver: { select: { id: true, name: true, email: true } },
+        block: { select: { id: true, code: true, serviceDate: true } },
         tripStops: { orderBy: { position: "asc" } },
         tripSegments: { orderBy: { position: "asc" } },
         tripSeats: { orderBy: { seatNumber: "asc" } },
@@ -394,6 +421,7 @@ export async function listTripRecords(
     include: {
       route: {
         include: {
+          line: true,
           routeStops: {
             orderBy: { position: "asc" },
             include: { stop: true },
@@ -402,6 +430,7 @@ export async function listTripRecords(
       },
       bus: true,
       driver: { select: { id: true, name: true, email: true } },
+      block: { select: { id: true, code: true, serviceDate: true } },
       tripStops: { orderBy: { position: "asc" } },
       bookings: { select: { status: true, checkedInAt: true } },
       waitlistEntries: { select: { status: true } },
@@ -415,8 +444,9 @@ export async function findTripDetailRecord(tripId: string) {
   return prisma.trip.findUnique({
     where: { id: tripId },
     include: {
-      route: { select: { name: true } },
+      route: { select: { name: true, direction: true, line: true } },
       bus: { select: { plateNumber: true } },
+      block: { select: { id: true, code: true, serviceDate: true } },
       driver: { select: { id: true, name: true } },
       tripStops: { orderBy: { position: "asc" } },
       tripSegments: {
@@ -456,5 +486,59 @@ export async function findTripDetailRecord(tripId: string) {
         take: 1,
       },
     },
+  });
+}
+
+export async function createServiceBlockRecord(input: CreateServiceBlockInput) {
+  return prisma.$transaction(async (transaction) => {
+    await lockScheduleKey(transaction, `bus:${input.busId}`);
+    const bus = await transaction.bus.findFirst({
+      where: { id: input.busId, deletedAt: null, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!bus) throw new TripPersistenceError("BUS_NOT_ACTIVE");
+    return transaction.serviceBlock.create({
+      data: {
+        code: input.code,
+        serviceDate: new Date(`${input.serviceDate}T00:00:00.000Z`),
+        busId: input.busId,
+      },
+      include: { bus: true, trips: true },
+    });
+  });
+}
+
+export async function listServiceBlockRecords() {
+  return prisma.serviceBlock.findMany({
+    include: {
+      bus: true,
+      trips: {
+        orderBy: { blockSequence: "asc" },
+        include: {
+          route: { include: { line: true } },
+          driver: { select: { id: true, name: true } },
+          tripStops: {
+            orderBy: { position: "asc" },
+            select: { stopId: true, stopName: true, position: true },
+          },
+        },
+      },
+    },
+    orderBy: [{ serviceDate: "desc" }, { code: "asc" }],
+  });
+}
+
+export async function listDriverOperationRecords(driverId: string) {
+  return prisma.trip.findMany({
+    where: {
+      driverId,
+      status: { in: ["NOT_STARTED", "BOARDING", "DEPARTED"] },
+    },
+    include: {
+      route: { include: { line: true } },
+      bus: { select: { plateNumber: true } },
+      block: { select: { code: true } },
+    },
+    orderBy: [{ departureTime: "asc" }, { id: "asc" }],
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Bus,
@@ -46,7 +46,7 @@ interface DriverManifest {
     id: string;
     routeName: string;
     busPlateNumber: string;
-    status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED";
+    status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
     delayMinutes: number;
     delayReason: string | null;
     standingCapacity: number;
@@ -61,6 +61,37 @@ interface DriverManifest {
     passedAt: string | null;
   }>;
   manifest: ManifestPassenger[];
+}
+
+interface OperationTrip {
+  id: string;
+  routeName: string;
+  lineCode: string;
+  direction: "OUTBOUND" | "INBOUND";
+  busPlateNumber: string;
+  departureTime: string;
+  status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
+  blockCode: string | null;
+  blockSequence: number | null;
+}
+
+interface DriverOperation {
+  state:
+    | "CURRENT_OPERATION"
+    | "UPCOMING"
+    | "NO_ASSIGNMENT"
+    | "MULTIPLE_ACTIVE_TRIPS";
+  reason:
+    | "ONGOING_TRIP"
+    | "BOARDING_WINDOW_OPEN"
+    | "WAITING_FOR_BOARDING_WINDOW"
+    | "NO_ASSIGNED_TRIPS"
+    | "MULTIPLE_ACTIVE_TRIPS";
+  serverNow: string;
+  activationAt: string | null;
+  currentTrip: OperationTrip | null;
+  nextTrip: OperationTrip | null;
+  conflictTripIds: string[];
 }
 
 type DriverDialog = "delay" | "walkin" | null;
@@ -80,8 +111,9 @@ export default function DriverPortal({
 }) {
   const { user, loading: userLoading } = useCurrentUser(initialUser);
   const { trips, loadingTrips, fetchTrips } = useTrips(undefined, user?.id);
-  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
-  const activeTripId = selectedTripId ?? trips[0]?.id ?? null;
+  const [operation, setOperation] = useState<DriverOperation | null>(null);
+  const [operationLoading, setOperationLoading] = useState(true);
+  const activeTripId = operation?.currentTrip?.id ?? null;
   const [manifest, setManifest] = useState<DriverManifest | null>(null);
   const [scannerMode, setScannerMode] = useState<
     "BOARDING" | "ALIGHTING" | null
@@ -97,31 +129,49 @@ export default function DriverPortal({
     "DEPART_CURRENT_STOP" | "ARRIVE_NEXT_STOP" | null
   >(null);
 
-  async function refreshManifest(tripId: string) {
+  const refreshManifest = useCallback(async (tripId: string) => {
     const response = await fetch(`/api/trips/${tripId}/manifest`);
     const data = await response.json();
     if (!response.ok) {
+      setManifest(null);
       toast.error(errorMessage(data));
       return;
     }
     setManifest(data);
-  }
+  }, []);
+
+  const refreshOperation = useCallback(async () => {
+    const response = await fetch("/api/driver/operation", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(errorMessage(data));
+    const resolved = data as DriverOperation;
+    setOperation(resolved);
+    if (resolved.currentTrip) {
+      await refreshManifest(resolved.currentTrip.id);
+    } else {
+      setManifest(null);
+    }
+    setOperationLoading(false);
+  }, [refreshManifest]);
 
   useEffect(() => {
-    if (!activeTripId) return;
     const initialRefresh = window.setTimeout(
-      () => void refreshManifest(activeTripId),
+      () =>
+        void refreshOperation().catch((error) => {
+          setOperationLoading(false);
+          toast.error(error.message);
+        }),
       0,
     );
     const interval = window.setInterval(
-      () => void refreshManifest(activeTripId),
+      () => void refreshOperation().catch(() => undefined),
       5_000,
     );
     return () => {
       window.clearTimeout(initialRefresh);
       window.clearInterval(interval);
     };
-  }, [activeTripId]);
+  }, [refreshOperation]);
 
   async function mutate(path: string, body: unknown) {
     const response = await fetch(path, {
@@ -131,8 +181,7 @@ export default function DriverPortal({
     });
     const data = await response.json();
     if (!response.ok) throw new Error(errorMessage(data));
-    if (activeTripId) await refreshManifest(activeTripId);
-    await fetchTrips();
+    await Promise.all([refreshOperation(), fetchTrips()]);
     return data;
   }
 
@@ -212,7 +261,7 @@ export default function DriverPortal({
     }
   }
 
-  const loading = userLoading || loadingTrips;
+  const loading = userLoading || loadingTrips || operationLoading;
   const boardNow =
     manifest?.manifest.filter(
       (passenger) => !passenger.boarded && passenger.expectedToBoardHere,
@@ -364,13 +413,19 @@ export default function DriverPortal({
     return null;
   }
 
-  const activeTrip = trips.find((trip) => trip.id === activeTripId);
-  const formattedDepartureTime = activeTrip
-    ? new Date(activeTrip.departureTime).toLocaleTimeString([], {
+  const assignment = operation?.currentTrip ?? operation?.nextTrip ?? null;
+  const formattedDepartureTime = assignment
+    ? new Date(assignment.departureTime).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       })
     : "";
+  const formattedActivationTime = operation?.activationAt
+    ? new Date(operation.activationAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
 
   return (
     <div className="driver-shell">
@@ -379,22 +434,37 @@ export default function DriverPortal({
         <header className="driver-trip-selector">
           <div>
             <h1>Today&apos;s operation</h1>
-            <p>Select an assigned Trip to begin.</p>
+            <p>The server automatically resolves your current duty.</p>
           </div>
-          <label htmlFor="assigned-trip">
-            <span>Assigned Trip</span>
-            <input
-              id="assigned-trip"
-              onChange={(event) => setSelectedTripId(event.target.value)}
-              value={
-                activeTrip
-                  ? `${activeTrip.routeName} · ${formattedDepartureTime}`
-                  : ""
-              }
-              className="input-field"
-              disabled
-            ></input>
-          </label>
+          <section className="driver-assignment-summary" aria-live="polite">
+            {operation?.state === "MULTIPLE_ACTIVE_TRIPS" ? (
+              <div role="alert">
+                <strong>Operational conflict</strong>
+                <p>Multiple active assignments detected. Contact an administrator.</p>
+              </div>
+            ) : assignment ? (
+              <div>
+                <span>
+                  {operation?.currentTrip ? "Current assignment" : "Next assignment"}
+                </span>
+                <strong>{assignment.routeName}</strong>
+                <p>
+                  {assignment.lineCode} · {assignment.direction} · {assignment.busPlateNumber}
+                </p>
+                <small>
+                  {formattedActivationTime
+                    ? `${formattedActivationTime} boarding opens · `
+                    : ""}
+                  {formattedDepartureTime} departure
+                </small>
+              </div>
+            ) : (
+              <div>
+                <strong>No assignment</strong>
+                <p>No operational or upcoming Trip is assigned.</p>
+              </div>
+            )}
+          </section>
         </header>
 
         <nav className="driver-view-nav" aria-label="Driver workspace">
@@ -433,6 +503,29 @@ export default function DriverPortal({
             <div className="driver-empty">
               No Trips are assigned to this driver.
             </div>
+          )}
+
+          {!loading &&
+            view === "trip" &&
+            operation?.state === "MULTIPLE_ACTIVE_TRIPS" && (
+              <div className="driver-empty" role="alert">
+                <AlertTriangle aria-hidden />
+                <strong>Multiple active assignments detected.</strong>
+                <p>Contact an administrator. Operational actions are disabled.</p>
+              </div>
+            )}
+
+          {!loading && view === "trip" && operation?.state === "UPCOMING" && (
+            <section className="driver-mission-surface">
+              <div className="driver-empty">
+                <Calendar aria-hidden />
+                <strong>Next assignment is not ready yet.</strong>
+                <p>
+                  Boarding becomes available at {formattedActivationTime}. The
+                  Trip will appear automatically and cannot be activated early.
+                </p>
+              </div>
+            </section>
           )}
 
           {manifest && view === "trip" && (
