@@ -1,25 +1,30 @@
 import type {
   CreateBusInput,
   CreateRouteInput,
+  CreateServiceLineInput,
   CreateStopInput,
   UpdateBusInput,
   UpdateRouteInput,
+  UpdateServiceLineInput,
   UpdateStopInput,
 } from "../contracts/fleet.schemas";
 import { RouteTopologyError } from "../domain/route-topology";
 import {
   createRouteRecord,
+  createServiceLineRecord,
   createBusRecord,
   createStopRecord,
   FleetPersistenceError,
   listBusesRecord,
   listActiveRoutesRecord,
   listActiveStopsRecord,
+  listServiceLinesRecord,
   retireRouteRecord,
   retireBusRecord,
   retireStopRecord,
   updateBusRecord,
   updateRouteRecord,
+  updateServiceLineRecord,
   updateStopRecord,
 } from "../infrastructure/fleet.prisma.server";
 import {
@@ -68,6 +73,13 @@ function stopDto(stop: {
 function routeDto(route: Awaited<ReturnType<typeof createRouteRecord>>) {
   return {
     id: route.id,
+    lineId: route.lineId,
+    line: {
+      id: route.line.id,
+      code: route.line.code,
+      name: route.line.name,
+    },
+    direction: route.direction,
     name: route.name,
     stops: route.routeStops.map((routeStop) => routeStop.stop.name),
     routeStops: route.routeStops.map((routeStop) => ({
@@ -78,6 +90,17 @@ function routeDto(route: Awaited<ReturnType<typeof createRouteRecord>>) {
       stop: stopDto(routeStop.stop),
     })),
     tripsCount: route._count.trips,
+  };
+}
+
+function serviceLineDto(
+  line: Awaited<ReturnType<typeof createServiceLineRecord>>,
+) {
+  return {
+    id: line.id,
+    code: line.code,
+    name: line.name,
+    routesCount: line._count.routes,
   };
 }
 
@@ -97,6 +120,9 @@ function fleetFailure(error: unknown): never {
   if (error instanceof FleetPersistenceError) {
     if (error.code === "NOT_FOUND") throw notFound("Fleet asset not found");
     if (error.code === "DUPLICATE") throw conflict("Fleet asset already exists");
+    if (error.code === "DUPLICATE_ACTIVE_ROUTE") {
+      throw conflict("This Service Line already has a Route for that direction");
+    }
     if (error.code === "STOP_IN_ACTIVE_ROUTE") {
       throw conflict("Deactivate or edit active Routes that use this Stop first");
     }
@@ -188,6 +214,35 @@ export async function listRoutes(actor: FleetActor) {
   return (await listActiveRoutesRecord()).map(routeDto);
 }
 
+export async function listServiceLines(actor: FleetActor) {
+  requireAdmin(actor);
+  return (await listServiceLinesRecord()).map(serviceLineDto);
+}
+
+export async function createServiceLine(
+  actor: FleetActor,
+  input: CreateServiceLineInput,
+) {
+  requireAdmin(actor);
+  try {
+    return serviceLineDto(await createServiceLineRecord(input));
+  } catch (error) {
+    fleetFailure(error);
+  }
+}
+
+export async function updateServiceLine(
+  actor: FleetActor,
+  input: UpdateServiceLineInput,
+) {
+  requireAdmin(actor);
+  try {
+    return serviceLineDto(await updateServiceLineRecord(input));
+  } catch (error) {
+    fleetFailure(error);
+  }
+}
+
 export async function listPublicRoutes() {
   return (await listActiveRoutesRecord()).map(routeDto);
 }
@@ -197,6 +252,13 @@ export async function createRoute(actor: FleetActor, input: CreateRouteInput) {
   try {
     return routeDto(await createRouteRecord(input));
   } catch (error) {
+    if (error instanceof FleetPersistenceError) fleetFailure(error);
+    if (
+      error instanceof Error &&
+      (error.message.includes("Unique constraint") || error.message.includes("P2002"))
+    ) {
+      throw conflict("This Service Line already has a Route for that direction");
+    }
     topologyFailure(error);
   }
 }
@@ -206,6 +268,13 @@ export async function updateRoute(actor: FleetActor, input: UpdateRouteInput) {
   try {
     return routeDto(await updateRouteRecord(input));
   } catch (error) {
+    if (error instanceof FleetPersistenceError) fleetFailure(error);
+    if (
+      error instanceof Error &&
+      (error.message.includes("Unique constraint") || error.message.includes("P2002"))
+    ) {
+      throw conflict("This Service Line already has a Route for that direction");
+    }
     topologyFailure(error);
   }
 }

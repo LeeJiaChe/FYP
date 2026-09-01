@@ -12,7 +12,23 @@ export const scheduleTripSchema = z.object({
     .optional()
     .nullable()
     .transform((value) => value || undefined),
+  blockId: z
+    .union([z.string().uuid("Invalid ServiceBlock ID"), z.literal("")])
+    .optional()
+    .nullable()
+    .transform((value) => value || undefined),
   departureTime: parseableDatetime,
+});
+
+export const createServiceBlockSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(2)
+    .max(40)
+    .transform((value) => value.toUpperCase()),
+  serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  busId: z.string().uuid("Bus selection is required"),
 });
 
 export const listTripsQuerySchema = z.object({
@@ -37,7 +53,15 @@ export const updateScheduledTripSchema = z
     "At least one schedulable field is required",
   );
 
-export type ScheduleTripInput = z.infer<typeof scheduleTripSchema>;
+type ParsedScheduleTripInput = z.infer<typeof scheduleTripSchema>;
+export type ScheduleTripInput = Omit<
+  ParsedScheduleTripInput,
+  "driverId" | "blockId"
+> & {
+  driverId?: string;
+  blockId?: string;
+};
+export type CreateServiceBlockInput = z.infer<typeof createServiceBlockSchema>;
 export type ListTripsQuery = z.infer<typeof listTripsQuerySchema>;
 export type CancelTripInput = z.infer<typeof cancelTripSchema>;
 export type UpdateScheduledTripInput = z.infer<typeof updateScheduledTripSchema>;

@@ -13,7 +13,7 @@ import {
 } from "../../src/features/boarding/application/boarding";
 import { issueSignedPass } from "../../src/features/boarding/infrastructure/pass-token.server";
 import { createReservedBooking } from "../../src/features/bookings/application/reservations";
-import { scheduleTrip } from "../../src/features/trips/application/schedule-trip";
+import { cancelTrip, scheduleTrip } from "../../src/features/trips/application/schedule-trip";
 import {
   createWalkInIntent,
   issueWalkInPass,
@@ -36,13 +36,14 @@ const created = {
   stopIds: [] as string[],
   busIds: [] as string[],
   userIds: [] as string[],
+  lineIds: [] as string[],
 };
 
 const fixed = (instant: Date) => ({ now: () => new Date(instant) });
 const studentActor = (userId: string) => ({ userId, role: "STUDENT" } as const);
 const driverActor = (userId: string) => ({ userId, role: "DRIVER" } as const);
 
-async function createUser(role: "STUDENT" | "DRIVER", label: string) {
+async function createUser(role: "ADMIN" | "STUDENT" | "DRIVER", label: string) {
   const suffix = randomUUID();
   const user = await prisma.user.create({
     data: {
@@ -76,8 +77,14 @@ async function createScenario(standingCapacity = 1): Promise<Scenario> {
     ),
   );
   created.stopIds.push(...stops.map((stop) => stop.id));
+  const line = await prisma.serviceLine.create({
+    data: { code: `P5_${suffix}`, name: `Phase 5 Line ${suffix}` },
+  });
+  created.lineIds.push(line.id);
   const route = await prisma.route.create({
     data: {
+      lineId: line.id,
+      direction: "OUTBOUND",
       name: `Phase 5 Route ${suffix}`,
       routeStops: {
         create: stops.map((stop, position) => ({
@@ -201,6 +208,7 @@ after(async () => {
   await prisma.trip.deleteMany({ where: { id: { in: created.tripIds } } });
   await prisma.routeStop.deleteMany({ where: { routeId: { in: created.routeIds } } });
   await prisma.route.deleteMany({ where: { id: { in: created.routeIds } } });
+  await prisma.serviceLine.deleteMany({ where: { id: { in: created.lineIds } } });
   await prisma.stop.deleteMany({ where: { id: { in: created.stopIds } } });
   await prisma.bus.deleteMany({ where: { id: { in: created.busIds } } });
   await prisma.user.deleteMany({ where: { id: { in: created.userIds } } });
@@ -307,6 +315,43 @@ describe("Phase 5 PostgreSQL walk-in capacity and pass issuance", () => {
 });
 
 describe("Phase 5 boarding authorization and signed purpose", () => {
+  it("isolates manifest, progress, manual boarding, and alighting by assigned Driver", async () => {
+    const owned = await createScenario();
+    const other = await createScenario();
+    const unauthorized = driverActor(other.driverId);
+    const isForbidden = (error: unknown) =>
+      error instanceof ApplicationError && error.code === "FORBIDDEN";
+
+    await assert.rejects(getDriverManifest(unauthorized, owned.tripId), isForbidden);
+    await assert.rejects(
+      progressTrip(
+        unauthorized,
+        owned.tripId,
+        { action: "START_BOARDING" },
+        fixed(owned.departure),
+      ),
+      isForbidden,
+    );
+    await assert.rejects(
+      boardManually(
+        unauthorized,
+        owned.tripId,
+        { kind: "RESERVED", bookingId: randomUUID() },
+        fixed(owned.departure),
+      ),
+      isForbidden,
+    );
+    await assert.rejects(
+      confirmAlighting(
+        unauthorized,
+        owned.tripId,
+        { mode: "MANUAL", kind: "RESERVED", recordId: randomUUID() },
+        fixed(owned.departure),
+      ),
+      isForbidden,
+    );
+  });
+
   it("rejects wrong-Trip scans and an unassigned driver", async () => {
     const [firstTrip, secondTrip] = await Promise.all([createScenario(), createScenario()]);
     const student = await createUser("STUDENT", "Wrong Trip Walkin");
@@ -484,6 +529,7 @@ describe("Phase 5 alighting and Trip progress", () => {
   });
 
   it("rejects illegal transitions and cannot reverse ARRIVED or CANCELLED", async () => {
+    const adminId = await createUser("ADMIN", `Admin ${randomUUID().slice(0, 8)}`);
     const arrived = await createScenario();
     await assert.rejects(
       progressTrip(driverActor(arrived.driverId), arrived.tripId, { action: "ARRIVE_NEXT_STOP" }, fixed(arrived.departure)),
@@ -497,12 +543,12 @@ describe("Phase 5 alighting and Trip progress", () => {
       await progressTrip(driverActor(arrived.driverId), arrived.tripId, { action: "DEPART_CURRENT_STOP" }, fixed(new Date(time.getTime() + 1_000)));
     }
     await assert.rejects(
-      progressTrip(driverActor(arrived.driverId), arrived.tripId, { action: "CANCEL", reason: "Too late" }, fixed(new Date(arrived.departure.getTime() + 30 * 60 * 1_000))),
+      cancelTrip({ userId: adminId, role: "ADMIN" }, arrived.tripId, { reason: "Too late" }, fixed(new Date(arrived.departure.getTime() + 30 * 60 * 1_000))),
       (error) => error instanceof ApplicationError && error.code === "CONFLICT",
     );
 
     const cancelled = await createScenario();
-    await progressTrip(driverActor(cancelled.driverId), cancelled.tripId, { action: "CANCEL", reason: "Vehicle unavailable" }, fixed(cancelled.departure));
+    await cancelTrip({ userId: adminId, role: "ADMIN" }, cancelled.tripId, { reason: "Vehicle unavailable" }, fixed(cancelled.departure));
     await assert.rejects(
       progressTrip(driverActor(cancelled.driverId), cancelled.tripId, { action: "START_BOARDING" }, fixed(cancelled.departure)),
       (error) => error instanceof ApplicationError && error.code === "CONFLICT",

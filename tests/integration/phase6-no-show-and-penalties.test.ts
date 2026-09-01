@@ -31,6 +31,7 @@ const created = {
   stopIds: [] as string[],
   busIds: [] as string[],
   userIds: [] as string[],
+  lineIds: [] as string[],
 };
 
 const fixed = (instant: Date) => ({ now: () => new Date(instant) });
@@ -75,8 +76,14 @@ async function createScenario(seatedCapacity = 1): Promise<Scenario> {
     ),
   );
   created.stopIds.push(...stops.map((stop) => stop.id));
+  const line = await prisma.serviceLine.create({
+    data: { code: `P6_${suffix}`, name: `Phase 6 Line ${suffix}` },
+  });
+  created.lineIds.push(line.id);
   const route = await prisma.route.create({
     data: {
+      lineId: line.id,
+      direction: "OUTBOUND",
       name: `Phase 6 Route ${suffix}`,
       routeStops: {
         create: stops.map((stop, position) => ({
@@ -185,6 +192,7 @@ after(async () => {
   await prisma.trip.deleteMany({ where: { id: { in: created.tripIds } } });
   await prisma.routeStop.deleteMany({ where: { routeId: { in: created.routeIds } } });
   await prisma.route.deleteMany({ where: { id: { in: created.routeIds } } });
+  await prisma.serviceLine.deleteMany({ where: { id: { in: created.lineIds } } });
   await prisma.stop.deleteMany({ where: { id: { in: created.stopIds } } });
   await prisma.bus.deleteMany({ where: { id: { in: created.busIds } } });
   await prisma.user.deleteMany({ where: { id: { in: created.userIds } } });

@@ -6,12 +6,14 @@ export default function TripsTab({
   isDriverPortal = false,
   trips,
   onOpenModal,
+  onCreateBlock,
   onEditTrip,
   onCancelTrip,
 }: {
   isDriverPortal?: boolean;
   trips: any[];
   onOpenModal?: (() => void) | null;
+  onCreateBlock?: (() => void) | null;
   onEditTrip?: ((trip: any) => void) | null;
   onCancelTrip?: ((trip: any) => void) | null;
 }) {
@@ -34,10 +36,19 @@ export default function TripsTab({
             {trips.length} scheduled Trips with route snapshots and assignments.
           </p>
         </div>
-        {!isDriverPortal && onOpenModal && (
-          <button onClick={onOpenModal} className="btn-primary">
-            <Plus aria-hidden className="size-4" /> Schedule Trip
-          </button>
+        {!isDriverPortal && (
+          <div className="row-actions">
+            {onCreateBlock && (
+              <button onClick={onCreateBlock} className="btn-secondary">
+                <Plus aria-hidden className="size-4" /> Create ServiceBlock
+              </button>
+            )}
+            {onOpenModal && (
+              <button onClick={onOpenModal} className="btn-primary">
+                <Plus aria-hidden className="size-4" /> Schedule Trip
+              </button>
+            )}
+          </div>
         )}
       </header>
       <div className="timetable-days">
@@ -66,6 +77,14 @@ export default function TripsTab({
                         {!isDriverPortal &&
                           (trip.driverName || "Unassigned driver")}
                       </span>
+                      {trip.blockCode && (
+                        <small>
+                          {trip.blockCode} · Seq {trip.blockSequence}
+                          {trip.continuityFromPrevious === "DEADHEAD_REQUIRED"
+                            ? " · Deadhead required"
+                            : ""}
+                        </small>
+                      )}
                     </div>
                     <div className="timetable-load">
                       <span>

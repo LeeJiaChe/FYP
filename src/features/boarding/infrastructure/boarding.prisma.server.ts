@@ -4,7 +4,6 @@ import { Prisma, type CheckInMethod } from "@prisma/client";
 
 import { evaluateBoardingEligibility } from "../domain/boarding-policy";
 import { assertTripTransition } from "@/features/trips/public";
-import { cancelTripInTransaction } from "@/features/trips/server";
 import { processNoShowsAtTripStopInTransaction } from "@/features/penalties/server";
 import type { ProductPolicy } from "@/shared/config/policies";
 import { prisma } from "@/shared/db/prisma.server";
@@ -421,8 +420,7 @@ export async function progressTripRecord(
     | { action: "START_BOARDING" }
     | { action: "ARRIVE_NEXT_STOP" }
     | { action: "DEPART_CURRENT_STOP" }
-    | { action: "SET_DELAY"; delayMinutes: number; reason: string }
-    | { action: "CANCEL"; reason: string },
+    | { action: "SET_DELAY"; delayMinutes: number; reason: string },
   now: Date,
   policy: ProductPolicy,
 ) {
@@ -444,24 +442,6 @@ export async function progressTripRecord(
         data: { delayMinutes: input.delayMinutes, delayReason: input.reason },
       });
       return { trip: updated, autoAlighted: { reserved: 0, walkIn: 0 } };
-    }
-
-    if (input.action === "CANCEL") {
-      try {
-        const result = await cancelTripInTransaction(transaction, {
-          tripId,
-          actorId: liveActor.id,
-          reason: input.reason,
-          now,
-          allowAssignedDriver: true,
-        });
-        return {
-          trip: result.trip,
-          autoAlighted: { reserved: 0, walkIn: 0 },
-        };
-      } catch {
-        throw new BoardingPersistenceError("ILLEGAL_TRIP_TRANSITION");
-      }
     }
 
     if (input.action === "START_BOARDING") {
