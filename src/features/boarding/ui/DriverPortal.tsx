@@ -1,7 +1,20 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { AlertTriangle, Bus, ChevronDown, DoorOpen, MapPin, MoreHorizontal, Play, QrCode, Route, UserCheck, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  Bus,
+  ChevronDown,
+  DoorOpen,
+  MapPin,
+  MoreHorizontal,
+  Play,
+  QrCode,
+  Route,
+  UserCheck,
+  Users,
+  Calendar,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 import ConfirmModal from "@/components/ConfirmModal";
@@ -10,7 +23,7 @@ import MotionSurface from "@/components/MotionSurface";
 import Navbar from "@/components/Navbar";
 import { useCurrentUser } from "@/features/identity/ui";
 import { operationalProgressLabel } from "@/features/trips/public";
-import { useTrips } from "@/features/trips/ui";
+import { TripsTab, useTrips } from "@/features/trips/ui";
 import type { CurrentUser } from "@/shared/ui/current-user";
 import QRScannerModal from "./QRScannerModal";
 
@@ -57,8 +70,10 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const activeTripId = selectedTripId ?? trips[0]?.id ?? null;
   const [manifest, setManifest] = useState<DriverManifest | null>(null);
-  const [scannerMode, setScannerMode] = useState<"BOARDING" | "ALIGHTING" | null>(null);
-  const [view, setView] = useState<"trip" | "manifest">("trip");
+  const [scannerMode, setScannerMode] = useState<
+    "BOARDING" | "ALIGHTING" | null
+  >(null);
+  const [view, setView] = useState<"trip" | "manifest" | "timetable">("trip");
   const [secondaryOpen, setSecondaryOpen] = useState(false);
   const [dialog, setDialog] = useState<DriverDialog>(null);
   const [delayMinutes, setDelayMinutes] = useState("0");
@@ -222,7 +237,33 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
           </label>
         </header>
 
-        <nav className="driver-view-nav" aria-label="Driver workspace"><button type="button" className={view === "trip" ? "active" : ""} aria-current={view === "trip" ? "page" : undefined} onClick={() => setView("trip")}><Bus aria-hidden /> Trip</button><button type="button" className={view === "manifest" ? "active" : ""} aria-current={view === "manifest" ? "page" : undefined} onClick={() => setView("manifest")}><Users aria-hidden /> Manifest <span>{manifest?.manifest.length || 0}</span></button></nav>
+        <nav className="driver-view-nav" aria-label="Driver workspace">
+          <button
+            type="button"
+            className={view === "trip" ? "active" : ""}
+            aria-current={view === "trip" ? "page" : undefined}
+            onClick={() => setView("trip")}
+          >
+            <Bus aria-hidden /> Trip
+          </button>
+          <button
+            type="button"
+            className={view === "manifest" ? "active" : ""}
+            aria-current={view === "manifest" ? "page" : undefined}
+            onClick={() => setView("manifest")}
+          >
+            <Users aria-hidden /> Manifest{" "}
+            <span>{manifest?.manifest.length || 0}</span>
+          </button>
+          <button
+            type="button"
+            className={view === "timetable" ? "active" : ""}
+            aria-current={view === "timetable" ? "page" : undefined}
+            onClick={() => setView("timetable")}
+          >
+            <Calendar aria-hidden /> Timetable{" "}
+          </button>
+        </nav>
 
         <MotionSurface motionKey={view}>
         {loading && <div className="driver-empty">Loading assigned Trips…</div>}
@@ -251,15 +292,270 @@ export default function DriverPortal({ initialUser }: { initialUser: CurrentUser
           </section>
         )}
 
-        {manifest && view === "manifest" && (
-          <section className="driver-manifest">
-            <header><div><h2>Passenger worklist</h2><p>{manifest.trip.routeName} · {manifest.trip.busPlateNumber}</p></div><strong>{manifest.currentStop ? `At ${manifest.currentStop.name}` : "Between stops"}</strong></header>
-            {[{ title: "Board now", items: boardNow, kind: "board" as const }, { title: "Alight here", items: alightHere, kind: "alight" as const }, { title: "On board", items: onBoard.filter((passenger) => !passenger.expectedToAlightHere), kind: "onboard" as const }].map((group) => (
-              <section key={group.title} className={`manifest-group group-${group.kind} ${group.items.length === 0 ? "empty" : ""} ${group.kind === "board" && group.items.length > 0 ? "priority" : group.kind === "alight" && boardNow.length === 0 && group.items.length > 0 ? "priority" : ""}`}><h3>{group.title}<span>{group.items.length}</span></h3>{group.items.length === 0 ? <p className="manifest-empty">{manifestEmptyMessage(group.kind)}</p> : manifestRows(group.items, group.kind)}</section>
-            ))}
-            <details className="manifest-archive"><summary><span>All passengers</span><span className="tabular-nums">{manifest.manifest.length}</span></summary>{manifest.manifest.length > 0 ? manifestRows(manifest.manifest, "all") : <p className="manifest-empty">No passengers are attached to this Trip</p>}</details>
-          </section>
-        )}
+          {manifest && view === "trip" && (
+            <section className="driver-mission-surface">
+              <header className="driver-mission-header">
+                <div className="driver-mission-identity">
+                  <span>
+                    <Bus aria-hidden />
+                  </span>
+                  <div>
+                    <strong>{manifest.trip.routeName}</strong>
+                    <small>{manifest.trip.busPlateNumber}</small>
+                  </div>
+                </div>
+                <div className="driver-mission-controls">
+                  <div className="active-trip-status">
+                    <span className="badge badge-blue">
+                      {manifest.trip.status.replace("_", " ")}
+                    </span>
+                    {manifest.trip.delayMinutes > 0 && (
+                      <span className="badge badge-amber">
+                        Delayed {manifest.trip.delayMinutes} min
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    aria-expanded={secondaryOpen}
+                    onClick={() => setSecondaryOpen((value) => !value)}
+                    className="driver-overflow"
+                  >
+                    <MoreHorizontal aria-hidden />
+                    <span>More operations</span>
+                    <ChevronDown aria-hidden />
+                  </button>
+                  {secondaryOpen && (
+                    <div className="driver-secondary-menu">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDialog("walkin");
+                          setSecondaryOpen(false);
+                        }}
+                      >
+                        <UserCheck aria-hidden /> Manual walk-in
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDelayMinutes(String(manifest.trip.delayMinutes));
+                          setDialog("delay");
+                          setSecondaryOpen(false);
+                        }}
+                      >
+                        <AlertTriangle aria-hidden /> Set delay
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => {
+                          setDialog("cancel");
+                          setSecondaryOpen(false);
+                        }}
+                      >
+                        Cancel Trip
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </header>
+              <div className="driver-trip-workspace">
+                <section className="active-trip-panel">
+                  <div className="driver-current-stop">
+                    <MapPin aria-hidden />
+                    <div>
+                      <span>Current stop</span>
+                      <h2>
+                        <span className="sr-only">Current stop: </span>
+                        {manifest.currentStop?.name || "Between stops"}
+                      </h2>
+                      <p className="active-trip-progress">
+                        {operationalProgressLabel(
+                          manifest.trip.status,
+                          manifest.currentStop?.name ?? null,
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="driver-passenger-load">
+                    <span>
+                      <strong className="tabular-nums">
+                        {boardNow.length}
+                      </strong>{" "}
+                      waiting
+                    </span>
+                    <span>
+                      <strong className="tabular-nums">{onBoard.length}</strong>{" "}
+                      on board
+                    </span>
+                  </div>
+                  {manifest.trip.delayReason && (
+                    <p className="delay-reason">{manifest.trip.delayReason}</p>
+                  )}
+                  <div className="driver-primary-area">
+                    <span className="driver-action-label">
+                      {terminal ? "Current state" : "Next operation"}
+                    </span>
+                    {primaryAction() || (
+                      <p>
+                        This Trip is complete. No operational action is
+                        available.
+                      </p>
+                    )}
+                  </div>
+                  {!terminal && (
+                    <div className="driver-context-actions">
+                      {manifest.trip.status === "BOARDING" &&
+                        manifest.currentStop && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() =>
+                              setPendingProgress("DEPART_CURRENT_STOP")
+                            }
+                          >
+                            Depart stop
+                          </button>
+                        )}
+                      {manifest.trip.status !== "BOARDING" &&
+                        manifest.currentStop && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => setScannerMode("BOARDING")}
+                          >
+                            <QrCode aria-hidden className="size-4" /> Scan
+                            boarding
+                          </button>
+                        )}
+                      {alightHere.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => setScannerMode("ALIGHTING")}
+                        >
+                          <DoorOpen aria-hidden className="size-4" /> Scan
+                          alighting
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                <section
+                  className="driver-progress-panel"
+                  aria-labelledby="driver-route-progress"
+                >
+                  <div className="driver-panel-heading">
+                    <div>
+                      <h2 id="driver-route-progress">Route progress</h2>
+                    </div>
+                  </div>
+                  <ol className="driver-stop-list">
+                    {manifest.stops.map((stop) => {
+                      const current = manifest.currentStop?.id === stop.id;
+                      const passed = !!(stop.actualDeparture || stop.passedAt);
+                      return (
+                        <li
+                          key={stop.id}
+                          className={
+                            current ? "current" : passed ? "passed" : ""
+                          }
+                        >
+                          <span>{stop.position + 1}</span>
+                          <div>
+                            <strong>{stop.name}</strong>
+                            <small>
+                              {current
+                                ? "Current stop"
+                                : passed
+                                  ? "Completed"
+                                  : "Upcoming"}
+                            </small>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              </div>
+            </section>
+          )}
+
+          {manifest && view === "manifest" && (
+            <section className="driver-manifest">
+              <header>
+                <div>
+                  <h2>Passenger worklist</h2>
+                  <p>
+                    {manifest.trip.routeName} · {manifest.trip.busPlateNumber}
+                  </p>
+                </div>
+                <strong>
+                  {manifest.currentStop
+                    ? `At ${manifest.currentStop.name}`
+                    : "Between stops"}
+                </strong>
+              </header>
+              {[
+                { title: "Board now", items: boardNow, kind: "board" as const },
+                {
+                  title: "Alight here",
+                  items: alightHere,
+                  kind: "alight" as const,
+                },
+                {
+                  title: "On board",
+                  items: onBoard.filter(
+                    (passenger) => !passenger.expectedToAlightHere,
+                  ),
+                  kind: "onboard" as const,
+                },
+              ].map((group) => (
+                <section
+                  key={group.title}
+                  className={`manifest-group group-${group.kind} ${group.items.length === 0 ? "empty" : ""} ${group.kind === "board" && group.items.length > 0 ? "priority" : group.kind === "alight" && boardNow.length === 0 && group.items.length > 0 ? "priority" : ""}`}
+                >
+                  <h3>
+                    {group.title}
+                    <span>{group.items.length}</span>
+                  </h3>
+                  {group.items.length === 0 ? (
+                    <p className="manifest-empty">
+                      {manifestEmptyMessage(group.kind)}
+                    </p>
+                  ) : (
+                    manifestRows(group.items, group.kind)
+                  )}
+                </section>
+              ))}
+              <details className="manifest-archive">
+                <summary>
+                  <span>All passengers</span>
+                  <span className="tabular-nums">
+                    {manifest.manifest.length}
+                  </span>
+                </summary>
+                {manifest.manifest.length > 0 ? (
+                  manifestRows(manifest.manifest, "all")
+                ) : (
+                  <p className="manifest-empty">
+                    No passengers are attached to this Trip
+                  </p>
+                )}
+              </details>
+            </section>
+          )}
+
+          {view === "timetable" && (
+            <TripsTab
+              trips={trips}
+              onOpenModal={null}
+              onEditTrip={null}
+              onCancelTrip={null}
+            />
+          )}
         </MotionSurface>
       </main>
 
