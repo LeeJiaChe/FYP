@@ -1,4 +1,12 @@
 import "server-only";
 
-export { routeNoShowRates, routeUtilization } from "./application/analytics";
-export { analyticsRangeSchema } from "./contracts/analytics.schemas";
+export {
+  getOperationsAnalytics,
+  routeNoShowRates,
+  routeUtilization,
+} from "./application/analytics";
+export {
+  analyticsRangeSchema,
+  operationsAnalyticsQuerySchema,
+} from "./contracts/analytics.schemas";
+

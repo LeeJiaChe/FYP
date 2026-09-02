@@ -1,10 +1,36 @@
-import type { AnalyticsRange } from "../contracts/analytics.schemas";
-import { noShowPercent, utilizationPercent } from "../domain/metrics";
-import { noShowRows, utilizationRows } from "../infrastructure/analytics.prisma.server";
+import type {
+  AnalyticsOverview,
+  AnalyticsRange,
+  DemandPressureRow,
+  FleetPerformanceRow,
+  HourlyRidershipRow,
+  LineDirectionDetail,
+  LinePerformanceRow,
+  OperationsAnalyticsQuery,
+  OperationsAnalyticsResponse,
+  ReliabilityLineRow,
+} from "../contracts/analytics.schemas";
+import {
+  averageOrNull,
+  buildOperationalInsights,
+  departureDelayMinutes,
+  isAdministrativeCleanupReason,
+  isDepartureOnTime,
+  noShowPercent,
+  percentageOrNull,
+  utilizationPercent,
+} from "../domain/metrics";
+import {
+  fetchOperationsAnalyticsRawData,
+  noShowRows,
+  utilizationRows,
+} from "../infrastructure/analytics.prisma.server";
 import { forbidden, validationError } from "@/shared/application/application-error";
 import { systemClock, type Clock } from "@/shared/time/clock";
 
-export interface AnalyticsActor { readonly role: string }
+export interface AnalyticsActor {
+  readonly role: string;
+}
 
 function boundedRange(range: AnalyticsRange, clock: Clock) {
   const to = range.to ?? clock.now();
@@ -14,6 +40,576 @@ function boundedRange(range: AnalyticsRange, clock: Clock) {
     throw validationError("Analytics range cannot exceed 366 days");
   }
   return { from, to };
+}
+
+function getMytHour(date: Date): number {
+  try {
+    const hourStr = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Kuala_Lumpur",
+      hour: "numeric",
+      hour12: false,
+    }).format(date);
+    const parsed = parseInt(hourStr, 10);
+    return isNaN(parsed) ? date.getUTCHours() : parsed % 24;
+  } catch {
+    return (date.getUTCHours() + 8) % 24;
+  }
+}
+
+interface TripMetricsAccumulator {
+  scheduledTrips: number;
+  operatedTrips: number;
+  completedTrips: number;
+  boardedPassengers: number;
+  reservedSeatSegments: number;
+  seatedCapacitySegments: number;
+  eligibleBookingOutcomes: number;
+  noShowCount: number;
+  actualDepartureSamples: number;
+  onTimeCount: number;
+  totalDepartureDelayMinutes: number;
+  maxDepartureDelayMinutes: number;
+  unservedDemand: number;
+  waitlistExpired: number;
+  walkInsRejectedFull: number;
+  currentWaitingCount: number;
+  waitlistEntriesCount: number;
+  waitlistPromotedCount: number;
+  operationalCancellations: number;
+  excludedAdminCleanups: number;
+}
+
+function createAccumulator(): TripMetricsAccumulator {
+  return {
+    scheduledTrips: 0,
+    operatedTrips: 0,
+    completedTrips: 0,
+    boardedPassengers: 0,
+    reservedSeatSegments: 0,
+    seatedCapacitySegments: 0,
+    eligibleBookingOutcomes: 0,
+    noShowCount: 0,
+    actualDepartureSamples: 0,
+    onTimeCount: 0,
+    totalDepartureDelayMinutes: 0,
+    maxDepartureDelayMinutes: 0,
+    unservedDemand: 0,
+    waitlistExpired: 0,
+    walkInsRejectedFull: 0,
+    currentWaitingCount: 0,
+    waitlistEntriesCount: 0,
+    waitlistPromotedCount: 0,
+    operationalCancellations: 0,
+    excludedAdminCleanups: 0,
+  };
+}
+
+export async function getOperationsAnalytics(
+  actor: AnalyticsActor,
+  query: OperationsAnalyticsQuery,
+  clock: Clock = systemClock,
+): Promise<OperationsAnalyticsResponse> {
+  if (actor.role !== "ADMIN") {
+    throw forbidden("Admin role required");
+  }
+
+  const { from, to } = boundedRange(query, clock);
+  const raw = await fetchOperationsAnalyticsRawData(
+    from,
+    to,
+    query.lineId,
+    query.direction,
+  );
+
+  const overviewAcc = createAccumulator();
+  const hourlyRidershipMap = new Map<number, { boarded: number; byLine: Record<string, number> }>();
+  for (let h = 6; h <= 23; h++) {
+    hourlyRidershipMap.set(h, { boarded: 0, byLine: {} });
+  }
+
+  // Pre-process Trips & populate overview accumulator
+  for (const trip of raw.trips) {
+    const isCancelled = trip.status === "CANCELLED";
+    const cancelReason =
+      trip.statusHistory.filter((h) => h.toStatus === "CANCELLED").pop()?.reason ??
+      trip.delayReason;
+    const isAdminCleanup = isCancelled && isAdministrativeCleanupReason(cancelReason);
+
+    overviewAcc.scheduledTrips++;
+
+    if (isAdminCleanup) {
+      overviewAcc.excludedAdminCleanups++;
+      continue;
+    }
+
+    if (isCancelled) {
+      overviewAcc.operationalCancellations++;
+    }
+
+    const isOperated =
+      ["BOARDING", "DEPARTED", "ARRIVED"].includes(trip.status) ||
+      (trip.tripStops[0]?.actualDeparture !== null && trip.tripStops[0]?.actualDeparture !== undefined);
+    const isCompleted = trip.status === "ARRIVED";
+
+    if (isOperated) {
+      overviewAcc.operatedTrips++;
+      const segmentCount = trip.tripSegments.length;
+      overviewAcc.seatedCapacitySegments += trip.seatedCapacity * segmentCount;
+      overviewAcc.reservedSeatSegments += trip.reservedSeatSegmentsCount;
+    }
+
+    if (isCompleted) {
+      overviewAcc.completedTrips++;
+    }
+
+    // Boarded passengers
+    const boardedReserved = trip.bookings.filter((b) => b.checkedInAt !== null).length;
+    const boardedWalkIn = trip.walkInJourneys.length;
+    const tripBoarded = boardedReserved + boardedWalkIn;
+    overviewAcc.boardedPassengers += tripBoarded;
+
+    // Hourly Ridership (MYT)
+    if (tripBoarded > 0) {
+      const mytHour = getMytHour(trip.departureTime);
+      if (!hourlyRidershipMap.has(mytHour)) {
+        hourlyRidershipMap.set(mytHour, { boarded: 0, byLine: {} });
+      }
+      const hourSlot = hourlyRidershipMap.get(mytHour)!;
+      hourSlot.boarded += tripBoarded;
+      const lineCode = trip.route.line.code;
+      hourSlot.byLine[lineCode] = (hourSlot.byLine[lineCode] || 0) + tripBoarded;
+    }
+
+    // Origin departure punctuality
+    const originStop = trip.tripStops[0];
+    if (originStop?.actualDeparture) {
+      overviewAcc.actualDepartureSamples++;
+      if (isDepartureOnTime(originStop.plannedDeparture, originStop.actualDeparture)) {
+        overviewAcc.onTimeCount++;
+      }
+      const delay = departureDelayMinutes(originStop.plannedDeparture, originStop.actualDeparture);
+      overviewAcc.totalDepartureDelayMinutes += delay;
+      if (delay > overviewAcc.maxDepartureDelayMinutes) {
+        overviewAcc.maxDepartureDelayMinutes = delay;
+      }
+    }
+
+    // Bookings & No-Shows
+    for (const b of trip.bookings) {
+      if (
+        b.status === "NO_SHOW" ||
+        b.status === "COMPLETED" ||
+        (b.checkedInAt !== null && b.status === "CONFIRMED")
+      ) {
+        overviewAcc.eligibleBookingOutcomes++;
+        if (b.status === "NO_SHOW") {
+          overviewAcc.noShowCount++;
+        }
+      }
+    }
+
+    // Unserved demand & Waitlist
+    for (const w of trip.waitlistEntries) {
+      overviewAcc.waitlistEntriesCount++;
+      if (w.status === "EXPIRED") {
+        overviewAcc.waitlistExpired++;
+        overviewAcc.unservedDemand++;
+      } else if (w.status === "PROMOTED") {
+        overviewAcc.waitlistPromotedCount++;
+      } else if (w.status === "WAITING") {
+        overviewAcc.currentWaitingCount++;
+      }
+    }
+
+    for (const wi of trip.walkInIntents) {
+      if (wi.status === "REJECTED_FULL") {
+        overviewAcc.walkInsRejectedFull++;
+        overviewAcc.unservedDemand++;
+      }
+    }
+  }
+
+  // 1. Line Performance Aggregations
+  const linePerformanceList: LinePerformanceRow[] = [];
+  const linesToProcess = query.lineId
+    ? raw.lines.filter((l) => l.id === query.lineId)
+    : raw.lines;
+
+  for (const line of linesToProcess) {
+    const lineTrips = raw.trips.filter((t) => t.route.lineId === line.id);
+
+    function calculateDirectionMetrics(direction: "OUTBOUND" | "INBOUND"): LineDirectionDetail {
+      const dirTrips = lineTrips.filter((t) => t.route.direction === direction);
+      const acc = createAccumulator();
+
+      for (const trip of dirTrips) {
+        const isCancelled = trip.status === "CANCELLED";
+        const cancelReason =
+          trip.statusHistory.filter((h) => h.toStatus === "CANCELLED").pop()?.reason ??
+          trip.delayReason;
+        const isAdminCleanup = isCancelled && isAdministrativeCleanupReason(cancelReason);
+
+        acc.scheduledTrips++;
+        if (isAdminCleanup) continue;
+        if (isCancelled) acc.operationalCancellations++;
+
+        const isOperated =
+          ["BOARDING", "DEPARTED", "ARRIVED"].includes(trip.status) ||
+          (trip.tripStops[0]?.actualDeparture !== null && trip.tripStops[0]?.actualDeparture !== undefined);
+        const isCompleted = trip.status === "ARRIVED";
+
+        if (isOperated) {
+          acc.operatedTrips++;
+          acc.seatedCapacitySegments += trip.seatedCapacity * trip.tripSegments.length;
+          acc.reservedSeatSegments += trip.reservedSeatSegmentsCount;
+        }
+        if (isCompleted) acc.completedTrips++;
+
+        acc.boardedPassengers +=
+          trip.bookings.filter((b) => b.checkedInAt !== null).length + trip.walkInJourneys.length;
+
+        const originStop = trip.tripStops[0];
+        if (originStop?.actualDeparture) {
+          acc.actualDepartureSamples++;
+          if (isDepartureOnTime(originStop.plannedDeparture, originStop.actualDeparture)) {
+            acc.onTimeCount++;
+          }
+          acc.totalDepartureDelayMinutes += departureDelayMinutes(
+            originStop.plannedDeparture,
+            originStop.actualDeparture,
+          );
+        }
+
+        for (const b of trip.bookings) {
+          if (
+            b.status === "NO_SHOW" ||
+            b.status === "COMPLETED" ||
+            (b.checkedInAt !== null && b.status === "CONFIRMED")
+          ) {
+            acc.eligibleBookingOutcomes++;
+            if (b.status === "NO_SHOW") acc.noShowCount++;
+          }
+        }
+
+        for (const w of trip.waitlistEntries) {
+          if (w.status === "EXPIRED") {
+            acc.waitlistExpired++;
+            acc.unservedDemand++;
+          }
+        }
+        for (const wi of trip.walkInIntents) {
+          if (wi.status === "REJECTED_FULL") {
+            acc.walkInsRejectedFull++;
+            acc.unservedDemand++;
+          }
+        }
+      }
+
+      return {
+        direction,
+        scheduledTrips: acc.scheduledTrips,
+        operatedTrips: acc.operatedTrips,
+        completedTrips: acc.completedTrips,
+        boardedPassengers: acc.boardedPassengers,
+        reservedSeatSegmentUtilization: percentageOrNull(
+          acc.reservedSeatSegments,
+          acc.seatedCapacitySegments,
+        ),
+        eligibleBookingOutcomes: acc.eligibleBookingOutcomes,
+        noShowCount: acc.noShowCount,
+        noShowRate: percentageOrNull(acc.noShowCount, acc.eligibleBookingOutcomes),
+        actualDepartureSamples: acc.actualDepartureSamples,
+        onTimeDepartureRate: percentageOrNull(acc.onTimeCount, acc.actualDepartureSamples),
+        averageDepartureDelayMinutes: averageOrNull(
+          acc.totalDepartureDelayMinutes,
+          acc.actualDepartureSamples,
+        ),
+        unservedDemand: acc.unservedDemand,
+        waitlistExpired: acc.waitlistExpired,
+        walkInsRejectedFull: acc.walkInsRejectedFull,
+        operationalCancellationCount: acc.operationalCancellations,
+      };
+    }
+
+    const outbound = calculateDirectionMetrics("OUTBOUND");
+    const inbound = calculateDirectionMetrics("INBOUND");
+
+    const totalScheduled = outbound.scheduledTrips + inbound.scheduledTrips;
+    const totalOperated = outbound.operatedTrips + inbound.operatedTrips;
+    const totalCompleted = outbound.completedTrips + inbound.completedTrips;
+    const totalBoarded = outbound.boardedPassengers + inbound.boardedPassengers;
+
+    const totalEligible = outbound.eligibleBookingOutcomes + inbound.eligibleBookingOutcomes;
+    const totalNoShows = outbound.noShowCount + inbound.noShowCount;
+
+    const totalDepSamples = outbound.actualDepartureSamples + inbound.actualDepartureSamples;
+    const totalOnTimeSamples =
+      (outbound.onTimeDepartureRate !== null
+        ? Math.round(((outbound.onTimeDepartureRate * outbound.actualDepartureSamples) / 100))
+        : 0) +
+      (inbound.onTimeDepartureRate !== null
+        ? Math.round(((inbound.onTimeDepartureRate * inbound.actualDepartureSamples) / 100))
+        : 0);
+    const totalDelays =
+      (outbound.averageDepartureDelayMinutes !== null
+        ? outbound.averageDepartureDelayMinutes * outbound.actualDepartureSamples
+        : 0) +
+      (inbound.averageDepartureDelayMinutes !== null
+        ? inbound.averageDepartureDelayMinutes * inbound.actualDepartureSamples
+        : 0);
+
+    const lineTripsOperated = lineTrips.filter(
+      (t) =>
+        ["BOARDING", "DEPARTED", "ARRIVED"].includes(t.status) ||
+        t.tripStops[0]?.actualDeparture !== null,
+    );
+    const lineSeatedCapacity = lineTripsOperated.reduce(
+      (acc, t) => acc + t.seatedCapacity * t.tripSegments.length,
+      0,
+    );
+    const lineReservedSeats = lineTripsOperated.reduce(
+      (acc, t) => acc + t.reservedSeatSegmentsCount,
+      0,
+    );
+
+    linePerformanceList.push({
+      lineId: line.id,
+      lineCode: line.code,
+      lineName: line.name,
+      scheduledTrips: totalScheduled,
+      operatedTrips: totalOperated,
+      completedTrips: totalCompleted,
+      boardedPassengers: totalBoarded,
+      reservedSeatSegmentUtilization: percentageOrNull(lineReservedSeats, lineSeatedCapacity),
+      eligibleBookingOutcomes: totalEligible,
+      noShowCount: totalNoShows,
+      noShowRate: percentageOrNull(totalNoShows, totalEligible),
+      actualDepartureSamples: totalDepSamples,
+      onTimeDepartureRate: percentageOrNull(totalOnTimeSamples, totalDepSamples),
+      averageDepartureDelayMinutes: averageOrNull(totalDelays, totalDepSamples),
+      unservedDemand: outbound.unservedDemand + inbound.unservedDemand,
+      waitlistExpired: outbound.waitlistExpired + inbound.waitlistExpired,
+      walkInsRejectedFull: outbound.walkInsRejectedFull + inbound.walkInsRejectedFull,
+      operationalCancellationCount:
+        outbound.operationalCancellationCount + inbound.operationalCancellationCount,
+      directions: {
+        outbound,
+        inbound,
+      },
+    });
+  }
+
+  // 2. Hourly Ridership Array
+  const hourlyRidership: HourlyRidershipRow[] = Array.from(hourlyRidershipMap.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([hour, data]) => ({
+      hour,
+      label: `${hour.toString().padStart(2, "0")}:00`,
+      boardedRidership: data.boarded,
+      byLine: data.byLine,
+    }));
+
+  // 3. Demand Pressure Rows
+  const demandPressure: DemandPressureRow[] = linePerformanceList.map((line) => ({
+    lineId: line.lineId,
+    lineCode: line.lineCode,
+    lineName: line.lineName,
+    unservedDemand: line.unservedDemand,
+    waitlistExpired: line.waitlistExpired,
+    walkInsRejectedFull: line.walkInsRejectedFull,
+    reservedSeatSegmentUtilization: line.reservedSeatSegmentUtilization,
+    operatedTrips: line.operatedTrips,
+    pressureFlag:
+      line.operatedTrips >= 3 &&
+      line.reservedSeatSegmentUtilization !== null &&
+      line.reservedSeatSegmentUtilization >= 80 &&
+      line.unservedDemand >= 1,
+  }));
+
+  // 4. Reliability Breakdown
+  const reliabilityLines: ReliabilityLineRow[] = linePerformanceList.map((line) => {
+    const lineTripsWithDep = raw.trips.filter(
+      (t) => t.route.lineId === line.lineId && t.tripStops[0]?.actualDeparture,
+    );
+    const maxDelay =
+      lineTripsWithDep.length > 0
+        ? Math.max(
+            0,
+            ...lineTripsWithDep.map((t) =>
+              departureDelayMinutes(t.tripStops[0]!.plannedDeparture, t.tripStops[0]!.actualDeparture!),
+            ),
+          )
+        : null;
+
+    return {
+      lineId: line.lineId,
+      lineCode: line.lineCode,
+      lineName: line.lineName,
+      onTimeDepartureRate: line.onTimeDepartureRate,
+      averageDepartureDelayMinutes: line.averageDepartureDelayMinutes,
+      maxDepartureDelayMinutes: maxDelay,
+      actualDepartureSamples: line.actualDepartureSamples,
+      operationalCancellations: line.operationalCancellationCount,
+    };
+  });
+
+  // 5. Fleet Performance
+  const fleetPerformance: FleetPerformanceRow[] = raw.buses.map((bus) => {
+    const busTrips = raw.trips.filter((t) => t.busId === bus.id);
+    let busOperated = 0;
+    let busCompleted = 0;
+    let busBoarded = 0;
+    let busCapacitySegments = 0;
+    let busReservedSegments = 0;
+    let busOperationalCancellations = 0;
+    let totalServiceMs = 0;
+    let validCompletedWithTimestamps = 0;
+
+    for (const trip of busTrips) {
+      const isCancelled = trip.status === "CANCELLED";
+      const cancelReason =
+        trip.statusHistory.filter((h) => h.toStatus === "CANCELLED").pop()?.reason ??
+        trip.delayReason;
+      const isAdminCleanup = isCancelled && isAdministrativeCleanupReason(cancelReason);
+
+      if (isAdminCleanup) continue;
+      if (isCancelled) busOperationalCancellations++;
+
+      const isOperated =
+        ["BOARDING", "DEPARTED", "ARRIVED"].includes(trip.status) ||
+        trip.tripStops[0]?.actualDeparture !== null;
+      if (isOperated) {
+        busOperated++;
+        busCapacitySegments += trip.seatedCapacity * trip.tripSegments.length;
+        busReservedSegments += trip.reservedSeatSegmentsCount;
+      }
+
+      if (trip.status === "ARRIVED") {
+        busCompleted++;
+        const originStop = trip.tripStops[0];
+        const terminalStop = trip.tripStops[trip.tripStops.length - 1];
+        if (originStop?.actualDeparture && terminalStop?.actualArrival) {
+          const duration = terminalStop.actualArrival.getTime() - originStop.actualDeparture.getTime();
+          if (duration > 0) {
+            totalServiceMs += duration;
+            validCompletedWithTimestamps++;
+          }
+        }
+      }
+
+      busBoarded +=
+        trip.bookings.filter((b) => b.checkedInAt !== null).length + trip.walkInJourneys.length;
+    }
+
+    return {
+      busId: bus.id,
+      plateNumber: bus.plateNumber,
+      status: bus.status,
+      operatedTrips: busOperated,
+      completedTrips: busCompleted,
+      boardedPassengers: busBoarded,
+      reservedSeatSegmentUtilization: percentageOrNull(busReservedSegments, busCapacitySegments),
+      actualServiceHours:
+        validCompletedWithTimestamps > 0
+          ? Math.round((totalServiceMs / 3_600_000) * 10) / 10
+          : null,
+      operationalCancellationCount: busOperationalCancellations,
+    };
+  });
+
+  // 6. Overview Metrics
+  const overview: AnalyticsOverview = {
+    boardedPassengers: overviewAcc.boardedPassengers,
+    reservedSeatSegmentUtilization: percentageOrNull(
+      overviewAcc.reservedSeatSegments,
+      overviewAcc.seatedCapacitySegments,
+    ),
+    onTimeDepartureRate: percentageOrNull(
+      overviewAcc.onTimeCount,
+      overviewAcc.actualDepartureSamples,
+    ),
+    averageDepartureDelayMinutes: averageOrNull(
+      overviewAcc.totalDepartureDelayMinutes,
+      overviewAcc.actualDepartureSamples,
+    ),
+    noShowRate: percentageOrNull(overviewAcc.noShowCount, overviewAcc.eligibleBookingOutcomes),
+    unservedDemand: overviewAcc.unservedDemand,
+    operationalCancellations: overviewAcc.operationalCancellations,
+    totalScheduledTrips: overviewAcc.scheduledTrips,
+    operatedTrips: overviewAcc.operatedTrips,
+    completedTrips: overviewAcc.completedTrips,
+    eligibleBookingOutcomes: overviewAcc.eligibleBookingOutcomes,
+    noShowCount: overviewAcc.noShowCount,
+    actualDepartureSamples: overviewAcc.actualDepartureSamples,
+    waitlistExpired: overviewAcc.waitlistExpired,
+    walkInsRejectedFull: overviewAcc.walkInsRejectedFull,
+    currentWaitingCount: overviewAcc.currentWaitingCount,
+    waitlistEntries: overviewAcc.waitlistEntriesCount,
+    waitlistPromoted: overviewAcc.waitlistPromotedCount,
+    promotionRate: percentageOrNull(
+      overviewAcc.waitlistPromotedCount,
+      overviewAcc.waitlistEntriesCount,
+    ),
+  };
+
+  // 7. Operational Insights
+  const insights = buildOperationalInsights(
+    linePerformanceList.map((l) => ({
+      lineCode: l.lineCode,
+      lineName: l.lineName,
+      operatedTrips: l.operatedTrips,
+      reservedSeatSegmentUtilization: l.reservedSeatSegmentUtilization,
+      unservedDemand: l.unservedDemand,
+      actualDepartureSamples: l.actualDepartureSamples,
+      onTimeDepartureRate: l.onTimeDepartureRate,
+      averageDepartureDelayMinutes: l.averageDepartureDelayMinutes,
+    })),
+    {
+      eligibleBookingOutcomes: overview.eligibleBookingOutcomes,
+      noShowRate: overview.noShowRate,
+      completedTripSamples: overview.completedTrips,
+      totalLines: raw.lines.length,
+    },
+  );
+
+  return {
+    range: {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      timezone: "Asia/Kuala_Lumpur",
+    },
+    filters: {
+      lineId: query.lineId ?? null,
+      direction: query.direction ?? null,
+    },
+    overview,
+    linePerformance: linePerformanceList,
+    hourlyRidership,
+    demandPressure,
+    reliability: {
+      overview: {
+        onTimeDepartureRate: overview.onTimeDepartureRate,
+        averageDepartureDelayMinutes: overview.averageDepartureDelayMinutes,
+        maxDepartureDelayMinutes:
+          overviewAcc.actualDepartureSamples > 0 ? overviewAcc.maxDepartureDelayMinutes : null,
+        actualDepartureSamples: overviewAcc.actualDepartureSamples,
+        operationalCancellations: overviewAcc.operationalCancellations,
+      },
+      byLine: reliabilityLines,
+    },
+    fleetPerformance,
+    insights,
+    dataQuality: {
+      excludedAdministrativeCleanupTrips: overviewAcc.excludedAdminCleanups,
+      completedTripSamples: overviewAcc.completedTrips,
+      actualDepartureSamples: overviewAcc.actualDepartureSamples,
+      eligibleBookingOutcomes: overviewAcc.eligibleBookingOutcomes,
+      hasSufficientReliabilitySample: overviewAcc.actualDepartureSamples >= 3,
+      hasSufficientNoShowSample: overviewAcc.eligibleBookingOutcomes >= 10,
+      prototypeData: true,
+      timezone: "Asia/Kuala_Lumpur",
+    },
+  };
 }
 
 export async function routeUtilization(
@@ -66,4 +662,5 @@ export async function routeNoShowRates(
     noShowRate: noShowPercent(Number(row.noShows), Number(row.eligibleOutcomes)),
   }));
 }
+
 

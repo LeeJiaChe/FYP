@@ -66,9 +66,6 @@ export default function AdminPortal({
   const [stops, setStops] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [appeals, setAppeals] = useState<any[]>([]);
-  const [utilizationData, setUtilizationData] = useState<any[]>([]);
-  const [recommendation, setRecommendation] = useState<string>("");
-  const [noShowData, setNoShowData] = useState<any[]>([]);
 
   // Modals / Forms state
   const [showBusModal, setShowBusModal] = useState(false);
@@ -180,12 +177,6 @@ export default function AdminPortal({
     };
   }, [adminNavOpen]);
 
-  useEffect(() => {
-    if (activeTab === "analytics" && utilizationData.length === 0) {
-      fetchAnalytics();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
 
   useEffect(() => {
     if (!activeTripId) return;
@@ -320,24 +311,6 @@ export default function AdminPortal({
     return null;
   }
 
-  async function fetchAnalytics() {
-    try {
-      const utilRes = await fetch("/api/analytics/utilization");
-      if (utilRes.ok) {
-        const utilData = await utilRes.json();
-        setUtilizationData(utilData.data || []);
-        setRecommendation(utilData.recommendation || "");
-      }
-
-      const noShowRes = await fetch("/api/analytics/no-show-rate");
-      if (noShowRes.ok) {
-        const noShowDataRes = await noShowRes.json();
-        setNoShowData(noShowDataRes.data || []);
-      }
-    } catch (err: any) {
-      toast.error(err.message || "An error occurred");
-    }
-  }
 
   async function handleCreateBus(e: React.FormEvent) {
     e.preventDefault();
@@ -1069,11 +1042,7 @@ export default function AdminPortal({
           )}
 
           {activeTab === "analytics" && (
-            <AnalyticsTab
-              recommendation={recommendation}
-              utilizationData={utilizationData}
-              noShowData={noShowData}
-            />
+            <AnalyticsTab />
           )}
         </main>
       </div>
