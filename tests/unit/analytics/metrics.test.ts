@@ -4,10 +4,18 @@ import { describe, it } from "node:test";
 import {
   averageOrNull,
   buildOperationalInsights,
+  calculateFinalizedWaitlistPromotionRate,
+  calculateMytPresetRange,
   departureDelayMinutes,
+  getMytCalendarDate,
   isAdministrativeCleanupReason,
+  isAdministrativeCleanupTrip,
+  isAnalyticsCompletedTrip,
+  isAnalyticsOperatedTrip,
   isDepartureOnTime,
+  isReliabilityEligibleTrip,
   noShowPercent,
+  parseMytDateStringToUtc,
   percentageOrNull,
   utilizationPercent,
 } from "../../../src/features/analytics/domain/metrics";
@@ -181,6 +189,117 @@ describe("journey-aware analytics formulas and domain metrics", () => {
       assert.ok(sparse.some((i) => i.type === "INSUFFICIENT_DATA"));
     });
   });
+
+  describe("Finalized waitlist promotion rate", () => {
+    it("returns null when finalized waitlist outcomes is zero", () => {
+      assert.equal(calculateFinalizedWaitlistPromotionRate(0, 0), null);
+    });
+
+    it("calculates correct percentage from promoted and expired outcomes", () => {
+      assert.equal(calculateFinalizedWaitlistPromotionRate(3, 1), 75);
+      assert.equal(calculateFinalizedWaitlistPromotionRate(1, 3), 25);
+      assert.equal(calculateFinalizedWaitlistPromotionRate(4, 0), 100);
+      assert.equal(calculateFinalizedWaitlistPromotionRate(0, 4), 0);
+    });
+  });
+
+  describe("Centralized trip eligibility and administrative cleanup predicates", () => {
+    it("identifies administrative prototype cleanup trips accurately", () => {
+      const cleanupTrip = {
+        status: "CANCELLED",
+        statusHistory: [
+          { toStatus: "CANCELLED", reason: "Stale prototype schedule rollover after shared development migration" },
+        ],
+      };
+      assert.equal(isAdministrativeCleanupTrip(cleanupTrip), true);
+
+      const realCancelledTrip = {
+        status: "CANCELLED",
+        statusHistory: [
+          { toStatus: "CANCELLED", reason: "Driver medical emergency" },
+        ],
+      };
+      assert.equal(isAdministrativeCleanupTrip(realCancelledTrip), false);
+
+      const nonCancelledTrip = {
+        status: "ARRIVED",
+        statusHistory: [],
+      };
+      assert.equal(isAdministrativeCleanupTrip(nonCancelledTrip), false);
+    });
+
+    it("excludes administrative cleanup trips from operated and reliability eligibility", () => {
+      const cleanupTripWithDeparture = {
+        status: "CANCELLED",
+        tripStops: [{ position: 0, actualDeparture: new Date("2026-08-25T10:00:00Z") }],
+      };
+      // When marked as admin cleanup, it must NOT be eligible
+      assert.equal(isAnalyticsOperatedTrip(cleanupTripWithDeparture, true), false);
+      assert.equal(isAnalyticsCompletedTrip(cleanupTripWithDeparture, true), false);
+      assert.equal(isReliabilityEligibleTrip(cleanupTripWithDeparture, true), false);
+
+      // A genuine operated trip is eligible
+      const realOperatedTrip = {
+        status: "ARRIVED",
+        tripStops: [{ position: 0, actualDeparture: new Date("2026-09-03T10:00:00Z") }],
+      };
+      assert.equal(isAnalyticsOperatedTrip(realOperatedTrip, false), true);
+      assert.equal(isAnalyticsCompletedTrip(realOperatedTrip, false), true);
+      assert.equal(isReliabilityEligibleTrip(realOperatedTrip, false), true);
+    });
+  });
+
+  describe("Malaysia Time (MYT UTC+8) deterministic date helpers", () => {
+    it("formats calendar dates accurately across early morning, late evening, month and year boundaries", () => {
+      // Early morning MYT: 2026-09-03 02:00 MYT is 2026-09-02 18:00 UTC
+      const earlyMorningUtc = new Date("2026-09-02T18:00:00.000Z");
+      assert.equal(getMytCalendarDate(earlyMorningUtc), "2026-09-03");
+
+      // Late night MYT: 2026-09-03 23:30 MYT is 2026-09-03 15:30 UTC
+      const lateNightUtc = new Date("2026-09-03T15:30:00.000Z");
+      assert.equal(getMytCalendarDate(lateNightUtc), "2026-09-03");
+
+      // Month rollover: 2026-09-01 00:30 MYT is 2026-08-31 16:30 UTC
+      const monthStartUtc = new Date("2026-08-31T16:30:00.000Z");
+      assert.equal(getMytCalendarDate(monthStartUtc), "2026-09-01");
+
+      // Year rollover: 2027-01-01 01:00 MYT is 2026-12-31 17:00 UTC
+      const yearStartUtc = new Date("2026-12-31T17:00:00.000Z");
+      assert.equal(getMytCalendarDate(yearStartUtc), "2027-01-01");
+    });
+
+    it("parses MYT calendar date strings into precise UTC boundary instants", () => {
+      // Start instant of 2026-09-03 in MYT (00:00:00+08:00) is 2026-09-02T16:00:00.000Z
+      const startInstant = parseMytDateStringToUtc("2026-09-03", false);
+      assert.equal(startInstant.toISOString(), "2026-09-02T16:00:00.000Z");
+
+      // Exclusive end instant of 2026-09-03 (2026-09-04 00:00:00+08:00) is 2026-09-03T16:00:00.000Z
+      const endExclusiveInstant = parseMytDateStringToUtc("2026-09-03", true);
+      assert.equal(endExclusiveInstant.toISOString(), "2026-09-03T16:00:00.000Z");
+    });
+
+    it("calculates exact calendar day ranges for presets (7d, 30d, 90d)", () => {
+      // Current instant is early morning MYT: 2026-09-03 02:00 MYT (2026-09-02T18:00:00Z)
+      const mockNow = new Date("2026-09-02T18:00:00.000Z");
+
+      // 1. Last 7 days: Today (Sep 3) + previous 6 days = Sep 3, 2, 1, Aug 31, 30, 29, 28 (7 days)
+      const range7d = calculateMytPresetRange("7d", mockNow);
+      assert.equal(range7d.toDateStr, "2026-09-03");
+      assert.equal(range7d.fromDateStr, "2026-08-28");
+      assert.equal(range7d.fromUtc.toISOString(), "2026-08-27T16:00:00.000Z"); // 2026-08-28 00:00 MYT
+      assert.equal(range7d.toUtcExclusive.toISOString(), "2026-09-03T16:00:00.000Z"); // 2026-09-04 00:00 MYT
+
+      // 2. Last 30 days: Today (Sep 3) + previous 29 days = Aug 5 to Sep 3 (30 days)
+      const range30d = calculateMytPresetRange("30d", mockNow);
+      assert.equal(range30d.toDateStr, "2026-09-03");
+      assert.equal(range30d.fromDateStr, "2026-08-05");
+      assert.equal(range30d.fromUtc.toISOString(), "2026-08-04T16:00:00.000Z");
+      assert.equal(range30d.toUtcExclusive.toISOString(), "2026-09-03T16:00:00.000Z");
+
+      // 3. Last 90 days: Today (Sep 3) + previous 89 days = Jun 6 to Sep 3 (90 days total: Jun=25d, Jul=31d, Aug=31d, Sep=3d)
+      const range90d = calculateMytPresetRange("90d", mockNow);
+      assert.equal(range90d.toDateStr, "2026-09-03");
+      assert.equal(range90d.fromDateStr, "2026-06-06");
+    });
+  });
 });
-
-

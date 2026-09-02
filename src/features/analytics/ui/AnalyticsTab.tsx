@@ -28,7 +28,11 @@ import {
 import type {
   OperationsAnalyticsResponse,
 } from "../contracts/analytics.schemas";
-import type { OperationalInsight } from "../domain/metrics";
+import {
+  calculateMytPresetRange,
+  parseMytDateStringToUtc,
+  type OperationalInsight,
+} from "../domain/metrics";
 
 type PresetRange = "7d" | "30d" | "90d" | "custom";
 type SortField =
@@ -44,12 +48,10 @@ type SortField =
 export default function AnalyticsTab() {
   const [rangePreset, setRangePreset] = useState<PresetRange>("30d");
   const [fromDate, setFromDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().split("T")[0]!;
+    return calculateMytPresetRange("30d", new Date()).fromDateStr;
   });
   const [toDate, setToDate] = useState<string>(() => {
-    return new Date().toISOString().split("T")[0]!;
+    return calculateMytPresetRange("30d", new Date()).toDateStr;
   });
   const [selectedLineId, setSelectedLineId] = useState<string>("");
   const [selectedDirection, setSelectedDirection] = useState<string>("");
@@ -67,18 +69,10 @@ export default function AnalyticsTab() {
 
   const handlePresetChange = (preset: PresetRange) => {
     setRangePreset(preset);
-    const now = new Date();
-    const to = now.toISOString().split("T")[0]!;
-    let days = 30;
-    if (preset === "7d") days = 7;
-    if (preset === "90d") days = 90;
-
     if (preset !== "custom") {
-      const fromD = new Date();
-      fromD.setDate(now.getDate() - days);
-      const from = fromD.toISOString().split("T")[0]!;
-      setFromDate(from);
-      setToDate(to);
+      const res = calculateMytPresetRange(preset, new Date());
+      setFromDate(res.fromDateStr);
+      setToDate(res.toDateStr);
     }
   };
 
@@ -93,13 +87,21 @@ export default function AnalyticsTab() {
     async function load() {
       setError(null);
 
+      // Validate date order before dispatching
+      if (fromDate && toDate && fromDate > toDate) {
+        setError("From date cannot be after To date. Please adjust your date range.");
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
+
       try {
         const params = new URLSearchParams();
-        if (fromDate) params.set("from", new Date(fromDate).toISOString());
+        if (fromDate) {
+          params.set("from", parseMytDateStringToUtc(fromDate, false).toISOString());
+        }
         if (toDate) {
-          const toD = new Date(toDate);
-          toD.setHours(23, 59, 59, 999);
-          params.set("to", toD.toISOString());
+          params.set("to", parseMytDateStringToUtc(toDate, true).toISOString());
         }
         if (selectedLineId) params.set("lineId", selectedLineId);
         if (selectedDirection) params.set("direction", selectedDirection);
@@ -107,7 +109,12 @@ export default function AnalyticsTab() {
         const res = await fetch(`/api/analytics/operations?${params.toString()}`);
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
-          throw new Error(errJson.message || `Failed to fetch analytics (Status ${res.status})`);
+          const errMsg =
+            errJson.message ||
+            errJson.error?.message ||
+            errJson.error ||
+            `Failed to fetch analytics (Status ${res.status})`;
+          throw new Error(errMsg);
         }
         const json = await res.json();
         if (!cancelled) {
@@ -132,6 +139,7 @@ export default function AnalyticsTab() {
       cancelled = true;
     };
   }, [fromDate, toDate, selectedLineId, selectedDirection, refreshTrigger]);
+
 
 
   const sortedLinePerformance = useMemo(() => {
@@ -326,9 +334,9 @@ export default function AnalyticsTab() {
               className="px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]"
             >
               <option value="">All Service Lines</option>
-              {data?.linePerformance.map((l) => (
-                <option key={l.lineId} value={l.lineId}>
-                  {l.lineName} ({l.lineCode})
+              {(data?.availableLines ?? []).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} ({l.code})
                 </option>
               ))}
             </select>
@@ -344,8 +352,8 @@ export default function AnalyticsTab() {
               className="px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]"
             >
               <option value="">All Directions</option>
-              <option value="OUTBOUND">OUTBOUND (To Campus)</option>
-              <option value="INBOUND">INBOUND (From Campus)</option>
+              <option value="OUTBOUND">OUTBOUND · From TAR UMT</option>
+              <option value="INBOUND">INBOUND · To TAR UMT</option>
             </select>
           </div>
         </div>
@@ -724,7 +732,7 @@ export default function AnalyticsTab() {
                       {showDirectionBreakdown && (
                         <>
                           <tr className="bg-[var(--bg-surface-muted)] text-[11px] text-[var(--text-muted)]">
-                            <td className="pl-6 py-1.5 font-medium">↳ Outbound (To Campus)</td>
+                            <td className="pl-6 py-1.5 font-medium">↳ OUTBOUND · From TAR UMT</td>
                             <td className="text-center py-1.5 tabular-nums">
                               {row.directions.outbound.scheduledTrips} / {row.directions.outbound.operatedTrips} / {row.directions.outbound.completedTrips}
                             </td>
@@ -739,7 +747,7 @@ export default function AnalyticsTab() {
                             <td className="text-right py-1.5 tabular-nums">{row.directions.outbound.operationalCancellationCount}</td>
                           </tr>
                           <tr className="bg-[var(--bg-surface-muted)] text-[11px] text-[var(--text-muted)]">
-                            <td className="pl-6 py-1.5 font-medium">↳ Inbound (From Campus)</td>
+                            <td className="pl-6 py-1.5 font-medium">↳ INBOUND · To TAR UMT</td>
                             <td className="text-center py-1.5 tabular-nums">
                               {row.directions.inbound.scheduledTrips} / {row.directions.inbound.operatedTrips} / {row.directions.inbound.completedTrips}
                             </td>

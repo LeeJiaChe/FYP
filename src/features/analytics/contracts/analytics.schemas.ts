@@ -11,7 +11,7 @@ export type AnalyticsRange = z.infer<typeof analyticsRangeSchema>;
 export const operationsAnalyticsQuerySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  lineId: z.string().trim().min(1).optional(),
+  lineId: z.string().trim().uuid().optional(),
   direction: z.enum(["OUTBOUND", "INBOUND"]).optional(),
 });
 
@@ -122,6 +122,7 @@ export interface AnalyticsOverview {
   readonly currentWaitingCount: number;
   readonly waitlistEntries: number;
   readonly waitlistPromoted: number;
+  readonly waitlistFinalizedOutcomes: number;
   readonly promotionRate: number | null;
 }
 
@@ -136,6 +137,12 @@ export interface AnalyticsDataQuality {
   readonly timezone: string;
 }
 
+export interface AvailableLineFilterOption {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
 export interface OperationsAnalyticsResponse {
   readonly range: {
     readonly from: string;
@@ -146,6 +153,7 @@ export interface OperationsAnalyticsResponse {
     readonly lineId: string | null;
     readonly direction: "OUTBOUND" | "INBOUND" | null;
   };
+  readonly availableLines: readonly AvailableLineFilterOption[];
   readonly overview: AnalyticsOverview;
   readonly linePerformance: readonly LinePerformanceRow[];
   readonly hourlyRidership: readonly HourlyRidershipRow[];
@@ -164,5 +172,3 @@ export interface OperationsAnalyticsResponse {
   readonly insights: readonly OperationalInsight[];
   readonly dataQuality: AnalyticsDataQuality;
 }
-
-

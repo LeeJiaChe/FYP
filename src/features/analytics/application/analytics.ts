@@ -1,6 +1,7 @@
 import type {
   AnalyticsOverview,
   AnalyticsRange,
+  AvailableLineFilterOption,
   DemandPressureRow,
   FleetPerformanceRow,
   HourlyRidershipRow,
@@ -13,9 +14,14 @@ import type {
 import {
   averageOrNull,
   buildOperationalInsights,
+  calculateFinalizedWaitlistPromotionRate,
+  calculateMytPresetRange,
   departureDelayMinutes,
-  isAdministrativeCleanupReason,
+  isAdministrativeCleanupTrip,
+  isAnalyticsCompletedTrip,
+  isAnalyticsOperatedTrip,
   isDepartureOnTime,
+  isReliabilityEligibleTrip,
   noShowPercent,
   percentageOrNull,
   utilizationPercent,
@@ -32,9 +38,23 @@ export interface AnalyticsActor {
   readonly role: string;
 }
 
-function boundedRange(range: AnalyticsRange, clock: Clock) {
-  const to = range.to ?? clock.now();
-  const from = range.from ?? new Date(to.getTime() - 30 * 24 * 60 * 60 * 1_000);
+function boundedRange(query: OperationsAnalyticsQuery | AnalyticsRange, clock: Clock) {
+  let from: Date;
+  let to: Date;
+
+  if (query.from && query.to) {
+    from = query.from;
+    to = query.to;
+  } else if (query.from && !query.to) {
+    from = query.from;
+    to = clock.now();
+  } else {
+    // Default 30 days deterministic MYT range
+    const preset = calculateMytPresetRange("30d", clock.now());
+    from = preset.fromUtc;
+    to = preset.toUtcExclusive;
+  }
+
   if (from >= to) throw validationError("Analytics from must be before to");
   if (to.getTime() - from.getTime() > 366 * 24 * 60 * 60 * 1_000) {
     throw validationError("Analytics range cannot exceed 366 days");
@@ -121,6 +141,12 @@ export async function getOperationsAnalytics(
     query.direction,
   );
 
+  const availableLines: AvailableLineFilterOption[] = raw.lines.map((l) => ({
+    id: l.id,
+    code: l.code,
+    name: l.name,
+  }));
+
   const overviewAcc = createAccumulator();
   const hourlyRidershipMap = new Map<number, { boarded: number; byLine: Record<string, number> }>();
   for (let h = 6; h <= 23; h++) {
@@ -130,10 +156,7 @@ export async function getOperationsAnalytics(
   // Pre-process Trips & populate overview accumulator
   for (const trip of raw.trips) {
     const isCancelled = trip.status === "CANCELLED";
-    const cancelReason =
-      trip.statusHistory.filter((h) => h.toStatus === "CANCELLED").pop()?.reason ??
-      trip.delayReason;
-    const isAdminCleanup = isCancelled && isAdministrativeCleanupReason(cancelReason);
+    const isAdminCleanup = isAdministrativeCleanupTrip(trip);
 
     overviewAcc.scheduledTrips++;
 
@@ -146,10 +169,8 @@ export async function getOperationsAnalytics(
       overviewAcc.operationalCancellations++;
     }
 
-    const isOperated =
-      ["BOARDING", "DEPARTED", "ARRIVED"].includes(trip.status) ||
-      (trip.tripStops[0]?.actualDeparture !== null && trip.tripStops[0]?.actualDeparture !== undefined);
-    const isCompleted = trip.status === "ARRIVED";
+    const isOperated = isAnalyticsOperatedTrip(trip, false);
+    const isCompleted = isAnalyticsCompletedTrip(trip, false);
 
     if (isOperated) {
       overviewAcc.operatedTrips++;
@@ -162,7 +183,7 @@ export async function getOperationsAnalytics(
       overviewAcc.completedTrips++;
     }
 
-    // Boarded passengers
+    // Boarded passengers (Checked-in Bookings + WalkInJourneys)
     const boardedReserved = trip.bookings.filter((b) => b.checkedInAt !== null).length;
     const boardedWalkIn = trip.walkInJourneys.length;
     const tripBoarded = boardedReserved + boardedWalkIn;
@@ -181,16 +202,18 @@ export async function getOperationsAnalytics(
     }
 
     // Origin departure punctuality
-    const originStop = trip.tripStops[0];
-    if (originStop?.actualDeparture) {
-      overviewAcc.actualDepartureSamples++;
-      if (isDepartureOnTime(originStop.plannedDeparture, originStop.actualDeparture)) {
-        overviewAcc.onTimeCount++;
-      }
-      const delay = departureDelayMinutes(originStop.plannedDeparture, originStop.actualDeparture);
-      overviewAcc.totalDepartureDelayMinutes += delay;
-      if (delay > overviewAcc.maxDepartureDelayMinutes) {
-        overviewAcc.maxDepartureDelayMinutes = delay;
+    if (isReliabilityEligibleTrip(trip, false)) {
+      const originStop = trip.tripStops[0];
+      if (originStop?.actualDeparture) {
+        overviewAcc.actualDepartureSamples++;
+        if (isDepartureOnTime(originStop.plannedDeparture, originStop.actualDeparture)) {
+          overviewAcc.onTimeCount++;
+        }
+        const delay = departureDelayMinutes(originStop.plannedDeparture, originStop.actualDeparture);
+        overviewAcc.totalDepartureDelayMinutes += delay;
+        if (delay > overviewAcc.maxDepartureDelayMinutes) {
+          overviewAcc.maxDepartureDelayMinutes = delay;
+        }
       }
     }
 
@@ -238,25 +261,26 @@ export async function getOperationsAnalytics(
   for (const line of linesToProcess) {
     const lineTrips = raw.trips.filter((t) => t.route.lineId === line.id);
 
-    function calculateDirectionMetrics(direction: "OUTBOUND" | "INBOUND"): LineDirectionDetail {
+    function calculateDirectionMetrics(direction: "OUTBOUND" | "INBOUND"): {
+      detail: LineDirectionDetail;
+      acc: TripMetricsAccumulator;
+    } {
       const dirTrips = lineTrips.filter((t) => t.route.direction === direction);
       const acc = createAccumulator();
 
       for (const trip of dirTrips) {
         const isCancelled = trip.status === "CANCELLED";
-        const cancelReason =
-          trip.statusHistory.filter((h) => h.toStatus === "CANCELLED").pop()?.reason ??
-          trip.delayReason;
-        const isAdminCleanup = isCancelled && isAdministrativeCleanupReason(cancelReason);
+        const isAdminCleanup = isAdministrativeCleanupTrip(trip);
 
         acc.scheduledTrips++;
-        if (isAdminCleanup) continue;
+        if (isAdminCleanup) {
+          acc.excludedAdminCleanups++;
+          continue;
+        }
         if (isCancelled) acc.operationalCancellations++;
 
-        const isOperated =
-          ["BOARDING", "DEPARTED", "ARRIVED"].includes(trip.status) ||
-          (trip.tripStops[0]?.actualDeparture !== null && trip.tripStops[0]?.actualDeparture !== undefined);
-        const isCompleted = trip.status === "ARRIVED";
+        const isOperated = isAnalyticsOperatedTrip(trip, false);
+        const isCompleted = isAnalyticsCompletedTrip(trip, false);
 
         if (isOperated) {
           acc.operatedTrips++;
@@ -268,16 +292,22 @@ export async function getOperationsAnalytics(
         acc.boardedPassengers +=
           trip.bookings.filter((b) => b.checkedInAt !== null).length + trip.walkInJourneys.length;
 
-        const originStop = trip.tripStops[0];
-        if (originStop?.actualDeparture) {
-          acc.actualDepartureSamples++;
-          if (isDepartureOnTime(originStop.plannedDeparture, originStop.actualDeparture)) {
-            acc.onTimeCount++;
+        if (isReliabilityEligibleTrip(trip, false)) {
+          const originStop = trip.tripStops[0];
+          if (originStop?.actualDeparture) {
+            acc.actualDepartureSamples++;
+            if (isDepartureOnTime(originStop.plannedDeparture, originStop.actualDeparture)) {
+              acc.onTimeCount++;
+            }
+            const delay = departureDelayMinutes(
+              originStop.plannedDeparture,
+              originStop.actualDeparture,
+            );
+            acc.totalDepartureDelayMinutes += delay;
+            if (delay > acc.maxDepartureDelayMinutes) {
+              acc.maxDepartureDelayMinutes = delay;
+            }
           }
-          acc.totalDepartureDelayMinutes += departureDelayMinutes(
-            originStop.plannedDeparture,
-            originStop.actualDeparture,
-          );
         }
 
         for (const b of trip.bookings) {
@@ -305,7 +335,7 @@ export async function getOperationsAnalytics(
         }
       }
 
-      return {
+      const detail: LineDirectionDetail = {
         direction,
         scheduledTrips: acc.scheduledTrips,
         operatedTrips: acc.operatedTrips,
@@ -329,48 +359,30 @@ export async function getOperationsAnalytics(
         walkInsRejectedFull: acc.walkInsRejectedFull,
         operationalCancellationCount: acc.operationalCancellations,
       };
+
+      return { detail, acc };
     }
 
-    const outbound = calculateDirectionMetrics("OUTBOUND");
-    const inbound = calculateDirectionMetrics("INBOUND");
+    const outboundRes = calculateDirectionMetrics("OUTBOUND");
+    const inboundRes = calculateDirectionMetrics("INBOUND");
+    const outAcc = outboundRes.acc;
+    const inAcc = inboundRes.acc;
 
-    const totalScheduled = outbound.scheduledTrips + inbound.scheduledTrips;
-    const totalOperated = outbound.operatedTrips + inbound.operatedTrips;
-    const totalCompleted = outbound.completedTrips + inbound.completedTrips;
-    const totalBoarded = outbound.boardedPassengers + inbound.boardedPassengers;
+    // Direct sum of raw counters (No rounding reconstruction!)
+    const totalScheduled = outAcc.scheduledTrips + inAcc.scheduledTrips;
+    const totalOperated = outAcc.operatedTrips + inAcc.operatedTrips;
+    const totalCompleted = outAcc.completedTrips + inAcc.completedTrips;
+    const totalBoarded = outAcc.boardedPassengers + inAcc.boardedPassengers;
 
-    const totalEligible = outbound.eligibleBookingOutcomes + inbound.eligibleBookingOutcomes;
-    const totalNoShows = outbound.noShowCount + inbound.noShowCount;
+    const lineSeatedCapacity = outAcc.seatedCapacitySegments + inAcc.seatedCapacitySegments;
+    const lineReservedSeats = outAcc.reservedSeatSegments + inAcc.reservedSeatSegments;
 
-    const totalDepSamples = outbound.actualDepartureSamples + inbound.actualDepartureSamples;
-    const totalOnTimeSamples =
-      (outbound.onTimeDepartureRate !== null
-        ? Math.round(((outbound.onTimeDepartureRate * outbound.actualDepartureSamples) / 100))
-        : 0) +
-      (inbound.onTimeDepartureRate !== null
-        ? Math.round(((inbound.onTimeDepartureRate * inbound.actualDepartureSamples) / 100))
-        : 0);
-    const totalDelays =
-      (outbound.averageDepartureDelayMinutes !== null
-        ? outbound.averageDepartureDelayMinutes * outbound.actualDepartureSamples
-        : 0) +
-      (inbound.averageDepartureDelayMinutes !== null
-        ? inbound.averageDepartureDelayMinutes * inbound.actualDepartureSamples
-        : 0);
+    const totalEligible = outAcc.eligibleBookingOutcomes + inAcc.eligibleBookingOutcomes;
+    const totalNoShows = outAcc.noShowCount + inAcc.noShowCount;
 
-    const lineTripsOperated = lineTrips.filter(
-      (t) =>
-        ["BOARDING", "DEPARTED", "ARRIVED"].includes(t.status) ||
-        t.tripStops[0]?.actualDeparture !== null,
-    );
-    const lineSeatedCapacity = lineTripsOperated.reduce(
-      (acc, t) => acc + t.seatedCapacity * t.tripSegments.length,
-      0,
-    );
-    const lineReservedSeats = lineTripsOperated.reduce(
-      (acc, t) => acc + t.reservedSeatSegmentsCount,
-      0,
-    );
+    const totalDepSamples = outAcc.actualDepartureSamples + inAcc.actualDepartureSamples;
+    const totalOnTimeCount = outAcc.onTimeCount + inAcc.onTimeCount;
+    const totalDelayMinutes = outAcc.totalDepartureDelayMinutes + inAcc.totalDepartureDelayMinutes;
 
     linePerformanceList.push({
       lineId: line.id,
@@ -385,16 +397,16 @@ export async function getOperationsAnalytics(
       noShowCount: totalNoShows,
       noShowRate: percentageOrNull(totalNoShows, totalEligible),
       actualDepartureSamples: totalDepSamples,
-      onTimeDepartureRate: percentageOrNull(totalOnTimeSamples, totalDepSamples),
-      averageDepartureDelayMinutes: averageOrNull(totalDelays, totalDepSamples),
-      unservedDemand: outbound.unservedDemand + inbound.unservedDemand,
-      waitlistExpired: outbound.waitlistExpired + inbound.waitlistExpired,
-      walkInsRejectedFull: outbound.walkInsRejectedFull + inbound.walkInsRejectedFull,
+      onTimeDepartureRate: percentageOrNull(totalOnTimeCount, totalDepSamples),
+      averageDepartureDelayMinutes: averageOrNull(totalDelayMinutes, totalDepSamples),
+      unservedDemand: outAcc.unservedDemand + inAcc.unservedDemand,
+      waitlistExpired: outAcc.waitlistExpired + inAcc.waitlistExpired,
+      walkInsRejectedFull: outAcc.walkInsRejectedFull + inAcc.walkInsRejectedFull,
       operationalCancellationCount:
-        outbound.operationalCancellationCount + inbound.operationalCancellationCount,
+        outAcc.operationalCancellations + inAcc.operationalCancellations,
       directions: {
-        outbound,
-        inbound,
+        outbound: outboundRes.detail,
+        inbound: inboundRes.detail,
       },
     });
   }
@@ -426,10 +438,12 @@ export async function getOperationsAnalytics(
       line.unservedDemand >= 1,
   }));
 
-  // 4. Reliability Breakdown
+  // 4. Reliability Breakdown (Filtering strictly with isReliabilityEligibleTrip)
   const reliabilityLines: ReliabilityLineRow[] = linePerformanceList.map((line) => {
     const lineTripsWithDep = raw.trips.filter(
-      (t) => t.route.lineId === line.lineId && t.tripStops[0]?.actualDeparture,
+      (t) =>
+        t.route.lineId === line.lineId &&
+        isReliabilityEligibleTrip(t, isAdministrativeCleanupTrip(t)),
     );
     const maxDelay =
       lineTripsWithDep.length > 0
@@ -467,24 +481,19 @@ export async function getOperationsAnalytics(
 
     for (const trip of busTrips) {
       const isCancelled = trip.status === "CANCELLED";
-      const cancelReason =
-        trip.statusHistory.filter((h) => h.toStatus === "CANCELLED").pop()?.reason ??
-        trip.delayReason;
-      const isAdminCleanup = isCancelled && isAdministrativeCleanupReason(cancelReason);
+      const isAdminCleanup = isAdministrativeCleanupTrip(trip);
 
       if (isAdminCleanup) continue;
       if (isCancelled) busOperationalCancellations++;
 
-      const isOperated =
-        ["BOARDING", "DEPARTED", "ARRIVED"].includes(trip.status) ||
-        trip.tripStops[0]?.actualDeparture !== null;
+      const isOperated = isAnalyticsOperatedTrip(trip, false);
       if (isOperated) {
         busOperated++;
         busCapacitySegments += trip.seatedCapacity * trip.tripSegments.length;
         busReservedSegments += trip.reservedSeatSegmentsCount;
       }
 
-      if (trip.status === "ARRIVED") {
+      if (isAnalyticsCompletedTrip(trip, false)) {
         busCompleted++;
         const originStop = trip.tripStops[0];
         const terminalStop = trip.tripStops[trip.tripStops.length - 1];
@@ -518,6 +527,13 @@ export async function getOperationsAnalytics(
   });
 
   // 6. Overview Metrics
+  const waitlistFinalizedOutcomes =
+    overviewAcc.waitlistPromotedCount + overviewAcc.waitlistExpired;
+  const promotionRate = calculateFinalizedWaitlistPromotionRate(
+    overviewAcc.waitlistPromotedCount,
+    overviewAcc.waitlistExpired,
+  );
+
   const overview: AnalyticsOverview = {
     boardedPassengers: overviewAcc.boardedPassengers,
     reservedSeatSegmentUtilization: percentageOrNull(
@@ -546,10 +562,8 @@ export async function getOperationsAnalytics(
     currentWaitingCount: overviewAcc.currentWaitingCount,
     waitlistEntries: overviewAcc.waitlistEntriesCount,
     waitlistPromoted: overviewAcc.waitlistPromotedCount,
-    promotionRate: percentageOrNull(
-      overviewAcc.waitlistPromotedCount,
-      overviewAcc.waitlistEntriesCount,
-    ),
+    waitlistFinalizedOutcomes,
+    promotionRate,
   };
 
   // 7. Operational Insights
@@ -572,6 +586,19 @@ export async function getOperationsAnalytics(
     },
   );
 
+  const allEligibleDepTrips = raw.trips.filter((t) =>
+    isReliabilityEligibleTrip(t, isAdministrativeCleanupTrip(t)),
+  );
+  const overviewMaxDelay =
+    allEligibleDepTrips.length > 0
+      ? Math.max(
+          0,
+          ...allEligibleDepTrips.map((t) =>
+            departureDelayMinutes(t.tripStops[0]!.plannedDeparture, t.tripStops[0]!.actualDeparture!),
+          ),
+        )
+      : null;
+
   return {
     range: {
       from: from.toISOString(),
@@ -582,6 +609,7 @@ export async function getOperationsAnalytics(
       lineId: query.lineId ?? null,
       direction: query.direction ?? null,
     },
+    availableLines,
     overview,
     linePerformance: linePerformanceList,
     hourlyRidership,
@@ -590,8 +618,7 @@ export async function getOperationsAnalytics(
       overview: {
         onTimeDepartureRate: overview.onTimeDepartureRate,
         averageDepartureDelayMinutes: overview.averageDepartureDelayMinutes,
-        maxDepartureDelayMinutes:
-          overviewAcc.actualDepartureSamples > 0 ? overviewAcc.maxDepartureDelayMinutes : null,
+        maxDepartureDelayMinutes: overviewMaxDelay,
         actualDepartureSamples: overviewAcc.actualDepartureSamples,
         operationalCancellations: overviewAcc.operationalCancellations,
       },
@@ -611,6 +638,7 @@ export async function getOperationsAnalytics(
     },
   };
 }
+
 
 export async function routeUtilization(
   actor: AnalyticsActor,

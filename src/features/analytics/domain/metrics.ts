@@ -1,4 +1,5 @@
 export const ON_TIME_TOLERANCE_MINUTES = 5;
+export const MYT_TIMEZONE = "Asia/Kuala_Lumpur";
 
 export type InsightSeverity = "info" | "warning" | "danger" | "success";
 export type InsightType =
@@ -47,6 +48,14 @@ export function noShowPercent(noShows: number, eligibleOutcomes: number): number
   return Math.round((noShows / eligibleOutcomes) * 100);
 }
 
+export function calculateFinalizedWaitlistPromotionRate(
+  promoted: number,
+  expired: number,
+): number | null {
+  const finalized = promoted + expired;
+  return percentageOrNull(promoted, finalized);
+}
+
 export function isDepartureOnTime(
   planned: Date,
   actual: Date,
@@ -71,6 +80,127 @@ export function isAdministrativeCleanupReason(reason?: string | null): boolean {
     normalized.includes("shared development migration") ||
     normalized.includes("prototype data cleanup")
   );
+}
+
+export function isAdministrativeCleanupTrip(trip: {
+  status: string;
+  statusHistory?: Array<{ toStatus: string; reason?: string | null }>;
+  delayReason?: string | null;
+}): boolean {
+  if (trip.status !== "CANCELLED") return false;
+  const cancelReason =
+    trip.statusHistory?.filter((h) => h.toStatus === "CANCELLED").pop()?.reason ??
+    trip.delayReason;
+  return isAdministrativeCleanupReason(cancelReason);
+}
+
+export function isAnalyticsOperatedTrip(
+  trip: {
+    status: string;
+    tripStops?: Array<{ position?: number; actualDeparture?: Date | null }>;
+  },
+  isAdminCleanup: boolean,
+): boolean {
+  if (isAdminCleanup) return false;
+  if (["BOARDING", "DEPARTED", "ARRIVED"].includes(trip.status)) return true;
+  const originStop = trip.tripStops?.[0];
+  return originStop?.actualDeparture !== null && originStop?.actualDeparture !== undefined;
+}
+
+export function isAnalyticsCompletedTrip(
+  trip: { status: string },
+  isAdminCleanup: boolean,
+): boolean {
+  if (isAdminCleanup) return false;
+  return trip.status === "ARRIVED";
+}
+
+export function isReliabilityEligibleTrip(
+  trip: {
+    status: string;
+    tripStops?: Array<{ position?: number; actualDeparture?: Date | null }>;
+  },
+  isAdminCleanup: boolean,
+): boolean {
+  if (isAdminCleanup) return false;
+  const originStop = trip.tripStops?.[0];
+  return originStop?.actualDeparture !== null && originStop?.actualDeparture !== undefined;
+}
+
+/**
+ * Formats an instant as YYYY-MM-DD in Asia/Kuala_Lumpur.
+ */
+export function getMytCalendarDate(instant: Date): string {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: MYT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(instant);
+}
+
+/**
+ * Parses a YYYY-MM-DD string into a UTC Date corresponding to 00:00:00 MYT (+08:00).
+ * If isEndOfDayExclusive is true, returns the instant corresponding to (date + 1 day) 00:00:00 MYT.
+ */
+export function parseMytDateStringToUtc(
+  dateStr: string,
+  isEndOfDayExclusive = false,
+): Date {
+  const [yearStr, monthStr, dayStr] = dateStr.trim().split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    throw new Error(`Invalid MYT date format: "${dateStr}". Expected YYYY-MM-DD.`);
+  }
+
+  const targetDay = isEndOfDayExclusive ? day + 1 : day;
+  // In UTC, MYT (UTC+8) 00:00 is UTC hour -8. Date.UTC handles negative hours and day rollovers.
+  return new Date(Date.UTC(year, month - 1, targetDay, -8, 0, 0, 0));
+}
+
+export interface MytPresetResult {
+  readonly fromDateStr: string;
+  readonly toDateStr: string;
+  readonly fromUtc: Date;
+  readonly toUtcExclusive: Date;
+}
+
+/**
+ * Calculates deterministic MYT date range for presets (Last 7d, 30d, 90d).
+ * 7d  = today + previous 6 days (7 calendar days total)
+ * 30d = today + previous 29 days (30 calendar days total)
+ * 90d = today + previous 89 days (90 calendar days total)
+ */
+export function calculateMytPresetRange(
+  preset: "7d" | "30d" | "90d",
+  clockNow: Date,
+): MytPresetResult {
+  const todayStr = getMytCalendarDate(clockNow);
+  const [year, month, day] = todayStr.split("-").map(Number) as [number, number, number];
+
+  const daysBack = preset === "7d" ? 6 : preset === "30d" ? 29 : 89;
+  const fromUtc = new Date(Date.UTC(year, month - 1, day - daysBack, -8, 0, 0, 0));
+  const fromDateStr = getMytCalendarDate(fromUtc);
+  const toUtcExclusive = new Date(Date.UTC(year, month - 1, day + 1, -8, 0, 0, 0));
+
+  return {
+    fromDateStr,
+    toDateStr: todayStr,
+    fromUtc,
+    toUtcExclusive,
+  };
 }
 
 export interface LineInsightCandidate {
@@ -164,4 +294,3 @@ export function buildOperationalInsights(
 
   return insights;
 }
-
