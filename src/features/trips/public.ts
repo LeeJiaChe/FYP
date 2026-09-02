@@ -11,3 +11,12 @@ export {
   currentOperationalSegmentPosition,
   operationalProgressLabel,
 } from "./domain/operational-segment";
+export {
+  resolveDriverOperation,
+  type DriverOperationCandidate,
+  type ResolvedDriverOperation,
+} from "./domain/driver-operation";
+export {
+  evaluateServiceBlockContinuity,
+  type ServiceBlockContinuity,
+} from "./domain/service-block-continuity";

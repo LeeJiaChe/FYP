@@ -13,9 +13,11 @@ import {
 } from "../../src/features/fleet/application/manage-topology";
 import {
   cancelTrip,
+  createServiceBlock,
   scheduleTrip,
   updateScheduledTrip,
 } from "../../src/features/trips/application/schedule-trip";
+import { toServiceDateKey } from "../../src/features/trips/domain/scheduling-policy";
 import { ApplicationError } from "../../src/shared/application/application-error";
 import { listDrivers } from "../../src/features/identity/application/manage-drivers";
 import { prisma } from "../../src/shared/db/prisma.server";
@@ -26,6 +28,8 @@ const created = {
   stopIds: [] as string[],
   busIds: [] as string[],
   userIds: [] as string[],
+  lineIds: [] as string[],
+  blockIds: [] as string[],
 };
 
 const fixed = (instant: Date) => ({ now: () => new Date(instant) });
@@ -48,6 +52,10 @@ async function user(role: "ADMIN" | "DRIVER" | "STUDENT", label: string) {
 async function scenario(options: { busStatus?: "ACTIVE" | "MAINTENANCE" | "RETIRED"; driverId?: string } = {}) {
   const admin = await user("ADMIN", "Admin");
   const suffix = randomUUID().slice(0, 8).toUpperCase();
+  const line = await prisma.serviceLine.create({
+    data: { code: `P7_${suffix}`, name: `Phase 7 Line ${suffix}` },
+  });
+  created.lineIds.push(line.id);
   const stops = [];
   for (let position = 0; position < 3; position += 1) {
     const stop = await createStop(
@@ -65,6 +73,8 @@ async function scenario(options: { busStatus?: "ACTIVE" | "MAINTENANCE" | "RETIR
   const route = await createRoute(
     { userId: admin.id, role: "ADMIN" },
     {
+      lineId: line.id,
+      direction: "OUTBOUND",
       name: `Phase 7 Route ${suffix}`,
       stops: stops.map((stop, position) => ({
         stopId: stop.id,
@@ -84,7 +94,7 @@ async function scenario(options: { busStatus?: "ACTIVE" | "MAINTENANCE" | "RETIR
   );
   created.busIds.push(bus.id);
   const departure = new Date(Date.now() + 24 * 60 * 60 * 1_000);
-  return { admin, bus, route, stops, departure, driverId: options.driverId };
+  return { admin, bus, line, route, stops, departure, driverId: options.driverId };
 }
 
 async function schedule(value: Awaited<ReturnType<typeof scenario>>, overrides: { busId?: string; driverId?: string; departure?: Date } = {}) {
@@ -118,8 +128,10 @@ after(async () => {
   await prisma.tripSegment.deleteMany({ where: { tripId: { in: created.tripIds } } });
   await prisma.tripStop.deleteMany({ where: { tripId: { in: created.tripIds } } });
   await prisma.trip.deleteMany({ where: { id: { in: created.tripIds } } });
+  await prisma.serviceBlock.deleteMany({ where: { id: { in: created.blockIds } } });
   await prisma.routeStop.deleteMany({ where: { routeId: { in: created.routeIds } } });
   await prisma.route.deleteMany({ where: { id: { in: created.routeIds } } });
+  await prisma.serviceLine.deleteMany({ where: { id: { in: created.lineIds } } });
   await prisma.stop.deleteMany({ where: { id: { in: created.stopIds } } });
   await prisma.bus.deleteMany({ where: { id: { in: created.busIds } } });
   await prisma.user.deleteMany({ where: { id: { in: created.userIds } } });
@@ -138,7 +150,7 @@ describe("Phase 7 PostgreSQL fleet and scheduling", () => {
     await assert.rejects(
       createRoute(
         { userId: value.admin.id, role: "ADMIN" },
-        { name: `Invalid ${randomUUID()}`, stops: [
+        { lineId: value.line.id, direction: "INBOUND", name: `Invalid ${randomUUID()}`, stops: [
           { stopId: inactive.id, travelDurationToNextMinutes: 5 },
           { stopId: value.stops[0]!.id, travelDurationToNextMinutes: null },
         ] },
@@ -148,7 +160,7 @@ describe("Phase 7 PostgreSQL fleet and scheduling", () => {
     await assert.rejects(
       createRoute(
         { userId: value.admin.id, role: "ADMIN" },
-        { name: "Bad topology", stops: [
+        { lineId: value.line.id, direction: "INBOUND", name: "Bad topology", stops: [
           { stopId: value.stops[0]!.id, travelDurationToNextMinutes: null },
           { stopId: value.stops[1]!.id, travelDurationToNextMinutes: null },
         ] },
@@ -187,6 +199,146 @@ describe("Phase 7 PostgreSQL fleet and scheduling", () => {
     const student = await user("STUDENT", "Not Driver");
     const value = await scenario({ driverId: student.id });
     await assert.rejects(schedule(value), (error: unknown) => error instanceof ApplicationError && error.code === "VALIDATION");
+    const admin = await user("ADMIN", "Also Not Driver");
+    const adminValue = await scenario({ driverId: admin.id });
+    await assert.rejects(schedule(adminValue), (error: unknown) => error instanceof ApplicationError && error.code === "VALIDATION");
+  });
+
+  it("models Lines, directional Trips, and same-Bus ServiceBlocks without permanent Driver ownership", async () => {
+    const firstDriver = await user("DRIVER", "Block Driver A");
+    const secondDriver = await user("DRIVER", "Block Driver B");
+    const value = await scenario({ driverId: firstDriver.id });
+    const inverse = await createRoute(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        lineId: value.line.id,
+        direction: "INBOUND",
+        name: `${value.route.name} Inbound`,
+        stops: [...value.stops].reverse().map((stop, position) => ({
+          stopId: stop.id,
+          travelDurationToNextMinutes: position === value.stops.length - 1 ? null : 8,
+        })),
+      },
+    );
+    created.routeIds.push(inverse.id);
+    const block = await createServiceBlock(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        code: `BLOCK-${randomUUID().slice(0, 8).toUpperCase()}`,
+        serviceDate: toServiceDateKey(value.departure),
+        busId: value.bus.id,
+      },
+    );
+    created.blockIds.push(block.id);
+
+    const outbound = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: value.route.id,
+        busId: value.bus.id,
+        driverId: firstDriver.id,
+        blockId: block.id,
+        departureTime: value.departure.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(outbound.id);
+    const inbound = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: inverse.id,
+        busId: value.bus.id,
+        driverId: secondDriver.id,
+        blockId: block.id,
+        departureTime: outbound.estimatedArrivalTime.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(inbound.id);
+
+    const line = await prisma.serviceLine.findUniqueOrThrow({
+      where: { id: value.line.id },
+      include: { routes: { orderBy: { direction: "asc" } } },
+    });
+    assert.deepEqual(new Set(line.routes.map((route) => route.direction)), new Set(["OUTBOUND", "INBOUND"]));
+    const stored = await prisma.serviceBlock.findUniqueOrThrow({
+      where: { id: block.id },
+      include: { trips: { orderBy: { blockSequence: "asc" } } },
+    });
+    assert.deepEqual(stored.trips.map((trip) => trip.busId), [value.bus.id, value.bus.id]);
+    assert.deepEqual(stored.trips.map((trip) => trip.driverId), [firstDriver.id, secondDriver.id]);
+    assert.deepEqual(stored.trips.map((trip) => trip.blockSequence), [1, 2]);
+
+    const other = await scenario();
+    const parallelDriver = await user("DRIVER", "Parallel Driver");
+    const parallel = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: value.route.id,
+        busId: other.bus.id,
+        driverId: parallelDriver.id,
+        departureTime: value.departure.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(parallel.id);
+
+    await assert.rejects(
+      scheduleTrip(
+        { userId: value.admin.id, role: "ADMIN" },
+        {
+          routeId: value.route.id,
+          busId: other.bus.id,
+          blockId: block.id,
+          departureTime: new Date(inbound.estimatedArrivalTime.getTime() + 60_000).toISOString(),
+        },
+        fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+      ),
+      (error: unknown) => error instanceof ApplicationError && error.code === "CONFLICT",
+    );
+
+    const cancelledDeparture = new Date(inbound.estimatedArrivalTime.getTime() + 60 * 60 * 1_000);
+    const cancelled = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: value.route.id,
+        busId: other.bus.id,
+        departureTime: cancelledDeparture.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(cancelled.id);
+    await cancelTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      cancelled.id,
+      { reason: "Integration replacement" },
+    );
+    const replacement = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: value.route.id,
+        busId: other.bus.id,
+        departureTime: cancelledDeparture.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(replacement.id);
+    await assert.rejects(
+      prisma.trip.update({
+        where: { id: inbound.id },
+        data: { blockSequence: 1 },
+      }),
+    );
+
+    const columns = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
+      SELECT table_name, column_name
+        FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('Bus', 'Route')
+         AND column_name IN ('assignedDriverId', 'defaultDriverId', 'driverId', 'routeId', 'lineId')
+       ORDER BY table_name, column_name
+    `;
+    assert.deepEqual(columns, [{ table_name: "Route", column_name: "lineId" }]);
   });
 
   it("serializes Bus and Driver overlap conflicts", async () => {
@@ -286,7 +438,7 @@ describe("Phase 7 PostgreSQL fleet and scheduling", () => {
     const driverProjection = await listDrivers({ userId: value.admin.id, role: "ADMIN" });
     assert.equal(Object.hasOwn(driverProjection.find((driver) => driver.id === unassignedDriver.id)!, "passwordHash"), false);
     await assert.rejects(
-      createRoute({ userId: randomUUID(), role: "DRIVER" }, { name: "Denied", stops: [
+      createRoute({ userId: randomUUID(), role: "DRIVER" }, { lineId: value.line.id, direction: "INBOUND", name: "Denied", stops: [
         { stopId: value.stops[0]!.id, travelDurationToNextMinutes: 1 },
         { stopId: value.stops[1]!.id, travelDurationToNextMinutes: null },
       ] }),
@@ -299,5 +451,200 @@ describe("Phase 7 PostgreSQL fleet and scheduling", () => {
     assert.equal(historical.tripStops.length, 3);
     assert.equal(historical.route.deletedAt instanceof Date, true);
     assert.deepEqual(historical.tripStops.map((stop) => stop.stopName), trip.tripStops.map((stop) => stop.stopName));
+
+    const cancelScenario = await scenario();
+    const assignedDriver = await user("DRIVER", "Assigned Driver For Cancel");
+    const assignedTrip = await schedule(cancelScenario, { driverId: assignedDriver.id });
+    await assert.rejects(
+      cancelTrip({ userId: assignedDriver.id, role: "DRIVER" }, assignedTrip.id, { reason: "Driver attempting cancel" }),
+      (error: unknown) => error instanceof ApplicationError && error.code === "FORBIDDEN",
+    );
+  });
+
+  it("enforces Route active-slot uniqueness with soft deletion coexistence", async () => {
+    const admin = await user("ADMIN", "Route Uniqueness Admin");
+    const suffix = randomUUID().slice(0, 8).toUpperCase();
+    const lineA = await prisma.serviceLine.create({
+      data: { code: `LINEA_${suffix}`, name: `Line A ${suffix}` },
+    });
+    const lineB = await prisma.serviceLine.create({
+      data: { code: `LINEB_${suffix}`, name: `Line B ${suffix}` },
+    });
+    created.lineIds.push(lineA.id, lineB.id);
+
+    const [stopA, stopB] = await Promise.all([
+      createStop({ userId: admin.id, role: "ADMIN" }, { code: `STOPA_${suffix}`, name: "Stop A", latitude: 3.2, longitude: 101.7 }),
+      createStop({ userId: admin.id, role: "ADMIN" }, { code: `STOPB_${suffix}`, name: "Stop B", latitude: 3.21, longitude: 101.71 }),
+    ]);
+    created.stopIds.push(stopA.id, stopB.id);
+
+    const simpleStops = [
+      { stopId: stopA.id, travelDurationToNextMinutes: 5 },
+      { stopId: stopB.id, travelDurationToNextMinutes: null },
+    ];
+
+    // A. One active LineA OUTBOUND exists -> creating another active one is rejected.
+    const routeA1 = await createRoute(
+      { userId: admin.id, role: "ADMIN" },
+      { lineId: lineA.id, direction: "OUTBOUND", name: `Line A Outbound 1 ${suffix}`, stops: simpleStops },
+    );
+    created.routeIds.push(routeA1.id);
+
+    await assert.rejects(
+      createRoute(
+        { userId: admin.id, role: "ADMIN" },
+        { lineId: lineA.id, direction: "OUTBOUND", name: `Line A Outbound 2 ${suffix}`, stops: simpleStops },
+      ),
+      (error: unknown) => error instanceof ApplicationError && error.code === "CONFLICT",
+    );
+
+    // C. INBOUND and OUTBOUND for same Line may coexist.
+    const routeAInbound = await createRoute(
+      { userId: admin.id, role: "ADMIN" },
+      { lineId: lineA.id, direction: "INBOUND", name: `Line A Inbound ${suffix}`, stops: simpleStops },
+    );
+    created.routeIds.push(routeAInbound.id);
+    assert.equal(routeAInbound.direction, "INBOUND");
+
+    // D. Different Lines may each have OUTBOUND.
+    const routeBOutbound = await createRoute(
+      { userId: admin.id, role: "ADMIN" },
+      { lineId: lineB.id, direction: "OUTBOUND", name: `Line B Outbound ${suffix}`, stops: simpleStops },
+    );
+    created.routeIds.push(routeBOutbound.id);
+    assert.equal(routeBOutbound.direction, "OUTBOUND");
+
+    // B. Deactivate existing LineA OUTBOUND -> replacement LineA OUTBOUND can be created.
+    await retireRoute({ userId: admin.id, role: "ADMIN" }, routeA1.id);
+    const routeA2 = await createRoute(
+      { userId: admin.id, role: "ADMIN" },
+      { lineId: lineA.id, direction: "OUTBOUND", name: `Line A Replacement Outbound ${suffix}`, stops: simpleStops },
+    );
+    created.routeIds.push(routeA2.id);
+    assert.equal(routeA2.direction, "OUTBOUND");
+
+    // E. Updating a Route into another active Line+Direction slot is rejected.
+    await assert.rejects(
+      updateRoute(
+        { userId: admin.id, role: "ADMIN" },
+        { id: routeAInbound.id, direction: "OUTBOUND" },
+      ),
+      (error: unknown) => error instanceof ApplicationError && error.code === "CONFLICT",
+    );
+  });
+
+  it("enforces ServiceBlock date integrity on scheduling and rescheduling", async () => {
+    const value = await scenario();
+    const nextDayDeparture = new Date(value.departure.getTime() + 24 * 60 * 60 * 1_000);
+    const block = await createServiceBlock(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        code: `BLOCK-DATE-${randomUUID().slice(0, 6).toUpperCase()}`,
+        serviceDate: toServiceDateKey(value.departure),
+        busId: value.bus.id,
+      },
+    );
+    created.blockIds.push(block.id);
+
+    // Reject mismatch on trip creation
+    await assert.rejects(
+      scheduleTrip(
+        { userId: value.admin.id, role: "ADMIN" },
+        {
+          routeId: value.route.id,
+          busId: value.bus.id,
+          blockId: block.id,
+          departureTime: nextDayDeparture.toISOString(),
+        },
+        fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+      ),
+      (error: unknown) => error instanceof ApplicationError && error.code === "CONFLICT" && error.message.includes("ServiceBlock service date"),
+    );
+
+    // Schedule on correct date
+    const trip = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: value.route.id,
+        busId: value.bus.id,
+        blockId: block.id,
+        departureTime: value.departure.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(trip.id);
+
+    // Rescheduling to a different date must be rejected
+    await assert.rejects(
+      updateScheduledTrip(
+        { userId: value.admin.id, role: "ADMIN" },
+        trip.id,
+        { departureTime: nextDayDeparture.toISOString() },
+        fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+      ),
+      (error: unknown) => error instanceof ApplicationError && error.code === "CONFLICT" && error.message.includes("ServiceBlock service date"),
+    );
+  });
+
+  it("maintains ServiceBlock chronological order and resequences automatically", async () => {
+    const value = await scenario();
+    const block = await createServiceBlock(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        code: `BLOCK-SEQ-${randomUUID().slice(0, 6).toUpperCase()}`,
+        serviceDate: toServiceDateKey(value.departure),
+        busId: value.bus.id,
+      },
+    );
+    created.blockIds.push(block.id);
+
+    // Create 10:00 first, then 08:00 (departure is 08:00 base, time10 is +2 hours)
+    const time08 = new Date(value.departure.getTime());
+    const time10 = new Date(value.departure.getTime() + 2 * 60 * 60 * 1_000);
+
+    const trip10 = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: value.route.id,
+        busId: value.bus.id,
+        blockId: block.id,
+        departureTime: time10.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(trip10.id);
+
+    const trip08 = await scheduleTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      {
+        routeId: value.route.id,
+        busId: value.bus.id,
+        blockId: block.id,
+        departureTime: time08.toISOString(),
+      },
+      fixed(new Date(value.departure.getTime() - 60 * 60 * 1_000)),
+    );
+    created.tripIds.push(trip08.id);
+
+    // Verify final order: 08:00 is Seq 1, 10:00 is Seq 2
+    const fetched08 = await prisma.trip.findUniqueOrThrow({ where: { id: trip08.id } });
+    const fetched10 = await prisma.trip.findUniqueOrThrow({ where: { id: trip10.id } });
+    assert.equal(fetched08.blockSequence, 1);
+    assert.equal(fetched10.blockSequence, 2);
+
+    // Reschedule Seq 2 (10:00) earlier than Seq 1 (08:00) -> e.g. 07:00 (1 hour before 08:00)
+    const time07 = new Date(value.departure.getTime() - 60 * 60 * 1_000);
+    await updateScheduledTrip(
+      { userId: value.admin.id, role: "ADMIN" },
+      trip10.id,
+      { departureTime: time07.toISOString() },
+      fixed(new Date(time07.getTime() - 60 * 60 * 1_000)),
+    );
+
+    // Now trip10 (at 07:00) should be Seq 1, and trip08 (at 08:00) should be Seq 2
+    const reseq10 = await prisma.trip.findUniqueOrThrow({ where: { id: trip10.id } });
+    const reseq08 = await prisma.trip.findUniqueOrThrow({ where: { id: trip08.id } });
+    assert.equal(reseq10.blockSequence, 1);
+    assert.equal(reseq08.blockSequence, 2);
   });
 });

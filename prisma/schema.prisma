@@ -98,6 +98,11 @@ enum LocationSource {
   GPS
 }
 
+enum RouteDirection {
+  OUTBOUND
+  INBOUND
+}
+
 model User {
   id             String   @id @default(uuid())
   studentId      String?  @unique
@@ -123,23 +128,54 @@ model User {
 }
 
 model Bus {
-  id               String    @id @default(uuid())
-  plateNumber      String    @unique
+  id               String         @id @default(uuid())
+  plateNumber      String         @unique
   seatedCapacity   Int
   standingCapacity Int
-  status           BusStatus @default(ACTIVE)
+  status           BusStatus      @default(ACTIVE)
   deletedAt        DateTime?
   trips            Trip[]
+  serviceBlocks    ServiceBlock[]
+}
+
+model ServiceLine {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  routes    Route[]
 }
 
 model Route {
-  id         String      @id @default(uuid())
+  id         String         @id @default(uuid())
+  lineId     String
+  line       ServiceLine    @relation(fields: [lineId], references: [id], onDelete: Restrict)
+  direction  RouteDirection
   name       String
   deletedAt  DateTime?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
   routeStops RouteStop[]
   trips      Trip[]
+
+  @@index([lineId, direction, deletedAt])
+  @@index([lineId])
+}
+
+model ServiceBlock {
+  id          String   @id @default(uuid())
+  code        String
+  serviceDate DateTime @db.Date
+  busId       String
+  bus         Bus      @relation(fields: [busId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  trips       Trip[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([serviceDate, code])
+  @@unique([id, busId])
+  @@index([busId, serviceDate])
 }
 
 model Stop {
@@ -169,23 +205,26 @@ model RouteStop {
 }
 
 model Trip {
-  id                   String     @id @default(uuid())
+  id                   String        @id @default(uuid())
   routeId              String
-  route                Route      @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  route                Route         @relation(fields: [routeId], references: [id], onDelete: Restrict)
   busId                String
-  bus                  Bus        @relation(fields: [busId], references: [id], onDelete: Restrict)
+  bus                  Bus           @relation(fields: [busId], references: [id], onDelete: Restrict)
   driverId             String?
-  driver               User?      @relation("DriverTrips", fields: [driverId], references: [id], onDelete: SetNull)
+  driver               User?         @relation("DriverTrips", fields: [driverId], references: [id], onDelete: SetNull)
+  blockId              String?
+  blockSequence        Int?
+  block                ServiceBlock? @relation(fields: [blockId, busId], references: [id, busId], onDelete: Restrict, onUpdate: Restrict)
   departureTime        DateTime
   estimatedArrivalTime DateTime
   boardingDeadline     DateTime
   seatedCapacity       Int
   standingCapacity     Int
-  status               TripStatus @default(NOT_STARTED)
-  delayMinutes         Int        @default(0)
+  status               TripStatus    @default(NOT_STARTED)
+  delayMinutes         Int           @default(0)
   delayReason          String?
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   tripSeats       TripSeat[]
   tripStops       TripStop[]
@@ -197,6 +236,7 @@ model Trip {
   statusHistory   TripStatusHistory[]
   locationSamples TripLocationSample[]
 
+  @@unique([blockId, blockSequence])
   @@index([routeId])
   @@index([busId])
   @@index([driverId])
@@ -204,6 +244,7 @@ model Trip {
   @@index([status])
   @@index([routeId, departureTime])
   @@index([driverId, departureTime])
+  @@index([blockId])
 }
 
 model TripStop {
