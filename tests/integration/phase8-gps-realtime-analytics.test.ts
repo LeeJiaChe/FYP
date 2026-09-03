@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { after, before, describe, it } from "node:test";
 
-import { routeNoShowRates, routeUtilization } from "../../src/features/analytics/application/analytics";
+import { getOperationsAnalytics, routeNoShowRates, routeUtilization } from "../../src/features/analytics/application/analytics";
 import {
   ingestLocation,
   latestLocation,
@@ -142,4 +142,40 @@ describe("Phase 8 analytics and realtime authorization", () => {
     assert.equal(verifySubscriptionToken(subscription.token, secret)?.room, `trip:${created.tripId}`);
     assert.equal(verifySubscriptionToken(`${subscription.token}tampered`, secret), null);
   });
+
+  it("enforces ADMIN role and produces comprehensive operations intelligence", async () => {
+    const range = { from: new Date(departure.getTime() - 86_400_000), to: new Date(departure.getTime() + 86_400_000) };
+
+    // 1. Authorization: DRIVER and STUDENT are forbidden
+    await assert.rejects(
+      async () => getOperationsAnalytics({ role: "DRIVER" }, range),
+      (err: unknown) => err instanceof ApplicationError && err.code === "FORBIDDEN",
+    );
+    await assert.rejects(
+      async () => getOperationsAnalytics({ role: "STUDENT" }, range),
+      (err: unknown) => err instanceof ApplicationError && err.code === "FORBIDDEN",
+    );
+
+    // 2. ADMIN retrieval
+    const result = await getOperationsAnalytics({ role: "ADMIN" }, range);
+    assert.ok(result.overview);
+    assert.ok(result.linePerformance.length > 0);
+    assert.ok(result.hourlyRidership.length > 0);
+    assert.ok(result.reliability.overview);
+    assert.ok(result.dataQuality);
+
+    // Verify line performance
+    const lineRow = result.linePerformance.find((l) => l.lineId === created.lineId);
+    assert.ok(lineRow);
+    assert.equal(lineRow.boardedPassengers, 2); // 1 checked-in + 1 walk-in
+    assert.equal(lineRow.eligibleBookingOutcomes, 2); // 1 checked-in CONFIRMED + 1 NO_SHOW
+    assert.equal(lineRow.noShowCount, 1);
+    assert.equal(lineRow.noShowRate, 50);
+
+    // Verify line filter
+    const filteredByLine = await getOperationsAnalytics({ role: "ADMIN" }, { ...range, lineId: created.lineId });
+    assert.equal(filteredByLine.linePerformance.length, 1);
+    assert.equal(filteredByLine.linePerformance[0]!.lineId, created.lineId);
+  });
 });
+
