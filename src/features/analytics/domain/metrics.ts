@@ -148,26 +148,36 @@ export function parseMytDateStringToUtc(
   dateStr: string,
   isEndOfDayExclusive = false,
 ): Date {
-  const [yearStr, monthStr, dayStr] = dateStr.trim().split("-");
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const day = Number(dayStr);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  if (!match) {
+    throw new Error(`Invalid MYT date format: "${dateStr}". Expected YYYY-MM-DD.`);
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  // Construct calendar date in UTC to check validity deterministically without local timezone influence
+  const calendarCheck = new Date(Date.UTC(year, month - 1, day));
+  if (year < 100) {
+    calendarCheck.setUTCFullYear(year);
+  }
 
   if (
-    !Number.isInteger(year) ||
-    !Number.isInteger(month) ||
-    !Number.isInteger(day) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
+    calendarCheck.getUTCFullYear() !== year ||
+    calendarCheck.getUTCMonth() + 1 !== month ||
+    calendarCheck.getUTCDate() !== day
   ) {
-    throw new Error(`Invalid MYT date format: "${dateStr}". Expected YYYY-MM-DD.`);
+    throw new Error(`Invalid MYT calendar date: "${dateStr}".`);
   }
 
   const targetDay = isEndOfDayExclusive ? day + 1 : day;
   // In UTC, MYT (UTC+8) 00:00 is UTC hour -8. Date.UTC handles negative hours and day rollovers.
-  return new Date(Date.UTC(year, month - 1, targetDay, -8, 0, 0, 0));
+  const result = new Date(Date.UTC(year, month - 1, targetDay, -8, 0, 0, 0));
+  if (year < 100) {
+    result.setUTCFullYear(year);
+  }
+  return result;
 }
 
 export interface MytPresetResult {

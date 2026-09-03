@@ -278,6 +278,33 @@ describe("journey-aware analytics formulas and domain metrics", () => {
       assert.equal(endExclusiveInstant.toISOString(), "2026-09-03T16:00:00.000Z");
     });
 
+    it("strictly validates MYT calendar dates and rejects impossible dates", () => {
+      // Valid dates
+      assert.doesNotThrow(() => parseMytDateStringToUtc("2026-02-28"));
+      assert.doesNotThrow(() => parseMytDateStringToUtc("2028-02-29")); // leap year
+      assert.doesNotThrow(() => parseMytDateStringToUtc("2026-09-03"));
+      assert.doesNotThrow(() => parseMytDateStringToUtc("2026-12-31"));
+
+      // Invalid dates
+      const invalidDates = [
+        "2026-02-29", // non-leap year
+        "2026-02-30",
+        "2026-02-31",
+        "2026-04-31", // April has 30 days
+        "2026-13-01", // month 13
+        "2026-00-01", // month 0
+        "2026-09-00", // day 0
+      ];
+
+      for (const invalidDate of invalidDates) {
+        assert.throws(
+          () => parseMytDateStringToUtc(invalidDate),
+          /Invalid MYT/,
+          `Expected "${invalidDate}" to be rejected as an invalid MYT calendar date`,
+        );
+      }
+    });
+
     it("calculates exact calendar day ranges for presets (7d, 30d, 90d)", () => {
       // Current instant is early morning MYT: 2026-09-03 02:00 MYT (2026-09-02T18:00:00Z)
       const mockNow = new Date("2026-09-02T18:00:00.000Z");
