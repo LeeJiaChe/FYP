@@ -44,7 +44,7 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
       });
       const data = await response.json();
       if (!response.ok) {
-        setError(data.error?.message || data.error || "Failed to issue pass");
+        setError(typeof data.error === "string" ? data.error : data.error?.message || "Failed to issue pass");
         return;
       }
       setQrDataUrl(data.qrDataUrl);

@@ -341,7 +341,7 @@ export default function AdminPortal({
         fetchBuses();
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to save bus");
+        toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Failed to save bus");
       }
     } catch (err: any) {
       toast.error(err.message || "An error occurred");
@@ -387,7 +387,7 @@ export default function AdminPortal({
       } else {
         const data = await res.json();
         toast.error(
-          data.error?.message || data.error || "Failed to create route",
+          typeof data.error === "string" ? data.error : data.error?.message || "Failed to create route",
         );
       }
     } catch (err: any) {
@@ -482,7 +482,7 @@ export default function AdminPortal({
     });
     const data = await res.json();
     if (!res.ok)
-      throw new Error(data.error?.message || data.error || "Operation failed");
+      throw new Error(typeof data.error === "string" ? data.error : data.error?.message || "Operation failed");
     return data;
   }
 
@@ -658,7 +658,7 @@ export default function AdminPortal({
         await fetchAppeals();
       } else {
         const data = await res.json();
-        toast.error(data.error?.message || "Failed to process appeal");
+        toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Failed to process appeal");
         await fetchAppeals();
       }
     } catch (err: any) {
