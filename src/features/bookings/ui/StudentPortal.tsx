@@ -201,7 +201,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
           })),
         );
       } else {
-        toast.error(data.error?.message || "Unable to check journey seats");
+        toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Unable to check journey seats");
       }
     } catch (err: any) { toast.error(err.message || "An error occurred"); }
   }
@@ -225,7 +225,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
 
       const data = await res.json();
       if (!res.ok) {
-        setBookingError(data.error?.message || data.error || "Booking failed");
+        setBookingError(typeof data.error === "string" ? data.error : data.error?.message || "Booking failed");
         setBookingLoading(false);
         return;
       }
@@ -316,7 +316,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
     const res = await fetch(`/api/waitlist/${entryId}`, { method: "DELETE" });
     const data = await res.json();
     if (!res.ok) {
-      toast.error(data.error?.message || "Unable to leave waitlist");
+      toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Unable to leave waitlist");
       return;
     }
     toast.success("Waitlist request cancelled");
@@ -334,7 +334,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
         fetchTrips();
       } else {
         const data = await res.json();
-        toast.error(data.error?.message || data.error || "Failed to cancel booking");
+        toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Failed to cancel booking");
       }
     } catch (err: any) { toast.error(err.message || "Network error"); }
   }
