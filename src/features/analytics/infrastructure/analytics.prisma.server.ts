@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma } from "@prisma/client";
+import { Prisma, RouteDirection } from "@prisma/client";
 
 import { prisma } from "@/shared/db/prisma.server";
 
@@ -72,4 +72,265 @@ export async function noShowRows(from: Date, to: Date) {
     ORDER BY r.name ASC
   `);
 }
+
+export interface OperationsAnalyticsRawData {
+  readonly lines: Array<{
+    id: string;
+    code: string;
+    name: string;
+    routes: Array<{
+      id: string;
+      direction: RouteDirection;
+      name: string;
+    }>;
+  }>;
+  readonly buses: Array<{
+    id: string;
+    plateNumber: string;
+    status: string;
+  }>;
+  readonly trips: Array<{
+    id: string;
+    routeId: string;
+    busId: string;
+    driverId: string | null;
+    departureTime: Date;
+    estimatedArrivalTime: Date;
+    boardingDeadline: Date;
+    seatedCapacity: number;
+    standingCapacity: number;
+    status: string;
+    delayMinutes: number;
+    delayReason: string | null;
+    route: {
+      id: string;
+      lineId: string;
+      direction: RouteDirection;
+      name: string;
+      line: {
+        id: string;
+        code: string;
+        name: string;
+      };
+    };
+    bus: {
+      id: string;
+      plateNumber: string;
+      status: string;
+    };
+    tripStops: Array<{
+      id: string;
+      position: number;
+      stopCode: string;
+      stopName: string;
+      plannedArrival: Date;
+      plannedDeparture: Date;
+      actualArrival: Date | null;
+      actualDeparture: Date | null;
+      passedAt: Date | null;
+    }>;
+    tripSegments: Array<{
+      id: string;
+      position: number;
+    }>;
+    statusHistory: Array<{
+      id: string;
+      fromStatus: string;
+      toStatus: string;
+      reason: string | null;
+      occurredAt: Date;
+    }>;
+    bookings: Array<{
+      id: string;
+      studentId: string;
+      status: string;
+      checkedInAt: Date | null;
+      actualAlightedAt: Date | null;
+    }>;
+    waitlistEntries: Array<{
+      id: string;
+      studentId: string;
+      status: string;
+      promotedBookingId: string | null;
+    }>;
+    walkInIntents: Array<{
+      id: string;
+      studentId: string;
+      status: string;
+    }>;
+    walkInJourneys: Array<{
+      id: string;
+      studentId: string;
+      status: string;
+      boardedAt: Date;
+    }>;
+    reservedSeatSegmentsCount: number;
+  }>;
+}
+
+export async function fetchOperationsAnalyticsRawData(
+  from: Date,
+  to: Date,
+  filterLineId?: string,
+  filterDirection?: RouteDirection,
+): Promise<OperationsAnalyticsRawData> {
+  const [lines, buses, tripsRaw] = await Promise.all([
+    prisma.serviceLine.findMany({
+      include: {
+        routes: {
+          select: {
+            id: true,
+            direction: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: { code: "asc" },
+    }),
+    prisma.bus.findMany({
+      select: {
+        id: true,
+        plateNumber: true,
+        status: true,
+      },
+      orderBy: { plateNumber: "asc" },
+    }),
+    prisma.trip.findMany({
+      where: {
+        departureTime: {
+          gte: from,
+          lt: to,
+        },
+        ...(filterLineId
+          ? { route: { lineId: filterLineId } }
+          : {}),
+        ...(filterDirection
+          ? { route: { direction: filterDirection } }
+          : {}),
+      },
+      include: {
+        route: {
+          include: {
+            line: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+              },
+            },
+          },
+        },
+        bus: {
+          select: {
+            id: true,
+            plateNumber: true,
+            status: true,
+          },
+        },
+        tripStops: {
+          orderBy: { position: "asc" },
+          select: {
+            id: true,
+            position: true,
+            stopCode: true,
+            stopName: true,
+            plannedArrival: true,
+            plannedDeparture: true,
+            actualArrival: true,
+            actualDeparture: true,
+            passedAt: true,
+          },
+        },
+        tripSegments: {
+          select: {
+            id: true,
+            position: true,
+            _count: {
+              select: {
+                reservedSeatSegments: true,
+                standingClaims: true,
+              },
+            },
+          },
+          orderBy: { position: "asc" },
+        },
+        statusHistory: {
+          orderBy: { occurredAt: "asc" },
+          select: {
+            id: true,
+            fromStatus: true,
+            toStatus: true,
+            reason: true,
+            occurredAt: true,
+          },
+        },
+        bookings: {
+          select: {
+            id: true,
+            studentId: true,
+            status: true,
+            checkedInAt: true,
+            actualAlightedAt: true,
+          },
+        },
+        waitlistEntries: {
+          select: {
+            id: true,
+            studentId: true,
+            status: true,
+            promotedBookingId: true,
+          },
+        },
+        walkInIntents: {
+          select: {
+            id: true,
+            studentId: true,
+            status: true,
+          },
+        },
+        walkInJourneys: {
+          select: {
+            id: true,
+            studentId: true,
+            status: true,
+            boardedAt: true,
+          },
+        },
+      },
+      orderBy: { departureTime: "asc" },
+    }),
+  ]);
+
+  const trips = tripsRaw.map((t) => ({
+    id: t.id,
+    routeId: t.routeId,
+    busId: t.busId,
+    driverId: t.driverId,
+    departureTime: t.departureTime,
+    estimatedArrivalTime: t.estimatedArrivalTime,
+    boardingDeadline: t.boardingDeadline,
+    seatedCapacity: t.seatedCapacity,
+    standingCapacity: t.standingCapacity,
+    status: t.status,
+    delayMinutes: t.delayMinutes,
+    delayReason: t.delayReason,
+    route: t.route,
+    bus: t.bus,
+    tripStops: t.tripStops,
+    tripSegments: t.tripSegments,
+    statusHistory: t.statusHistory,
+    bookings: t.bookings,
+    waitlistEntries: t.waitlistEntries,
+    walkInIntents: t.walkInIntents,
+    walkInJourneys: t.walkInJourneys,
+    reservedSeatSegmentsCount: t.tripSegments.reduce(
+      (sum, seg) => sum + seg._count.reservedSeatSegments,
+      0,
+    ),
+  }));
+
+  return { lines, buses, trips };
+}
+
+
 
