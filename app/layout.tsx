@@ -6,7 +6,8 @@ import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
   title: "TAR UMT Shuttle Management System",
-  description: "Journey reservation, QR boarding validation, fleet operations and simulated GPS tracking prototype",
+  description:
+    "Journey reservation, QR boarding validation, fleet operations and simulated GPS tracking prototype",
   formatDetection: {
     telephone: false,
   },
@@ -32,20 +33,26 @@ export default async function RootLayout({
   const initialTheme: ThemeId = savedTheme === "light" ? "light" : "dark";
 
   return (
-    <html lang="en" className={`h-full theme-${initialTheme}`} data-theme={initialTheme}>
+    <html
+      lang="en"
+      className={`h-full theme-${initialTheme}`}
+      data-theme={initialTheme}
+    >
       <body className="font-sans min-h-full flex flex-col antialiased">
-        <a className="skip-link" href="#main-content">Skip to main content</a>
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <ThemeProvider initialTheme={initialTheme}>
           {children}
-          <Toaster 
-            position="bottom-center" 
-            toastOptions={{ 
-              style: { 
-                background: 'var(--bg-card)', 
-                color: 'var(--text-primary)', 
-                border: '1px solid var(--border)' 
-              } 
-            }} 
+          <Toaster
+            position="bottom-center"
+            toastOptions={{
+              style: {
+                background: "var(--bg-card)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border)",
+              },
+            }}
           />
         </ThemeProvider>
       </body>
