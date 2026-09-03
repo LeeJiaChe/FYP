@@ -29,7 +29,7 @@ export default function PenaltyAppealModal({ penalty, onClose, onSuccess }: Pena
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to submit appeal");
+        setError(typeof data.error === "string" ? data.error : data.error?.message || "Failed to submit appeal");
         setLoading(false);
         return;
       }

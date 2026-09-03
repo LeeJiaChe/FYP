@@ -18,7 +18,7 @@ export function useTrips(routeId?: string, driverId?: string) {
         setTrips(data.trips || []);
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to fetch trips");
+        toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Failed to fetch trips");
       }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Network error fetching trips");
