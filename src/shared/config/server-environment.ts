@@ -42,6 +42,11 @@ const rawServerEnvironmentSchema = z
     REALTIME_SERVICE_SECRET: secretSchema,
     TEST_DATABASE_URL: postgresUrlSchema.optional(),
     TEST_DATABASE_CONFIRM: z.string().optional(),
+    GOOGLE_TRAFFIC_ETA_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((val) => val === "true"),
+    GOOGLE_MAPS_ROUTES_API_KEY: z.string().default(""),
   })
   .superRefine((environment, context) => {
     const secrets = [
@@ -126,6 +131,10 @@ export interface ServerEnvironment {
     readonly databaseUrl?: string;
     readonly confirmed: boolean;
   };
+  readonly googleTrafficEta: {
+    readonly enabled: boolean;
+    readonly apiKey: string;
+  };
 }
 
 export class ServerEnvironmentValidationError extends Error {
@@ -162,6 +171,10 @@ export function parseServerEnvironment(
       databaseUrl: environment.TEST_DATABASE_URL,
       confirmed:
         environment.TEST_DATABASE_CONFIRM === TEST_DATABASE_CONFIRMATION,
+    }),
+    googleTrafficEta: Object.freeze({
+      enabled: environment.GOOGLE_TRAFFIC_ETA_ENABLED,
+      apiKey: environment.GOOGLE_MAPS_ROUTES_API_KEY,
     }),
   });
 }

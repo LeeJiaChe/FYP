@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import RestrictedBanner from "@/components/student/RestrictedBanner";
+import { StudentBookingEtaCard } from "@/features/eta/ui";
 
 interface StudentHomeUser {
   name?: string | null;
@@ -151,6 +152,12 @@ export default function StudentHome({
         isBookingRestricted={isRestricted}
         onViewPenalties={onViewAccount}
       />
+
+      {nextBooking?.id && (
+        <section className="student-home-eta-section my-3" aria-label="Next journey live arrival estimate">
+          <StudentBookingEtaCard bookingId={nextBooking.id} />
+        </section>
+      )}
 
       <section className="student-home-primary" aria-labelledby="student-home-plan-title">
         <div className="student-home-primary-copy">
