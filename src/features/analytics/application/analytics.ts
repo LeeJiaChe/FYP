@@ -33,12 +33,13 @@ import {
 } from "../infrastructure/analytics.prisma.server";
 import { forbidden, validationError } from "@/shared/application/application-error";
 import { systemClock, type Clock } from "@/shared/time/clock";
+import { getMytHour } from "@/shared/time/operational-time";
 
 export interface AnalyticsActor {
   readonly role: string;
 }
 
-function boundedRange(query: OperationsAnalyticsQuery | AnalyticsRange, clock: Clock) {
+export function resolveAnalyticsRange(query: OperationsAnalyticsQuery | AnalyticsRange, clock: Clock) {
   let from: Date;
   let to: Date;
 
@@ -60,20 +61,6 @@ function boundedRange(query: OperationsAnalyticsQuery | AnalyticsRange, clock: C
     throw validationError("Analytics range cannot exceed 366 days");
   }
   return { from, to };
-}
-
-function getMytHour(date: Date): number {
-  try {
-    const hourStr = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Asia/Kuala_Lumpur",
-      hour: "numeric",
-      hour12: false,
-    }).format(date);
-    const parsed = parseInt(hourStr, 10);
-    return isNaN(parsed) ? date.getUTCHours() : parsed % 24;
-  } catch {
-    return (date.getUTCHours() + 8) % 24;
-  }
 }
 
 interface TripMetricsAccumulator {
@@ -133,7 +120,7 @@ export async function getOperationsAnalytics(
     throw forbidden("Admin role required");
   }
 
-  const { from, to } = boundedRange(query, clock);
+  const { from, to } = resolveAnalyticsRange(query, clock);
   const raw = await fetchOperationsAnalyticsRawData(
     from,
     to,
@@ -646,7 +633,7 @@ export async function routeUtilization(
   clock: Clock = systemClock,
 ) {
   if (actor.role !== "ADMIN") throw forbidden("Admin role required");
-  const dates = boundedRange(range, clock);
+  const dates = resolveAnalyticsRange(range, clock);
   const rows = await utilizationRows(dates.from, dates.to);
   return rows.map((row) => {
     const seatedCapacitySegments = Number(row.seatedCapacitySegments);
@@ -678,7 +665,7 @@ export async function routeNoShowRates(
   clock: Clock = systemClock,
 ) {
   if (actor.role !== "ADMIN") throw forbidden("Admin role required");
-  const dates = boundedRange(range, clock);
+  const dates = resolveAnalyticsRange(range, clock);
   const rows = await noShowRows(dates.from, dates.to);
   return rows.map((row) => ({
     routeId: row.routeId,
@@ -690,5 +677,3 @@ export async function routeNoShowRates(
     noShowRate: noShowPercent(Number(row.noShows), Number(row.eligibleOutcomes)),
   }));
 }
-
-

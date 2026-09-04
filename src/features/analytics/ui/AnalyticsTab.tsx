@@ -2,23 +2,32 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
+  ArrowRight,
   BarChart3,
-  Clock,
-  Info,
-  Lightbulb,
+  BotOff,
+  Bus,
+  CalendarRange,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  Database,
+  Gauge,
+  LocateFixed,
+  MessageSquareText,
   RefreshCw,
-  ShieldAlert,
+  Route,
+  ShieldCheck,
+  Sparkles,
   Users,
-  XCircle,
+  X,
 } from "lucide-react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -26,967 +35,547 @@ import {
 } from "recharts";
 
 import type {
-  OperationsAnalyticsResponse,
-} from "../contracts/analytics.schemas";
+  AnalyticsSignal,
+  AskIntelligenceAnswer,
+  GeminiIntelligence,
+  OperationsIntelligenceResponse,
+} from "../contracts/intelligence.schemas";
 import {
   calculateMytPresetRange,
   parseMytDateStringToUtc,
-  type OperationalInsight,
 } from "../domain/metrics";
+import { formatMytDateTime } from "@/shared/time/operational-time";
 
 type PresetRange = "7d" | "30d" | "90d" | "custom";
-type SortField =
-  | "lineName"
-  | "boardedPassengers"
-  | "reservedSeatSegmentUtilization"
-  | "onTimeDepartureRate"
-  | "averageDepartureDelayMinutes"
-  | "noShowRate"
-  | "unservedDemand"
-  | "operationalCancellationCount";
+type HeatMetric = "boardedPassengers" | "reservedSeatSegmentUtilization" | "unservedDemand";
+
+const severityLabel = {
+  HIGH: "High",
+  MEDIUM: "Medium",
+  WATCH: "Watch",
+  POSITIVE: "Positive",
+  INFO: "Info",
+} as const;
+
+function formatRate(value: number | null) {
+  return value === null ? "Insufficient data" : `${value}%`;
+}
+
+function formatDelta(value: number | null, unit = "") {
+  if (value === null) return "No comparable baseline";
+  if (value === 0) return `No change${unit}`;
+  return `${value > 0 ? "+" : ""}${value}${unit} vs previous period`;
+}
+
+function signalClass(severity: AnalyticsSignal["severity"]) {
+  return `oi-severity oi-severity-${severity.toLowerCase()}`;
+}
+
+function SignalIcon({ severity }: { severity: AnalyticsSignal["severity"] }) {
+  if (severity === "POSITIVE") return <CheckCircle2 aria-hidden />;
+  if (severity === "HIGH" || severity === "MEDIUM") return <AlertTriangle aria-hidden />;
+  return <Activity aria-hidden />;
+}
+
+function metricDisplay(metric: { value: number | null; unit: string }) {
+  if (metric.value === null) return "Insufficient data";
+  if (metric.unit === "PERCENT") return `${metric.value}%`;
+  if (metric.unit === "PERCENTAGE_POINTS") return `${metric.value}pp`;
+  if (metric.unit === "MINUTES") return `${metric.value} min`;
+  if (metric.unit === "HOURS") return `${metric.value} h`;
+  return String(metric.value);
+}
 
 export default function AnalyticsTab() {
+  const defaultRange = calculateMytPresetRange("30d", new Date());
   const [rangePreset, setRangePreset] = useState<PresetRange>("30d");
-  const [fromDate, setFromDate] = useState<string>(() => {
-    return calculateMytPresetRange("30d", new Date()).fromDateStr;
-  });
-  const [toDate, setToDate] = useState<string>(() => {
-    return calculateMytPresetRange("30d", new Date()).toDateStr;
-  });
-  const [selectedLineId, setSelectedLineId] = useState<string>("");
-  const [selectedDirection, setSelectedDirection] = useState<string>("");
-
-  const [data, setData] = useState<OperationsAnalyticsResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [fromDate, setFromDate] = useState(defaultRange.fromDateStr);
+  const [toDate, setToDate] = useState(defaultRange.toDateStr);
+  const [selectedLineId, setSelectedLineId] = useState("");
+  const [selectedDirection, setSelectedDirection] = useState("");
+  const [result, setResult] = useState<OperationsIntelligenceResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [heatMetric, setHeatMetric] = useState<HeatMetric>("boardedPassengers");
+  const [evidenceSignalId, setEvidenceSignalId] = useState<string | null>(null);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<AskIntelligenceAnswer | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
 
-  const [sortField, setSortField] = useState<SortField>("boardedPassengers");
-  const [sortAsc, setSortAsc] = useState<boolean>(false);
-  const [showDirectionBreakdown, setShowDirectionBreakdown] = useState<boolean>(false);
-
-  const handlePresetChange = (preset: PresetRange) => {
+  const changePreset = (preset: PresetRange) => {
     setRangePreset(preset);
     if (preset !== "custom") {
-      const res = calculateMytPresetRange(preset, new Date());
-      setFromDate(res.fromDateStr);
-      setToDate(res.toDateStr);
+      const range = calculateMytPresetRange(preset, new Date());
+      setFromDate(range.fromDateStr);
+      setToDate(range.toDateStr);
     }
   };
 
-  const handleManualRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    setRefreshTrigger((prev) => prev + 1);
-  }, []);
+  const load = useCallback(async () => {
+    if (fromDate > toDate) {
+      setError("From date cannot be after To date.");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    const params = new URLSearchParams({
+      from: parseMytDateStringToUtc(fromDate).toISOString(),
+      to: parseMytDateStringToUtc(toDate, true).toISOString(),
+    });
+    if (selectedLineId) params.set("lineId", selectedLineId);
+    if (selectedDirection) params.set("direction", selectedDirection);
+    try {
+      setError(null);
+      const response = await fetch(`/api/analytics/intelligence?${params}`, {
+        cache: "no-store",
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          body.error?.message ?? body.error ?? "Unable to load Operations Intelligence",
+        );
+      }
+      setResult(body.data);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to load Operations Intelligence");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [fromDate, selectedDirection, selectedLineId, toDate]);
 
   useEffect(() => {
-    let cancelled = false;
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load, refreshVersion]);
 
-    async function load() {
-      setError(null);
+  const snapshot = result?.snapshot;
+  const analytics = result?.analytics;
+  const focus = snapshot?.signals.find((signal) => signal.id === snapshot.focusSignalId) ?? null;
+  const intelligence = result?.interpretation;
+  const executive = useMemo(() => {
+    if (!snapshot) return [];
+    if (intelligence) return intelligence.insights;
+    return snapshot.signals.slice(0, 5).map((signal) => ({
+      signalId: signal.id,
+      severity: signal.severity,
+      category: signal.category,
+      headline: signal.headline,
+      observation: signal.observation,
+      interpretation: signal.deterministicInterpretation,
+      evidenceMetricKeys: [...signal.evidenceMetricKeys],
+      recommendedReview: signal.recommendedReview,
+      confidence: signal.evidenceStrength,
+      limitations:
+        signal.evidenceStrength === "LOW"
+          ? ["The current sample is too small to establish a recurring trend."]
+          : [],
+    })) satisfies GeminiIntelligence["insights"];
+  }, [intelligence, snapshot]);
 
-      // Validate date order before dispatching
-      if (fromDate && toDate && fromDate > toDate) {
-        setError("From date cannot be after To date. Please adjust your date range.");
-        setIsLoading(false);
-        setIsRefreshing(false);
-        return;
-      }
-
-      try {
-        const params = new URLSearchParams();
-        if (fromDate) {
-          params.set("from", parseMytDateStringToUtc(fromDate, false).toISOString());
-        }
-        if (toDate) {
-          params.set("to", parseMytDateStringToUtc(toDate, true).toISOString());
-        }
-        if (selectedLineId) params.set("lineId", selectedLineId);
-        if (selectedDirection) params.set("direction", selectedDirection);
-
-        const res = await fetch(`/api/analytics/operations?${params.toString()}`);
-        if (!res.ok) {
-          const errJson = await res.json().catch(() => ({}));
-          const errMsg =
-            errJson.message ||
-            errJson.error?.message ||
-            errJson.error ||
-            `Failed to fetch analytics (Status ${res.status})`;
-          throw new Error(errMsg);
-        }
-        const json = await res.json();
-        if (!cancelled) {
-          setData(json.data);
-          setLastRefreshed(new Date());
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "An unexpected error occurred");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-          setIsRefreshing(false);
-        }
+  const selectedEvidence = snapshot?.signals.find(
+    (signal) => signal.id === evidenceSignalId,
+  );
+  const heatRows = snapshot?.timeBuckets ?? [];
+  const maxHeatValue = Math.max(
+    1,
+    ...heatRows.map((row) => Number(row[heatMetric] ?? 0)),
+  );
+  const heatBuckets = ["OVERNIGHT", "MORNING", "MIDDAY", "EVENING", "NIGHT"];
+  const heatLines = [
+    ...new Map(
+      heatRows.map((row) => [`${row.lineId}:${row.direction}`, row]),
+    ).values(),
+  ];
+  const odStops = useMemo(() => {
+    if (!snapshot) return [];
+    const volume = new Map<string, { code: string; name: string; total: number }>();
+    for (const row of snapshot.originDestination) {
+      for (const stop of [
+        { code: row.boardingStopCode, name: row.boardingStopName },
+        { code: row.dropOffStopCode, name: row.dropOffStopName },
+      ]) {
+        const current = volume.get(stop.code) ?? { ...stop, total: 0 };
+        current.total += row.boardedJourneys + row.unservedDemand;
+        volume.set(stop.code, current);
       }
     }
+    return [...volume.values()].sort((a, b) => b.total - a.total).slice(0, 8);
+  }, [snapshot]);
 
-    void load();
+  const applySignalScope = (signal: AnalyticsSignal) => {
+    setSelectedLineId(signal.scope.lineId ?? "");
+    setSelectedDirection(signal.scope.direction ?? "");
+    window.setTimeout(() => {
+      document.getElementById(`oi-${signal.category.toLowerCase()}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  };
 
-    return () => {
-      cancelled = true;
-    };
-  }, [fromDate, toDate, selectedLineId, selectedDirection, refreshTrigger]);
-
-
-
-  const sortedLinePerformance = useMemo(() => {
-    if (!data) return [];
-    return [...data.linePerformance].sort((a, b) => {
-      let valA: number | string = 0;
-      let valB: number | string = 0;
-
-      switch (sortField) {
-        case "lineName":
-          valA = a.lineName;
-          valB = b.lineName;
-          break;
-        case "boardedPassengers":
-          valA = a.boardedPassengers;
-          valB = b.boardedPassengers;
-          break;
-        case "reservedSeatSegmentUtilization":
-          valA = a.reservedSeatSegmentUtilization ?? -1;
-          valB = b.reservedSeatSegmentUtilization ?? -1;
-          break;
-        case "onTimeDepartureRate":
-          valA = a.onTimeDepartureRate ?? -1;
-          valB = b.onTimeDepartureRate ?? -1;
-          break;
-        case "averageDepartureDelayMinutes":
-          valA = a.averageDepartureDelayMinutes ?? -1;
-          valB = b.averageDepartureDelayMinutes ?? -1;
-          break;
-        case "noShowRate":
-          valA = a.noShowRate ?? -1;
-          valB = b.noShowRate ?? -1;
-          break;
-        case "unservedDemand":
-          valA = a.unservedDemand;
-          valB = b.unservedDemand;
-          break;
-        case "operationalCancellationCount":
-          valA = a.operationalCancellationCount;
-          valB = b.operationalCancellationCount;
-          break;
-      }
-
-      if (typeof valA === "string" && typeof valB === "string") {
-        return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      }
-      return sortAsc ? (valA as number) - (valB as number) : (valB as number) - (valA as number);
-    });
-  }, [data, sortField, sortAsc]);
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortAsc(!sortAsc);
-    } else {
-      setSortField(field);
-      setSortAsc(false);
+  const ask = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!question.trim()) return;
+    setAsking(true);
+    setAskError(null);
+    setAnswer(null);
+    try {
+      const response = await fetch("/api/analytics/intelligence/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          from: parseMytDateStringToUtc(fromDate).toISOString(),
+          to: parseMytDateStringToUtc(toDate, true).toISOString(),
+          ...(selectedLineId ? { lineId: selectedLineId } : {}),
+          ...(selectedDirection ? { direction: selectedDirection } : {}),
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message ?? body.error ?? "Assistant unavailable");
+      setAnswer(body.answer);
+    } catch (reason) {
+      setAskError(reason instanceof Error ? reason.message : "Assistant unavailable");
+    } finally {
+      setAsking(false);
     }
   };
 
-  const formatRate = (rate: number | null | undefined, suffix = "%"): string => {
-    if (rate === null || rate === undefined) return "—";
-    return `${rate}${suffix}`;
-  };
-
-  const getSeverityBadge = (severity: OperationalInsight["severity"]) => {
-    switch (severity) {
-      case "danger":
-        return <span className="badge badge-danger">High Concern</span>;
-      case "warning":
-        return <span className="badge badge-warning">Attention</span>;
-      case "success":
-        return <span className="badge badge-success">Target Met</span>;
-      default:
-        return <span className="badge badge-info">Information</span>;
-    }
-  };
+  if (loading && !result) {
+    return (
+      <div className="oi-loading" role="status">
+        <Activity aria-hidden />
+        <strong>Building the operational snapshot…</strong>
+        <span>Calculating authoritative metrics and signals.</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="analytics-view animate-fade-in pb-12">
-      {/* HEADER */}
-      <header className="mb-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <p className="eyebrow">Operational Intelligence & Decision Support</p>
-            <h1 className="section-title text-2xl font-bold">Operations Analytics</h1>
-            <p className="section-subtitle text-sm text-[var(--text-muted)] mt-1">
-              Ridership patterns, capacity pressure, corridor reliability, and fleet utilization.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {lastRefreshed && (
-              <span className="text-xs text-[var(--text-muted)] hidden sm:inline">
-                Refreshed {lastRefreshed.toLocaleTimeString("en-GB", { timeZone: "Asia/Kuala_Lumpur" })} MYT
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleManualRefresh}
-              disabled={isLoading || isRefreshing}
-              className="btn btn-secondary flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-lg border border-[var(--border)] hover:bg-[var(--bg-surface-hover)] transition-colors"
-              title="Refresh Analytics"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-              <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
-            </button>
-          </div>
+    <div className="analytics-view oi-view animate-fade-in">
+      <header className="oi-header">
+        <div>
+          <p className="eyebrow">Admin decision support</p>
+          <h1 className="section-title">Operations Intelligence</h1>
+          <p className="section-subtitle">
+            Deterministic network evidence, prioritised exceptions, and optional grounded interpretation.
+          </p>
         </div>
-
-        {/* Prototype disclosure banner */}
-        <div className="mt-3 p-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-surface-muted)] text-[var(--text-muted)] text-xs flex items-center gap-2">
-          <Info className="w-4 h-4 text-[var(--accent-primary)] shrink-0" />
-          <span>
-            Analytics reflect records generated within this shuttle system prototype (Asia/Kuala_Lumpur, MYT UTC+8) and are not official TAR UMT operational reporting.
-          </span>
-        </div>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={refreshing}
+          onClick={() => {
+            setRefreshing(true);
+            setRefreshVersion((value) => value + 1);
+          }}
+        >
+          <RefreshCw className={refreshing ? "animate-spin" : ""} aria-hidden />
+          {refreshing ? "Refreshing" : "Refresh evidence"}
+        </button>
       </header>
 
-      {/* FILTER BAR */}
-      <section className="analytics-filters mb-6 p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Preset Buttons */}
-          <div className="flex items-center p-1 rounded-lg bg-[var(--bg-surface-muted)] border border-[var(--border)] text-xs">
+      <section className="oi-filterbar" aria-label="Analytics scope">
+        <CalendarRange aria-hidden />
+        <div className="oi-presets">
+          {(["7d", "30d", "90d", "custom"] as const).map((preset) => (
             <button
               type="button"
-              onClick={() => handlePresetChange("7d")}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
-                rangePreset === "7d"
-                  ? "bg-[var(--accent-primary)] text-white shadow-sm"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
+              key={preset}
+              className={rangePreset === preset ? "is-active" : ""}
+              onClick={() => changePreset(preset)}
             >
-              Last 7d
+              {preset === "custom" ? "Custom" : preset.toUpperCase()}
             </button>
-            <button
-              type="button"
-              onClick={() => handlePresetChange("30d")}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
-                rangePreset === "30d"
-                  ? "bg-[var(--accent-primary)] text-white shadow-sm"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              Last 30d
-            </button>
-            <button
-              type="button"
-              onClick={() => handlePresetChange("90d")}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
-                rangePreset === "90d"
-                  ? "bg-[var(--accent-primary)] text-white shadow-sm"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              Last 90d
-            </button>
-          </div>
-
-          {/* Custom Date Range */}
-          <div className="flex items-center gap-2 text-xs">
-            <label htmlFor="filter-from-date" className="text-[var(--text-muted)] font-medium">From:</label>
-            <input
-              id="filter-from-date"
-              type="date"
-              value={fromDate}
-              onChange={(e) => {
-                setFromDate(e.target.value);
-                setRangePreset("custom");
-              }}
-              className="px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]"
-            />
-            <label htmlFor="filter-to-date" className="text-[var(--text-muted)] font-medium">To:</label>
-            <input
-              id="filter-to-date"
-              type="date"
-              value={toDate}
-              onChange={(e) => {
-                setToDate(e.target.value);
-                setRangePreset("custom");
-              }}
-              className="px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]"
-            />
-          </div>
-
-          {/* Service Line Filter */}
-          <div className="flex items-center gap-2 text-xs">
-            <label htmlFor="filter-service-line" className="text-[var(--text-muted)] font-medium">Line:</label>
-            <select
-              id="filter-service-line"
-              value={selectedLineId}
-              onChange={(e) => setSelectedLineId(e.target.value)}
-              className="px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]"
-            >
-              <option value="">All Service Lines</option>
-              {(data?.availableLines ?? []).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} ({l.code})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Direction Filter */}
-          <div className="flex items-center gap-2 text-xs">
-            <label htmlFor="filter-direction" className="text-[var(--text-muted)] font-medium">Direction:</label>
-            <select
-              id="filter-direction"
-              value={selectedDirection}
-              onChange={(e) => setSelectedDirection(e.target.value)}
-              className="px-2.5 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] text-xs focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)]"
-            >
-              <option value="">All Directions</option>
-              <option value="OUTBOUND">OUTBOUND · From TAR UMT</option>
-              <option value="INBOUND">INBOUND · To TAR UMT</option>
-            </select>
-          </div>
+          ))}
         </div>
+        <label>
+          <span>From</span>
+          <input type="date" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setRangePreset("custom"); }} />
+        </label>
+        <label>
+          <span>To</span>
+          <input type="date" value={toDate} onChange={(event) => { setToDate(event.target.value); setRangePreset("custom"); }} />
+        </label>
+        <label>
+          <span>Service Line</span>
+          <select value={selectedLineId} onChange={(event) => setSelectedLineId(event.target.value)}>
+            <option value="">Network</option>
+            {analytics?.availableLines.map((line) => (
+              <option key={line.id} value={line.id}>{line.code} · {line.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Direction</span>
+          <select value={selectedDirection} onChange={(event) => setSelectedDirection(event.target.value)}>
+            <option value="">Both directions</option>
+            <option value="OUTBOUND">Outbound · from TAR UMT</option>
+            <option value="INBOUND">Inbound · to TAR UMT</option>
+          </select>
+        </label>
       </section>
 
-      {/* ERROR STATE */}
-      {error && (
-        <div className="p-4 rounded-xl border border-[var(--danger)] bg-[var(--danger-subtle)] text-[var(--danger)] mb-6 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-          <div>
-            <h2 className="text-sm font-semibold">Error Loading Analytics</h2>
-            <p className="text-xs mt-1">{error}</p>
-            <button
-              type="button"
-              onClick={handleManualRefresh}
-              className="mt-2 text-xs underline font-semibold cursor-pointer"
-            >
-              Try Again
-            </button>
-          </div>
-        </div>
-      )}
+      {error && <div className="oi-error"><AlertTriangle aria-hidden /> {error}</div>}
 
-      {/* LOADING SKELETON */}
-      {isLoading && (
-        <div className="p-12 text-center text-[var(--text-muted)] flex flex-col items-center justify-center gap-3">
-          <RefreshCw className="w-8 h-8 animate-spin text-[var(--accent-primary)]" />
-          <p className="text-sm font-medium">Aggregating operations intelligence...</p>
-        </div>
-      )}
-
-      {!isLoading && data && (
+      {snapshot && analytics && (
         <>
-          {/* TOP KPI CARDS ROW */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-            {/* 1. Boarded Passengers */}
-            <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <div className="flex items-center justify-between text-[var(--text-muted)] mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wider">Boarded Riders</span>
-                <span title="Total passenger journeys checked in (reserved) plus boarded walk-ins.">
-                  <Users className="w-4 h-4 text-[var(--accent-primary)]" />
-                </span>
+          <section className="oi-executive" aria-labelledby="executive-title">
+            <div className="oi-section-heading">
+              <div>
+                <span className="oi-section-icon"><ShieldCheck aria-hidden /></span>
+                <div>
+                  <p>Prioritised brief</p>
+                  <h2 id="executive-title">Executive operations intelligence</h2>
+                </div>
               </div>
-              <div className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-                {data.overview.boardedPassengers}
-              </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">
-                {data.overview.completedTrips} completed / {data.overview.operatedTrips} operated
-              </div>
+              <span className="oi-fingerprint" title={snapshot.fingerprint}>
+                Snapshot {snapshot.fingerprint.slice(0, 10)}
+              </span>
             </div>
-
-            {/* 2. Reserved Seat-Segment Utilization */}
-            <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <div className="flex items-center justify-between text-[var(--text-muted)] mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wider">Reserved Util.</span>
-                <span title="Reserved seat-segments divided by available seated capacity segments on operated trips.">
-                  <BarChart3 className="w-4 h-4 text-[var(--accent-primary)]" />
-                </span>
+            {executive.length === 0 ? (
+              <div className="oi-no-exceptions">
+                <CheckCircle2 aria-hidden />
+                <div><strong>No significant operational exceptions detected.</strong><span>Continue monitoring the current evidence window.</span></div>
               </div>
-              <div className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-                {formatRate(data.overview.reservedSeatSegmentUtilization)}
+            ) : (
+              <div className="oi-insight-list">
+                {executive.map((insight, index) => {
+                  const signal = snapshot.signals.find((item) => item.id === insight.signalId);
+                  if (!signal) return null;
+                  return (
+                    <article key={insight.signalId} className="oi-insight-row">
+                      <div className={signalClass(signal.severity)}>
+                        <SignalIcon severity={signal.severity} />
+                        <span>{severityLabel[signal.severity]}</span>
+                      </div>
+                      <span className="oi-insight-rank">{String(index + 1).padStart(2, "0")}</span>
+                      <div className="oi-insight-copy">
+                        <h3>{insight.headline}</h3>
+                        <p>{insight.observation}</p>
+                        <small>{insight.interpretation}</small>
+                        {insight.recommendedReview && <strong>{insight.recommendedReview}</strong>}
+                      </div>
+                      <div className="oi-insight-actions">
+                        <span>{insight.confidence} confidence · n={signal.sampleSize}</span>
+                        <button type="button" onClick={() => setEvidenceSignalId(signal.id)}>View evidence</button>
+                        <button type="button" onClick={() => applySignalScope(signal)}>Open analysis <ChevronRight aria-hidden /></button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">
-                Across {data.overview.operatedTrips} operated Trips
-              </div>
-            </div>
-
-            {/* 3. On-Time Departure Rate */}
-            <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <div className="flex items-center justify-between text-[var(--text-muted)] mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wider">On-Time Dep.</span>
-                <span title="Departed origin stop within 5 minutes of planned departure.">
-                  <Clock className="w-4 h-4 text-[var(--success)]" />
-                </span>
-              </div>
-              <div className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-                {formatRate(data.overview.onTimeDepartureRate)}
-              </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">
-                {data.overview.actualDepartureSamples} measured departures
-              </div>
-            </div>
-
-            {/* 4. Average Departure Delay */}
-            <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <div className="flex items-center justify-between text-[var(--text-muted)] mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wider">Avg Dep. Delay</span>
-                <span title="Average delay past planned origin departure. Early departure = 0 min.">
-                  <Clock className="w-4 h-4 text-[var(--warning)]" />
-                </span>
-              </div>
-              <div className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-                {data.overview.averageDepartureDelayMinutes !== null
-                  ? `${data.overview.averageDepartureDelayMinutes}m`
-                  : "—"}
-              </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">
-                Max: {data.reliability.overview.maxDepartureDelayMinutes !== null
-                  ? `${data.reliability.overview.maxDepartureDelayMinutes}m`
-                  : "—"}
-              </div>
-            </div>
-
-            {/* 5. Reservation No-Show Rate */}
-            <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <div className="flex items-center justify-between text-[var(--text-muted)] mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wider">No-Show Rate</span>
-                <span title="No-shows divided by completed, checked-in, or no-show bookings.">
-                  <XCircle className="w-4 h-4 text-[var(--danger)]" />
-                </span>
-              </div>
-              <div className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-                {formatRate(data.overview.noShowRate)}
-              </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">
-                {data.overview.noShowCount} no-shows / {data.overview.eligibleBookingOutcomes} outcomes
-              </div>
-            </div>
-
-            {/* 6. Unserved Demand */}
-            <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <div className="flex items-center justify-between text-[var(--text-muted)] mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wider">Unserved Demand</span>
-                <span title="Expired waitlists plus rejected full walk-in intents.">
-                  <ShieldAlert className="w-4 h-4 text-[var(--danger)]" />
-                </span>
-              </div>
-              <div className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">
-                {data.overview.unservedDemand}
-              </div>
-              <div className="text-[11px] text-[var(--text-muted)] mt-1">
-                {data.overview.waitlistExpired} expired wait, {data.overview.walkInsRejectedFull} rejected walk-in
-              </div>
+            )}
+            <div className={`oi-assistant-state is-${result.assistant.status.toLowerCase()}`}>
+              {result.assistant.status === "READY" ? <Sparkles aria-hidden /> : <BotOff aria-hidden />}
+              <span>
+                {result.assistant.status === "READY"
+                  ? `Grounded interpretation · ${result.assistant.model}${result.assistant.cached ? " · cached" : ""}`
+                  : result.assistant.message}
+              </span>
             </div>
           </section>
 
-          {/* SECTION 1: RULE-BASED OPERATIONAL INSIGHTS */}
-          <section className="mb-8">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-semibold flex items-center gap-2">
-                <Lightbulb className="w-4 h-4 text-[var(--accent-primary)]" />
-                <span>Rule-Based Operational Insights</span>
-              </h2>
-              <span className="text-xs text-[var(--text-muted)]">
-                Deterministic threshold analysis
+          <section className="oi-focus" aria-labelledby="focus-title">
+            <div>
+              <p>Current focus</p>
+              <h2 id="focus-title">{focus?.headline ?? "Network operating picture"}</h2>
+              <span>
+                {focus
+                  ? [focus.scope.lineCode, focus.scope.direction, focus.scope.timeBucket].filter(Boolean).join(" · ") || "Network scope"
+                  : "No exception currently outranks routine monitoring."}
               </span>
             </div>
+            <div className="oi-focus-evidence">
+              {focus?.evidenceMetricKeys.slice(0, 3).map((key) => {
+                const metric = snapshot.evidence[key];
+                return metric ? <div key={key}><span>{metric.label}</span><strong>{metricDisplay(metric)}</strong><small>n={metric.sampleSize}</small></div> : null;
+              })}
+              {!focus && <div><span>Eligible Trips</span><strong>{snapshot.eligibleTripCount}</strong><small>selected period</small></div>}
+            </div>
+            {focus && <button type="button" className="btn-secondary" onClick={() => setEvidenceSignalId(focus.id)}>Inspect focus evidence <ArrowRight aria-hidden /></button>}
+          </section>
 
-            {data.insights.length === 0 ? (
-              <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] text-xs text-[var(--text-muted)]">
-                No active operational anomalies or warnings detected for this period.
+          <section className="oi-section" id="oi-current_operation">
+            <div className="oi-section-heading">
+              <div><span className="oi-section-icon"><Gauge aria-hidden /></span><div><p>Selected period vs prior comparable period</p><h2>Network Pulse</h2></div></div>
+              <span>{snapshot.eligibleTripCount} eligible operated Trips</span>
+            </div>
+            <div className="oi-pulse-grid">
+              {[
+                { label: "Boarded riders", value: analytics.overview.boardedPassengers, change: snapshot.network.changes.boardedPassengers, unit: "", icon: Users },
+                { label: "Reserved segment utilisation", value: analytics.overview.reservedSeatSegmentUtilization, change: snapshot.network.changes.reservedSeatSegmentUtilization, unit: "pp", icon: BarChart3, rate: true },
+                { label: "On-time departure", value: analytics.overview.onTimeDepartureRate, change: snapshot.network.changes.onTimeDepartureRate, unit: "pp", icon: Clock3, rate: true },
+                { label: "Average actual delay", value: analytics.overview.averageDepartureDelayMinutes, change: snapshot.network.changes.averageDepartureDelayMinutes, unit: " min", icon: Activity, minutes: true },
+                { label: "Unserved demand", value: analytics.overview.unservedDemand, change: snapshot.network.changes.unservedDemand, unit: "", icon: AlertTriangle },
+              ].map((metric) => (
+                <article key={metric.label}>
+                  <metric.icon aria-hidden />
+                  <span>{metric.label}</span>
+                  <strong>{metric.value === null ? "Insufficient data" : metric.rate ? `${metric.value}%` : metric.minutes ? `${metric.value} min` : metric.value}</strong>
+                  <small>{formatDelta(metric.change, metric.unit)}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="oi-section" id="oi-demand">
+            <div className="oi-section-heading">
+              <div><span className="oi-section-icon"><Activity aria-hidden /></span><div><p>Service Line × MYT time window</p><h2>Demand Intelligence</h2></div></div>
+              <div className="oi-metric-switch">
+                <button className={heatMetric === "boardedPassengers" ? "is-active" : ""} onClick={() => setHeatMetric("boardedPassengers")}>Boarded</button>
+                <button className={heatMetric === "reservedSeatSegmentUtilization" ? "is-active" : ""} onClick={() => setHeatMetric("reservedSeatSegmentUtilization")}>Reserved utilisation</button>
+                <button className={heatMetric === "unservedDemand" ? "is-active" : ""} onClick={() => setHeatMetric("unservedDemand")}>Unserved</button>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {data.insights.map((insight, idx) => (
-                  <div
-                    key={`${insight.type}-${idx}`}
-                    className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                          {insight.title}
-                        </h3>
-                        {getSeverityBadge(insight.severity)}
-                      </div>
-                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-2">
-                        {insight.message}
-                      </p>
-                    </div>
-                    <div className="pt-2 border-t border-[var(--border)] flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                      <span>Evidence: {insight.evidence}</span>
-                      <span className="font-mono">n={insight.sampleSize}</span>
-                    </div>
+            </div>
+            {heatRows.length === 0 ? <div className="oi-empty">Insufficient data for line/time demand analysis.</div> : (
+              <div className="oi-heatmap" role="table" aria-label="Service Line by time-of-day heatmap">
+                <div className="oi-heat-head"><span>Service</span>{heatBuckets.map((bucket) => <span key={bucket}>{bucket.toLowerCase()}</span>)}</div>
+                {heatLines.map((line) => (
+                  <div className="oi-heat-row" key={`${line.lineId}:${line.direction}`}>
+                    <strong>{line.lineCode}<small>{line.direction}</small></strong>
+                    {heatBuckets.map((bucket) => {
+                      const candidates = heatRows.filter((row) => row.lineId === line.lineId && row.direction === line.direction && row.bucket === bucket);
+                      const values = candidates.map((row) => Number(row[heatMetric] ?? 0));
+                      const value = values.length ? values[0]! : null;
+                      const intensity = value === null ? 0 : Math.max(8, Math.round((value / maxHeatValue) * 48));
+                      return <div key={bucket} className="oi-heat-cell" style={{ background: `color-mix(in srgb, var(--accent) ${intensity}%, var(--surface-secondary))`, borderColor: `color-mix(in srgb, var(--accent) ${Math.round(intensity * .75)}%, var(--border-subtle))` }} title={value === null ? "Insufficient data" : `${value}${heatMetric === "reservedSeatSegmentUtilization" ? "%" : ""}`}><span>{value === null ? "—" : `${value}${heatMetric === "reservedSeatSegmentUtilization" ? "%" : ""}`}</span><small>{candidates.reduce((sum, row) => sum + row.operatedTrips, 0)} Trips</small></div>;
+                    })}
                   </div>
                 ))}
               </div>
             )}
           </section>
 
-          {/* SECTION 2: SERVICE LINE PERFORMANCE TABLE */}
-          <section className="mb-8 p-5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div>
-                <h2 className="text-base font-semibold text-[var(--text-primary)]">
-                  Service Line Performance Comparison
-                </h2>
-                <p className="text-xs text-[var(--text-muted)]">
-                  Cross-line operational benchmark for scheduling and capacity decisions.
-                </p>
+          <div className="oi-two-column">
+            <section className="oi-section" id="oi-reliability">
+              <div className="oi-section-heading"><div><span className="oi-section-icon"><Clock3 aria-hidden /></span><div><p>Actual origin departure evidence</p><h2>Reliability Intelligence</h2></div></div></div>
+              {analytics.reliability.overview.actualDepartureSamples === 0 ? <div className="oi-empty">Insufficient actual-departure data.</div> : (
+                <div className="oi-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[...analytics.reliability.byLine]} layout="vertical" margin={{ left: 8, right: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" horizontal={false} />
+                      <XAxis type="number" domain={[0, 100]} unit="%" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
+                      <YAxis type="category" dataKey="lineCode" width={72} tick={{ fill: "var(--text-secondary)", fontSize: 10 }} />
+                      <Tooltip contentStyle={{ background: "#111820", border: "1px solid #263241", borderRadius: 10 }} />
+                      <ReferenceLine x={80} stroke="#d7a96b" strokeDasharray="4 4" label={{ value: "target", fill: "#a8b2bf", fontSize: 10 }} />
+                      <Bar dataKey="onTimeDepartureRate" name="On-time departure" fill="#74A9F5" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+              <div className="oi-inline-facts"><span>5-minute tolerance</span><span>{analytics.reliability.overview.actualDepartureSamples} measured departures</span><span>{analytics.reliability.overview.averageDepartureDelayMinutes ?? "—"} min average actual delay</span></div>
+            </section>
+
+            <section className="oi-section" id="oi-capacity">
+              <div className="oi-section-heading"><div><span className="oi-section-icon"><Users aria-hidden /></span><div><p>Usable capacity and finalized demand failure</p><h2>Capacity Intelligence</h2></div></div></div>
+              <div className="oi-ranked-list">
+                {[...analytics.demandPressure].sort((a, b) => b.unservedDemand - a.unservedDemand).map((line) => (
+                  <article key={line.lineId}>
+                    <div><strong>{line.lineCode}</strong><span>{line.lineName}</span></div>
+                    <div><strong>{formatRate(line.reservedSeatSegmentUtilization)}</strong><span>reserved segment utilisation</span></div>
+                    <div><strong>{line.unservedDemand}</strong><span>{line.waitlistExpired} expired wait · {line.walkInsRejectedFull} rejected full</span></div>
+                  </article>
+                ))}
+                {analytics.demandPressure.length === 0 && <div className="oi-empty">Insufficient capacity evidence.</div>}
               </div>
+            </section>
+          </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowDirectionBreakdown(!showDirectionBreakdown)}
-                  className="btn btn-secondary text-xs px-3 py-1.5 rounded-lg border border-[var(--border)] hover:bg-[var(--bg-surface-hover)]"
-                >
-                  {showDirectionBreakdown ? "Hide Directional Split" : "Show Directional Split"}
-                </button>
+          <div className="oi-two-column">
+            <section className="oi-section" id="oi-fleet">
+              <div className="oi-section-heading"><div><span className="oi-section-icon"><Bus aria-hidden /></span><div><p>Trip-derived physical Bus workload</p><h2>Fleet Intelligence</h2></div></div></div>
+              <div className="oi-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[...snapshot.fleet]} margin={{ left: 0, right: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
+                    <XAxis dataKey="plateNumber" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
+                    <YAxis allowDecimals={false} tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
+                    <Tooltip contentStyle={{ background: "#111820", border: "1px solid #263241", borderRadius: 10 }} />
+                    <Bar dataKey="operatedTrips" name="Operated Trips" fill="#74A9F5" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-            </div>
+              <div className="oi-fleet-table">
+                {snapshot.fleet.map((bus) => <div key={bus.busId}><strong>{bus.plateNumber}</strong><span>{bus.workloadSharePercent === null ? "Insufficient data" : `${bus.workloadSharePercent}% workload`}</span><span>{bus.actualServiceHours ?? "—"} h actual service</span><span className={bus.turnaroundAdvisories + bus.deadheadAdvisories ? "is-warning" : ""}>{bus.turnaroundAdvisories} turn · {bus.deadheadAdvisories} deadhead advisories</span></div>)}
+              </div>
+            </section>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-[var(--border)] text-[var(--text-muted)] bg-[var(--bg-surface-muted)]">
-                    <th
-                      className="p-2.5 font-semibold cursor-pointer select-none"
-                      onClick={() => handleSort("lineName")}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span>Service Line</span>
-                        {sortField === "lineName" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                    <th className="p-2.5 font-semibold text-center">Trips (Sched/Oper/Done)</th>
-                    <th
-                      className="p-2.5 font-semibold text-right cursor-pointer select-none"
-                      onClick={() => handleSort("boardedPassengers")}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        <span>Boarded</span>
-                        {sortField === "boardedPassengers" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="p-2.5 font-semibold text-right cursor-pointer select-none"
-                      onClick={() => handleSort("reservedSeatSegmentUtilization")}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        <span>Reserved Util.</span>
-                        {sortField === "reservedSeatSegmentUtilization" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="p-2.5 font-semibold text-right cursor-pointer select-none"
-                      onClick={() => handleSort("onTimeDepartureRate")}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        <span>On-Time</span>
-                        {sortField === "onTimeDepartureRate" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="p-2.5 font-semibold text-right cursor-pointer select-none"
-                      onClick={() => handleSort("averageDepartureDelayMinutes")}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        <span>Avg Delay</span>
-                        {sortField === "averageDepartureDelayMinutes" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="p-2.5 font-semibold text-right cursor-pointer select-none"
-                      onClick={() => handleSort("noShowRate")}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        <span>No-Show</span>
-                        {sortField === "noShowRate" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="p-2.5 font-semibold text-right cursor-pointer select-none"
-                      onClick={() => handleSort("unservedDemand")}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        <span>Unserved</span>
-                        {sortField === "unservedDemand" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                    <th
-                      className="p-2.5 font-semibold text-right cursor-pointer select-none"
-                      onClick={() => handleSort("operationalCancellationCount")}
-                    >
-                      <div className="flex items-center justify-end gap-1">
-                        <span>Cancellations</span>
-                        {sortField === "operationalCancellationCount" ? (
-                          sortAsc ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-                        ) : (
-                          <ArrowUpDown className="w-3 h-3 opacity-40" />
-                        )}
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border)]">
-                  {sortedLinePerformance.map((row) => (
-                    <>
-                      <tr key={row.lineId} className="hover:bg-[var(--bg-surface-hover)] transition-colors">
-                        <td className="p-2.5 font-medium text-[var(--text-primary)]">
-                          <div className="font-semibold">{row.lineName}</div>
-                          <div className="text-[11px] text-[var(--text-muted)] font-mono">{row.lineCode}</div>
-                        </td>
-                        <td className="p-2.5 text-center tabular-nums text-[var(--text-muted)]">
-                          {row.scheduledTrips} / {row.operatedTrips} / {row.completedTrips}
-                        </td>
-                        <td className="p-2.5 text-right font-semibold tabular-nums text-[var(--text-primary)]">
-                          {row.boardedPassengers}
-                        </td>
-                        <td className="p-2.5 text-right tabular-nums">
-                          <span
-                            className={
-                              row.reservedSeatSegmentUtilization !== null && row.reservedSeatSegmentUtilization >= 80
-                                ? "text-[var(--warning)] font-semibold"
-                                : ""
-                            }
-                          >
-                            {formatRate(row.reservedSeatSegmentUtilization)}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-right tabular-nums">
-                          <span
-                            className={
-                              row.onTimeDepartureRate !== null && row.onTimeDepartureRate < 80
-                                ? "text-[var(--danger)] font-semibold"
-                                : ""
-                            }
-                          >
-                            {formatRate(row.onTimeDepartureRate)}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-right tabular-nums text-[var(--text-secondary)]">
-                          {row.averageDepartureDelayMinutes !== null ? `${row.averageDepartureDelayMinutes}m` : "—"}
-                        </td>
-                        <td className="p-2.5 text-right tabular-nums">
-                          <span
-                            className={
-                              row.noShowRate !== null && row.noShowRate >= 10
-                                ? "text-[var(--danger)] font-semibold"
-                                : ""
-                            }
-                          >
-                            {formatRate(row.noShowRate)}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-right tabular-nums">
-                          <span className={row.unservedDemand > 0 ? "text-[var(--danger)] font-semibold" : ""}>
-                            {row.unservedDemand}
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-right tabular-nums text-[var(--text-muted)]">
-                          {row.operationalCancellationCount}
-                        </td>
-                      </tr>
+            <section className="oi-section" id="oi-passenger_behaviour">
+              <div className="oi-section-heading"><div><span className="oi-section-icon"><Users aria-hidden /></span><div><p>Aggregated and anonymized outcomes</p><h2>Passenger Behaviour</h2></div></div></div>
+              <div className="oi-behaviour-grid">
+                <div><span>Reservation → attendance outcomes</span><strong>{snapshot.passengerBehaviour.eligibleBookingOutcomes}</strong><small>finalized sample</small></div>
+                <div><span>No-show rate</span><strong>{formatRate(snapshot.passengerBehaviour.noShowRate)}</strong><small>{analytics.overview.noShowCount} no-shows</small></div>
+                <div><span>Waitlist promotion</span><strong>{formatRate(snapshot.passengerBehaviour.waitlistPromotionRate)}</strong><small>{snapshot.passengerBehaviour.finalizedWaitlistOutcomes} finalized outcomes</small></div>
+                <div><span>Unserved demand</span><strong>{snapshot.passengerBehaviour.unservedDemand}</strong><small>expired waitlist + rejected full</small></div>
+              </div>
+            </section>
+          </div>
 
-                      {/* Directional Split sub-rows */}
-                      {showDirectionBreakdown && (
-                        <>
-                          <tr className="bg-[var(--bg-surface-muted)] text-[11px] text-[var(--text-muted)]">
-                            <td className="pl-6 py-1.5 font-medium">↳ OUTBOUND · From TAR UMT</td>
-                            <td className="text-center py-1.5 tabular-nums">
-                              {row.directions.outbound.scheduledTrips} / {row.directions.outbound.operatedTrips} / {row.directions.outbound.completedTrips}
-                            </td>
-                            <td className="text-right py-1.5 tabular-nums">{row.directions.outbound.boardedPassengers}</td>
-                            <td className="text-right py-1.5 tabular-nums">{formatRate(row.directions.outbound.reservedSeatSegmentUtilization)}</td>
-                            <td className="text-right py-1.5 tabular-nums">{formatRate(row.directions.outbound.onTimeDepartureRate)}</td>
-                            <td className="text-right py-1.5 tabular-nums">
-                              {row.directions.outbound.averageDepartureDelayMinutes !== null ? `${row.directions.outbound.averageDepartureDelayMinutes}m` : "—"}
-                            </td>
-                            <td className="text-right py-1.5 tabular-nums">{formatRate(row.directions.outbound.noShowRate)}</td>
-                            <td className="text-right py-1.5 tabular-nums">{row.directions.outbound.unservedDemand}</td>
-                            <td className="text-right py-1.5 tabular-nums">{row.directions.outbound.operationalCancellationCount}</td>
-                          </tr>
-                          <tr className="bg-[var(--bg-surface-muted)] text-[11px] text-[var(--text-muted)]">
-                            <td className="pl-6 py-1.5 font-medium">↳ INBOUND · To TAR UMT</td>
-                            <td className="text-center py-1.5 tabular-nums">
-                              {row.directions.inbound.scheduledTrips} / {row.directions.inbound.operatedTrips} / {row.directions.inbound.completedTrips}
-                            </td>
-                            <td className="text-right py-1.5 tabular-nums">{row.directions.inbound.boardedPassengers}</td>
-                            <td className="text-right py-1.5 tabular-nums">{formatRate(row.directions.inbound.reservedSeatSegmentUtilization)}</td>
-                            <td className="text-right py-1.5 tabular-nums">{formatRate(row.directions.inbound.onTimeDepartureRate)}</td>
-                            <td className="text-right py-1.5 tabular-nums">
-                              {row.directions.inbound.averageDepartureDelayMinutes !== null ? `${row.directions.inbound.averageDepartureDelayMinutes}m` : "—"}
-                            </td>
-                            <td className="text-right py-1.5 tabular-nums">{formatRate(row.directions.inbound.noShowRate)}</td>
-                            <td className="text-right py-1.5 tabular-nums">{row.directions.inbound.unservedDemand}</td>
-                            <td className="text-right py-1.5 tabular-nums">{row.directions.inbound.operationalCancellationCount}</td>
-                          </tr>
-                        </>
-                      )}
-                    </>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <section className="oi-section" id="oi-origin_destination">
+            <div className="oi-section-heading"><div><span className="oi-section-icon"><Route aria-hidden /></span><div><p>Actual boarding → drop-off journeys</p><h2>Origin–Destination Intelligence</h2></div></div><span>External → external journeys preserved</span></div>
+            {snapshot.originDestination.length === 0 ? <div className="oi-empty">Insufficient boarded or finalized-unserved OD evidence.</div> : (
+              <div className="oi-od-layout">
+                <div className="oi-od-matrix-wrap">
+                  <table className="oi-od-matrix">
+                    <caption>Boarded journey matrix · top observed stops</caption>
+                    <thead><tr><th>From \ To</th>{odStops.map((stop) => <th key={stop.code} title={stop.name}>{stop.code}</th>)}</tr></thead>
+                    <tbody>{odStops.map((from) => <tr key={from.code}><th title={from.name}>{from.code}</th>{odStops.map((to) => { const value = snapshot.originDestination.filter((row) => row.boardingStopCode === from.code && row.dropOffStopCode === to.code).reduce((sum, row) => sum + row.boardedJourneys, 0); return <td key={to.code} className={value ? "has-demand" : ""}>{from.code === to.code ? "—" : value || "·"}</td>; })}</tr>)}</tbody>
+                  </table>
+                </div>
+                <div className="oi-ranked-list oi-od-ranked">
+                  {snapshot.originDestination.slice(0, 8).map((row) => <article key={`${row.lineId}-${row.direction}-${row.boardingStopCode}-${row.dropOffStopCode}`}><div><strong>{row.boardingStopCode} → {row.dropOffStopCode}</strong><span>{row.lineCode} · {row.direction}</span></div><div><strong>{row.boardedJourneys}</strong><span>{row.boardedReserved} reserved · {row.boardedWalkIn} walk-in</span></div><div><strong>{row.unservedDemand}</strong><span>unserved</span></div></article>)}
+                </div>
+              </div>
+            )}
+            {snapshot.segmentLoads[0] && <div className="oi-segment-note"><LocateFixed aria-hidden /><span>Highest observed segment load</span><strong>{snapshot.segmentLoads[0].fromStopCode} → {snapshot.segmentLoads[0].toStopCode}</strong><small>{snapshot.segmentLoads[0].reservedClaims} reserved claims · {snapshot.segmentLoads[0].standingClaims} standing claims</small></div>}
           </section>
 
-          {/* SECTION 3 & 4: CHARTS GRID */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* SECTION 3: RIDERSHIP BY DEPARTURE HOUR */}
-            <section className="p-5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-                    Boarded Ridership by Departure Hour (MYT)
-                  </h2>
-                  <span className="text-[11px] text-[var(--text-muted)]">UTC+8</span>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mb-4">
-                  Distribution of checked-in & walk-in riders by planned shuttle departure hour.
-                </p>
-
-                {data.overview.boardedPassengers === 0 ? (
-                  <div className="h-64 flex items-center justify-center text-xs text-[var(--text-muted)] border border-dashed border-[var(--border)] rounded-lg">
-                    No boarded passenger records in this period.
-                  </div>
-                ) : (
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[...data.hourlyRidership]} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                        <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={10} />
-                        <YAxis stroke="var(--text-muted)" fontSize={10} allowDecimals={false} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: "var(--bg-surface)",
-                            borderColor: "var(--border)",
-                            borderRadius: "8px",
-                            fontSize: "12px",
-                            color: "var(--text-primary)",
-                          }}
-                        />
-                        <Bar dataKey="boardedRidership" name="Boarded Passengers" fill="var(--accent-primary)" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
+          <div className="oi-two-column">
+            <section className="oi-section">
+              <div className="oi-section-heading"><div><span className="oi-section-icon"><Database aria-hidden /></span><div><p>Fingerprint-backed application cache</p><h2>Intelligence History</h2></div></div></div>
+              {result.history.length === 0 ? <div className="oi-empty">No cached Gemini interpretations in this server process.</div> : <div className="oi-history">{result.history.map((item) => <article key={`${item.fingerprint}-${item.generatedAt}`}><time>{formatMytDateTime(item.generatedAt)} MYT</time><div><strong>{item.headlines[0] ?? "Operational brief"}</strong><span>{item.headlines.slice(1).join(" · ") || "No additional headline"}</span></div><small>{item.model}<br />{item.fingerprint.slice(0, 10)}</small></article>)}</div>}
+              <p className="oi-footnote">History is an application-level bounded cache in this implementation; deterministic records remain the source of every metric.</p>
             </section>
 
-            {/* SECTION 4: DEMAND PRESSURE & UNSERVED REQUESTS */}
-            <section className="p-5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-                    Corridor Capacity Pressure & Unmet Demand
-                  </h2>
-                  <span className="text-[11px] text-[var(--text-muted)]">Expired Waitlists & Rejections</span>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mb-4">
-                  Lines experiencing high reserved utilization alongside unserved student demand.
-                </p>
-
-                <div className="space-y-3">
-                  {data.demandPressure.map((dp) => (
-                    <div
-                      key={dp.lineId}
-                      className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-surface-muted)] flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-[var(--text-primary)]">{dp.lineName}</span>
-                          {dp.pressureFlag && <span className="badge badge-warning text-[10px]">High Pressure</span>}
-                        </div>
-                        <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                          Reserved: {formatRate(dp.reservedSeatSegmentUtilization)} across {dp.operatedTrips} operated Trips
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <div className="text-sm font-bold tabular-nums text-[var(--text-primary)]">
-                          {dp.unservedDemand} unserved
-                        </div>
-                        <div className="text-[10px] text-[var(--text-muted)]">
-                          {dp.waitlistExpired} expired wait / {dp.walkInsRejectedFull} rejected full
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <section className="oi-section oi-ask">
+              <div className="oi-section-heading"><div><span className="oi-section-icon"><MessageSquareText aria-hidden /></span><div><p>Secondary read-only analysis</p><h2>Ask Operations Intelligence</h2></div></div></div>
+              <form onSubmit={ask}>
+                <label htmlFor="oi-question">Ask about the selected period and scope</label>
+                <textarea id="oi-question" value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={500} placeholder="Where is unserved demand concentrated?" disabled={result.assistant.status !== "READY"} />
+                <button className="btn-primary" disabled={asking || result.assistant.status !== "READY"}>{asking ? "Reviewing evidence…" : "Ask with verified evidence"}<ArrowRight aria-hidden /></button>
+              </form>
+              {askError && <div className="oi-error"><AlertTriangle aria-hidden />{askError}</div>}
+              {answer && <article className="oi-answer"><strong>Evidence-grounded answer</strong><p>{answer.answer}</p><span>{answer.evidenceMetricKeys.map((key) => snapshot.evidence[key]?.label).filter(Boolean).join(" · ")}</span>{answer.suggestedAction && answer.suggestedAction.type !== "NONE" && <button type="button" onClick={() => { if (answer.suggestedAction?.lineId) setSelectedLineId(answer.suggestedAction.lineId); if (answer.suggestedAction?.direction) setSelectedDirection(answer.suggestedAction.direction); }}>Apply suggested filter</button>}</article>}
+              {result.assistant.status !== "READY" && <div className="oi-assistant-unavailable"><BotOff aria-hidden /><span>{result.assistant.message}</span></div>}
             </section>
           </div>
 
-          {/* SECTION 5: SERVICE RELIABILITY & FLEET PERFORMANCE */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* RELIABILITY */}
-            <section className="p-5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-1">
-                Departure Reliability & Delays by Line
-              </h2>
-              <p className="text-xs text-[var(--text-muted)] mb-4">
-                Punctuality against 5-minute tolerance threshold from origin departure.
-              </p>
-
-              {data.reliability.overview.actualDepartureSamples === 0 ? (
-                <div className="p-6 text-center text-xs text-[var(--text-muted)] border border-dashed border-[var(--border)] rounded-lg">
-                  No origin departure samples recorded in this period.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-[var(--border)] text-[var(--text-muted)]">
-                        <th className="py-2">Line</th>
-                        <th className="py-2 text-right">On-Time Rate</th>
-                        <th className="py-2 text-right">Avg Delay</th>
-                        <th className="py-2 text-right">Max Delay</th>
-                        <th className="py-2 text-right">Samples</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[var(--border)]">
-                      {data.reliability.byLine.map((rel) => (
-                        <tr key={rel.lineId} className="hover:bg-[var(--bg-surface-hover)]">
-                          <td className="py-2 font-medium">{rel.lineName}</td>
-                          <td className="py-2 text-right font-semibold tabular-nums">
-                            {formatRate(rel.onTimeDepartureRate)}
-                          </td>
-                          <td className="py-2 text-right tabular-nums text-[var(--text-muted)]">
-                            {rel.averageDepartureDelayMinutes !== null ? `${rel.averageDepartureDelayMinutes}m` : "—"}
-                          </td>
-                          <td className="py-2 text-right tabular-nums text-[var(--text-muted)]">
-                            {rel.maxDepartureDelayMinutes !== null ? `${rel.maxDepartureDelayMinutes}m` : "—"}
-                          </td>
-                          <td className="py-2 text-right tabular-nums text-[var(--text-muted)] font-mono">
-                            {rel.actualDepartureSamples}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-
-            {/* FLEET PERFORMANCE */}
-            <section className="p-5 rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-sm">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-1">
-                Fleet Asset Utilization
-              </h2>
-              <p className="text-xs text-[var(--text-muted)] mb-4">
-                Operational volume and service hours recorded per shuttle bus.
-              </p>
-
-              {data.fleetPerformance.length === 0 ? (
-                <div className="p-6 text-center text-xs text-[var(--text-muted)] border border-dashed border-[var(--border)] rounded-lg">
-                  No bus records found.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-[var(--border)] text-[var(--text-muted)]">
-                        <th className="py-2">Plate Number</th>
-                        <th className="py-2">Status</th>
-                        <th className="py-2 text-right">Operated</th>
-                        <th className="py-2 text-right">Boarded</th>
-                        <th className="py-2 text-right">Util.</th>
-                        <th className="py-2 text-right">Service Hours</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[var(--border)]">
-                      {data.fleetPerformance.map((bus) => (
-                        <tr key={bus.busId} className="hover:bg-[var(--bg-surface-hover)]">
-                          <td className="py-2 font-mono font-semibold text-[var(--text-primary)]">
-                            {bus.plateNumber}
-                          </td>
-                          <td className="py-2">
-                            <span
-                              className={`badge text-[10px] ${
-                                bus.status === "ACTIVE"
-                                  ? "badge-success"
-                                  : bus.status === "MAINTENANCE"
-                                  ? "badge-warning"
-                                  : "badge-danger"
-                              }`}
-                            >
-                              {bus.status}
-                            </span>
-                          </td>
-                          <td className="py-2 text-right tabular-nums">{bus.operatedTrips}</td>
-                          <td className="py-2 text-right tabular-nums font-medium">{bus.boardedPassengers}</td>
-                          <td className="py-2 text-right tabular-nums">{formatRate(bus.reservedSeatSegmentUtilization)}</td>
-                          <td className="py-2 text-right tabular-nums text-[var(--text-muted)]">
-                            {bus.actualServiceHours !== null ? `${bus.actualServiceHours}h` : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          </div>
-
-          {/* DATA QUALITY & AUDIT DISCLOSURE */}
-          <footer className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-surface-muted)] text-xs text-[var(--text-muted)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span className="font-semibold text-[var(--text-primary)]">Data Quality & Exclusions: </span>
-              {data.dataQuality.excludedAdministrativeCleanupTrips > 0 ? (
-                <span>
-                  {data.dataQuality.excludedAdministrativeCleanupTrips} administrative prototype rollover records excluded from reliability denominators.
-                </span>
-              ) : (
-                <span>Zero administrative cleanup exclusions in selected range.</span>
-              )}
-            </div>
-            <div className="text-[11px] font-mono">
-              Completed Samples: {data.dataQuality.completedTripSamples} | Departure Samples: {data.dataQuality.actualDepartureSamples}
-            </div>
+          <footer className="oi-quality">
+            <div><Database aria-hidden /><span><strong>Data quality</strong>{snapshot.dataQuality.limitations.join(" · ")}</span></div>
+            <div><ShieldCheck aria-hidden /><span><strong>Authority boundary</strong>Metrics and severity are deterministic. Gemini cannot write operations or calculate authoritative KPIs.</span></div>
           </footer>
         </>
+      )}
+
+      {selectedEvidence && snapshot && (
+        <div className="oi-drawer-backdrop" role="presentation" onMouseDown={() => setEvidenceSignalId(null)}>
+          <aside className="oi-evidence-drawer" role="dialog" aria-modal="true" aria-labelledby="evidence-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button type="button" className="oi-drawer-close" onClick={() => setEvidenceSignalId(null)} aria-label="Close evidence"><X aria-hidden /></button>
+            <p className="eyebrow">Traceable evidence</p>
+            <h2 id="evidence-title">{selectedEvidence.headline}</h2>
+            <p>{selectedEvidence.observation}</p>
+            <div className="oi-evidence-metrics">{selectedEvidence.evidenceMetricKeys.map((key) => { const metric = snapshot.evidence[key]; return metric ? <article key={key}><span>{metric.label}</span><strong>{metricDisplay(metric)}</strong><small>Sample n={metric.sampleSize} · {key}</small></article> : null; })}</div>
+            <dl><div><dt>Confidence</dt><dd>{selectedEvidence.evidenceStrength}</dd></div><div><dt>Recommendation level</dt><dd>{selectedEvidence.recommendationLevel.replaceAll("_", " ")}</dd></div><div><dt>Period</dt><dd>{fromDate} → {toDate} MYT</dd></div></dl>
+            {selectedEvidence.scope.tripId && snapshot.tripEvidence.find((trip) => trip.tripId === selectedEvidence.scope.tripId) && <div className="oi-trip-evidence"><strong>Trip evidence</strong><span>{selectedEvidence.scope.tripId}</span><span>{snapshot.tripEvidence.find((trip) => trip.tripId === selectedEvidence.scope.tripId)?.status}</span></div>}
+            <button type="button" className="btn-primary" onClick={() => { applySignalScope(selectedEvidence); setEvidenceSignalId(null); }}>Open related analysis <ChevronRight aria-hidden /></button>
+          </aside>
+        </div>
       )}
     </div>
   );
 }
-

@@ -47,6 +47,12 @@ const rawServerEnvironmentSchema = z
       .default("false")
       .transform((val) => val === "true"),
     GOOGLE_MAPS_ROUTES_API_KEY: z.string().default(""),
+    GEMINI_OPERATIONS_ASSISTANT_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    GEMINI_API_KEY: z.string().default(""),
+    GEMINI_MODEL: z.string().trim().min(1).default("gemini-3.8-flash"),
   })
   .superRefine((environment, context) => {
     const secrets = [
@@ -135,6 +141,11 @@ export interface ServerEnvironment {
     readonly enabled: boolean;
     readonly apiKey: string;
   };
+  readonly geminiOperations: {
+    readonly enabled: boolean;
+    readonly apiKey: string;
+    readonly model: string;
+  };
 }
 
 export class ServerEnvironmentValidationError extends Error {
@@ -175,6 +186,11 @@ export function parseServerEnvironment(
     googleTrafficEta: Object.freeze({
       enabled: environment.GOOGLE_TRAFFIC_ETA_ENABLED,
       apiKey: environment.GOOGLE_MAPS_ROUTES_API_KEY,
+    }),
+    geminiOperations: Object.freeze({
+      enabled: environment.GEMINI_OPERATIONS_ASSISTANT_ENABLED,
+      apiKey: environment.GEMINI_API_KEY,
+      model: environment.GEMINI_MODEL,
     }),
   });
 }

@@ -34,6 +34,21 @@ describe("server environment validation", () => {
     assert.equal(environment.integrationTest.databaseUrl, undefined);
     assert.equal(environment.googleTrafficEta.enabled, false);
     assert.equal(environment.googleTrafficEta.apiKey, "");
+    assert.equal(environment.geminiOperations.enabled, false);
+    assert.equal(environment.geminiOperations.apiKey, "");
+    assert.equal(environment.geminiOperations.model, "gemini-3.8-flash");
+  });
+
+  it("keeps Gemini server-only, opt-in, and explicitly modelled", () => {
+    const environment = parseServerEnvironment({
+      ...validEnvironment,
+      GEMINI_OPERATIONS_ASSISTANT_ENABLED: "true",
+      GEMINI_API_KEY: "server-only-gemini-key",
+      GEMINI_MODEL: "gemini-3.8-flash",
+    });
+    assert.equal(environment.geminiOperations.enabled, true);
+    assert.equal(environment.geminiOperations.apiKey, "server-only-gemini-key");
+    assert.equal(environment.geminiOperations.model, "gemini-3.8-flash");
   });
 
   it("parses Google traffic ETA configuration when enabled", () => {

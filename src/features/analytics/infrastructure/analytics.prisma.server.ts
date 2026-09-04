@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Prisma, RouteDirection } from "@prisma/client";
+import { Prisma, RouteDirection, TripStatus } from "@prisma/client";
 
 import { prisma } from "@/shared/db/prisma.server";
 
@@ -120,6 +120,7 @@ export interface OperationsAnalyticsRawData {
     };
     tripStops: Array<{
       id: string;
+      stopId: string;
       position: number;
       stopCode: string;
       stopName: string;
@@ -132,6 +133,8 @@ export interface OperationsAnalyticsRawData {
     tripSegments: Array<{
       id: string;
       position: number;
+      reservedSeatSegmentsCount: number;
+      standingClaimsCount: number;
     }>;
     statusHistory: Array<{
       id: string;
@@ -142,28 +145,33 @@ export interface OperationsAnalyticsRawData {
     }>;
     bookings: Array<{
       id: string;
-      studentId: string;
       status: string;
       checkedInAt: Date | null;
       actualAlightedAt: Date | null;
+      boardingTripStop: { stopCode: string; stopName: string; position: number };
+      dropOffTripStop: { stopCode: string; stopName: string; position: number };
     }>;
     waitlistEntries: Array<{
       id: string;
-      studentId: string;
       status: string;
       promotedBookingId: string | null;
+      boardingTripStop: { stopCode: string; stopName: string; position: number };
+      dropOffTripStop: { stopCode: string; stopName: string; position: number };
     }>;
     walkInIntents: Array<{
       id: string;
-      studentId: string;
       status: string;
+      boardingTripStop: { stopCode: string; stopName: string; position: number };
+      dropOffTripStop: { stopCode: string; stopName: string; position: number };
     }>;
     walkInJourneys: Array<{
       id: string;
-      studentId: string;
       status: string;
       boardedAt: Date;
+      boardingTripStop: { stopCode: string; stopName: string; position: number };
+      dropOffTripStop: { stopCode: string; stopName: string; position: number };
     }>;
+    locationSamples: Array<{ recordedAt: Date }>;
     reservedSeatSegmentsCount: number;
   }>;
 }
@@ -173,6 +181,7 @@ export async function fetchOperationsAnalyticsRawData(
   to: Date,
   filterLineId?: string,
   filterDirection?: RouteDirection,
+  filterStatuses?: readonly TripStatus[],
 ): Promise<OperationsAnalyticsRawData> {
   const [lines, buses, tripsRaw] = await Promise.all([
     prisma.serviceLine.findMany({
@@ -207,6 +216,7 @@ export async function fetchOperationsAnalyticsRawData(
         ...(filterDirection
           ? { route: { direction: filterDirection } }
           : {}),
+        ...(filterStatuses?.length ? { status: { in: [...filterStatuses] } } : {}),
       },
       include: {
         route: {
@@ -231,6 +241,7 @@ export async function fetchOperationsAnalyticsRawData(
           orderBy: { position: "asc" },
           select: {
             id: true,
+            stopId: true,
             position: true,
             stopCode: true,
             stopName: true,
@@ -267,34 +278,59 @@ export async function fetchOperationsAnalyticsRawData(
         bookings: {
           select: {
             id: true,
-            studentId: true,
             status: true,
             checkedInAt: true,
             actualAlightedAt: true,
+            boardingTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
+            dropOffTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
           },
         },
         waitlistEntries: {
           select: {
             id: true,
-            studentId: true,
             status: true,
             promotedBookingId: true,
+            boardingTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
+            dropOffTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
           },
         },
         walkInIntents: {
           select: {
             id: true,
-            studentId: true,
             status: true,
+            boardingTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
+            dropOffTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
           },
         },
         walkInJourneys: {
           select: {
             id: true,
-            studentId: true,
             status: true,
             boardedAt: true,
+            boardingTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
+            dropOffTripStop: {
+              select: { stopCode: true, stopName: true, position: true },
+            },
           },
+        },
+        locationSamples: {
+          orderBy: { recordedAt: "desc" },
+          take: 1,
+          select: { recordedAt: true },
         },
       },
       orderBy: { departureTime: "asc" },
@@ -317,12 +353,18 @@ export async function fetchOperationsAnalyticsRawData(
     route: t.route,
     bus: t.bus,
     tripStops: t.tripStops,
-    tripSegments: t.tripSegments,
+    tripSegments: t.tripSegments.map((segment) => ({
+      id: segment.id,
+      position: segment.position,
+      reservedSeatSegmentsCount: segment._count.reservedSeatSegments,
+      standingClaimsCount: segment._count.standingClaims,
+    })),
     statusHistory: t.statusHistory,
     bookings: t.bookings,
     waitlistEntries: t.waitlistEntries,
     walkInIntents: t.walkInIntents,
     walkInJourneys: t.walkInJourneys,
+    locationSamples: t.locationSamples,
     reservedSeatSegmentsCount: t.tripSegments.reduce(
       (sum, seg) => sum + seg._count.reservedSeatSegments,
       0,
@@ -331,6 +373,3 @@ export async function fetchOperationsAnalyticsRawData(
 
   return { lines, buses, trips };
 }
-
-
-

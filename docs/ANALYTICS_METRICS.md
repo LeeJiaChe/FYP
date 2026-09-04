@@ -134,3 +134,18 @@ The dashboard evaluates deterministic, explainable business rules with minimum s
    * *Answer*: If a student enters the waitlist and is later promoted to a booking, their waitlist status becomes `PROMOTED` (not `EXPIRED`) and their booking is tracked as either boarded or no-show, preventing their request from being counted as both demand and unserved failure.
 4. **What is the distinction between OUTBOUND and INBOUND?**
    * *Answer*: `OUTBOUND` originates from the TAR UMT main campus heading towards external stops (From TAR UMT), whereas `INBOUND` originates from external stops returning to the TAR UMT campus (To TAR UMT).
+
+---
+
+## 5. Operations Intelligence Layer
+
+These formulas remain the sole authoritative KPI definitions. The Operations
+Intelligence snapshot adds a previous equal-duration comparison, MYT time
+buckets, OD/segment aggregates, Trip-derived fleet workload, sample/data-quality
+metadata, and deterministic signals. It does not alter the formulas above.
+
+Signal thresholds and sample guards are centralized in
+`analyticsIntelligencePolicy`. Gemini may explain verified signals but cannot
+calculate a metric, select severity, increase confidence, or execute an
+operation. See `docs/OPERATIONS_INTELLIGENCE.md` for the privacy, grounding,
+cache, function-call, failure-mode, and environment architecture.

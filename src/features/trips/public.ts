@@ -17,7 +17,9 @@ export {
   type ResolvedDriverOperation,
 } from "./domain/driver-operation";
 export {
+  evaluateAdjacentBusTransition,
   evaluateServiceBlockContinuity,
+  type BusTransitionTrip,
   type ServiceBlockContinuity,
 } from "./domain/service-block-continuity";
 export {
