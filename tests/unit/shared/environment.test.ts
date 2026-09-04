@@ -32,6 +32,19 @@ describe("server environment validation", () => {
     );
     assert.equal(environment.integrationTest.confirmed, false);
     assert.equal(environment.integrationTest.databaseUrl, undefined);
+    assert.equal(environment.googleTrafficEta.enabled, false);
+    assert.equal(environment.googleTrafficEta.apiKey, "");
+  });
+
+  it("parses Google traffic ETA configuration when enabled", () => {
+    const environment = parseServerEnvironment({
+      ...validEnvironment,
+      GOOGLE_TRAFFIC_ETA_ENABLED: "true",
+      GOOGLE_MAPS_ROUTES_API_KEY: "secret-routes-key",
+    });
+
+    assert.equal(environment.googleTrafficEta.enabled, true);
+    assert.equal(environment.googleTrafficEta.apiKey, "secret-routes-key");
   });
 
   it("fails clearly without leaking secret values", () => {

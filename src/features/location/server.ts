@@ -17,6 +17,7 @@ export {
   simulateLocationSchema,
 } from "./contracts/location.schemas";
 export { latestLocation } from "./application/location";
+export { assertCoordinate } from "./domain/location-policy";
 
 function trusted(candidate: string | null): void {
   if (!candidate) throw unauthenticated("Trusted service authentication failed");
