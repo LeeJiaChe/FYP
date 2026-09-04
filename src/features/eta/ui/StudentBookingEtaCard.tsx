@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Clock, Navigation, AlertCircle } from "lucide-react";
 
 import type { StudentBookingEta } from "../contracts/eta.schemas";
+import { etaSourceDisclosure, formatShuttleTime } from "./eta-display";
 import { GoogleMapsAttribution } from "./GoogleMapsAttribution";
 import { minutesUntil, useEtaDisplayClock } from "./useEtaDisplayClock";
 
@@ -120,10 +121,7 @@ export function StudentBookingEtaCard({
         {eta.estimatedArrival && (
           <span className="text-slate-500 dark:text-slate-400 text-xs">
             (expected{" "}
-            {new Date(eta.estimatedArrival).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {formatShuttleTime(eta.estimatedArrival)}
             )
           </span>
         )}
@@ -131,13 +129,19 @@ export function StudentBookingEtaCard({
 
       <div className="pt-1 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
         <div>
-          {eta.locationSource === "SIMULATED" && (
-            <span className="text-amber-700 dark:text-amber-300 font-medium">
-              Based on simulated shuttle location
-            </span>
-          )}
-          {eta.locationSource === "GPS" && <span>Live GPS telemetry</span>}
-          {!eta.locationSource && <span>Timetable estimate</span>}
+          <span
+            className={
+              isTrafficAware && eta.locationSource === "SIMULATED"
+                ? "text-amber-700 dark:text-amber-300 font-medium"
+                : undefined
+            }
+          >
+            {etaSourceDisclosure(
+              eta.source,
+              eta.locationSource,
+              eta.fallbackReason,
+            )}
+          </span>
         </div>
 
         <GoogleMapsAttribution source={eta.source} />

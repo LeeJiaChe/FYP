@@ -141,7 +141,9 @@ UI attribution renders the exact text **Google Maps**, with `translate="no"`, no
 weight and spacing, a permitted color, at least 12px text, and placement inside
 the Google-derived ETA container. Schedule fallbacks are not attributed to
 Google. The separate **Based on simulated shuttle location** disclosure identifies
-the telemetry source and is not combined with the routing attribution.
+the telemetry source only when a `TRAFFIC_AWARE` estimate actually used that
+sample; schedule fallbacks instead identify themselves as schedule estimates and
+never claim to be based on simulated telemetry.
 
 ## Terms and Privacy pre-deployment gate
 

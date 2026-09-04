@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { Activity, Clock, ShieldAlert } from "lucide-react";
 
 import type { TripEta } from "../contracts/eta.schemas";
+import {
+  adminStopPresentation,
+  etaSourceDisclosure,
+  etaSourceLabel,
+  formatShuttleTime,
+  terminalTripMessage,
+} from "./eta-display";
 import { GoogleMapsAttribution } from "./GoogleMapsAttribution";
 import { minutesUntil, useEtaDisplayClock } from "./useEtaDisplayClock";
 
@@ -75,31 +82,25 @@ export function AdminTripEtaPanel({
     );
   }
 
-  if (eta.tripStatus === "ARRIVED" || eta.tripStatus === "CANCELLED") {
+  const terminalMessage = terminalTripMessage(eta.tripStatus);
+  if (terminalMessage) {
     return (
       <div className="admin-eta-panel rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-800 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
-        {eta.tripStatus === "ARRIVED" ? "Trip completed" : "Trip cancelled"}
+        {terminalMessage}
       </div>
     );
   }
 
   const isTrafficAware = eta.source === "TRAFFIC_AWARE";
-  const nextStop = eta.stopEstimates[0] ?? null;
-  const terminalStop =
-    eta.stopEstimates.length > 1
-      ? eta.stopEstimates[eta.stopEstimates.length - 1]
-      : null;
+  const { nextStop, finalStop, noRemainingStopsMessage } =
+    adminStopPresentation(eta.stopEstimates, eta.tripStatus);
   const nextStopMinutes = nextStop
     ? minutesUntil(nextStop.estimatedArrival, displayNowMs)
     : null;
-  const terminalStopMinutes = terminalStop
-    ? minutesUntil(terminalStop.estimatedArrival, displayNowMs)
+  const finalStopMinutes = finalStop
+    ? minutesUntil(finalStop.estimatedArrival, displayNowMs)
     : null;
-  const sourceLabel = isTrafficAware
-    ? "Traffic-Aware"
-    : eta.tripStatus === "NOT_STARTED"
-      ? "Schedule estimate"
-      : `Schedule (${eta.fallbackReason ?? "Fallback"})`;
+  const sourceLabel = etaSourceLabel(eta.source, eta.fallbackReason);
   const displayedLocationAgeMs = eta.locationRecordedAt
     ? Math.max(0, displayNowMs - Date.parse(eta.locationRecordedAt))
     : eta.locationAgeMs;
@@ -128,39 +129,46 @@ export function AdminTripEtaPanel({
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-        <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
-          <span className="text-slate-500 dark:text-slate-400 block text-[11px]">
-            Next Stop ({nextStop?.stopCode ?? "N/A"})
-          </span>
-          <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
-            {nextStopMinutes !== null ? `~${nextStopMinutes} min` : "At terminal"}
-          </strong>
-          {nextStop?.estimatedArrival && (
-            <small className="block text-[10px] text-slate-500">
-              {new Date(nextStop.estimatedArrival).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </small>
-          )}
-        </div>
+        {noRemainingStopsMessage ? (
+          <div className="col-span-2 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
+            <span className="text-slate-500 dark:text-slate-400 block text-[11px]">
+              Route progress
+            </span>
+            <strong className="text-sm font-bold text-slate-900 dark:text-white">
+              {noRemainingStopsMessage}
+            </strong>
+          </div>
+        ) : (
+          <>
+            <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
+              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">
+                Next Stop ({nextStop?.stopCode ?? "N/A"})
+              </span>
+              <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
+                {nextStopMinutes !== null ? `~${nextStopMinutes} min` : "No ETA"}
+              </strong>
+              {nextStop?.estimatedArrival && (
+                <small className="block text-[10px] text-slate-500">
+                  {formatShuttleTime(nextStop.estimatedArrival)}
+                </small>
+              )}
+            </div>
 
-        <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
-          <span className="text-slate-500 dark:text-slate-400 block text-[11px]">
-            Terminal ({terminalStop?.stopCode ?? "Final"})
-          </span>
-          <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
-            {terminalStopMinutes !== null ? `~${terminalStopMinutes} min` : "Arrived"}
-          </strong>
-          {terminalStop?.estimatedArrival && (
-            <small className="block text-[10px] text-slate-500">
-              {new Date(terminalStop.estimatedArrival).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </small>
-          )}
-        </div>
+            <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
+              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">
+                Final Stop ({finalStop?.stopCode ?? "Final"})
+              </span>
+              <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
+                {finalStopMinutes !== null ? `~${finalStopMinutes} min` : "No ETA"}
+              </strong>
+              {finalStop?.estimatedArrival && (
+                <small className="block text-[10px] text-slate-500">
+                  {formatShuttleTime(finalStop.estimatedArrival)}
+                </small>
+              )}
+            </div>
+          </>
+        )}
 
         <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
           <span className="text-slate-500 dark:text-slate-400 block text-[11px]">
@@ -211,16 +219,25 @@ export function AdminTripEtaPanel({
 
       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
         <div className="flex items-center gap-1.5">
-          {eta.locationSource === "SIMULATED" && (
-            <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
-              <ShieldAlert className="size-3" /> Based on simulated shuttle location
-            </span>
+          {isTrafficAware && eta.locationSource === "SIMULATED" && (
+            <ShieldAlert className="size-3 text-amber-600 dark:text-amber-400" />
           )}
-          {eta.locationSource === "GPS" && <span>Live GPS telemetry</span>}
-          {!eta.locationSource && <span>No live telemetry available</span>}
+          <span
+            className={
+              isTrafficAware && eta.locationSource === "SIMULATED"
+                ? "text-amber-600 dark:text-amber-400 font-medium"
+                : undefined
+            }
+          >
+            {etaSourceDisclosure(
+              eta.source,
+              eta.locationSource,
+              eta.fallbackReason,
+            )}
+          </span>
         </div>
 
-        {displayedLocationAgeMs !== null && (
+        {isTrafficAware && displayedLocationAgeMs !== null && (
           <span className="tabular-nums">
             Telemetry age: {Math.round(displayedLocationAgeMs / 1_000)}s
           </span>
