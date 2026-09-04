@@ -609,6 +609,15 @@
 .row-actions { display: flex; justify-content: flex-end; gap: .35rem; }
 .row-actions .btn-ghost, .row-actions .btn-secondary { min-height: 36px; padding: .45rem .65rem; font-size: .7rem; }
 .row-actions .danger { color: var(--danger); }
+.buses-management-table { min-width: 68rem; }
+.bus-assignment-stack { display: grid; min-width: 13rem; gap: .55rem; }
+.bus-assignment { display: grid; gap: .08rem; border-left: 2px solid var(--border-strong); padding-left: .55rem; }
+.bus-assignment > span { color: var(--accent); font-size: .6rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.bus-assignment > strong { color: var(--text); font-size: .72rem; font-weight: 650; }
+.bus-assignment > small, .bus-assignment-empty { color: var(--text-muted); font-size: .65rem; line-height: 1.35; }
+.bus-assignment-conflict { display: grid; gap: .15rem; border-left: 2px solid var(--danger); padding-left: .55rem; }
+.bus-assignment-conflict strong { color: var(--danger); font-size: .72rem; }
+.bus-assignment-conflict small { color: var(--text-muted); font-size: .65rem; }
 .route-workspace { display: grid; gap: 1rem; }
 .route-workspace > nav { display: grid; align-content: start; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .route-workspace > nav button { display: flex; min-height: 3.6rem; flex-direction: column; justify-content: center; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); padding: .7rem .85rem; text-align: left; cursor: pointer; }

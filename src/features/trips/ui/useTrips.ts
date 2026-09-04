@@ -15,7 +15,9 @@ export function useTrips(routeId?: string, driverId?: string) {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        setTrips(data.trips || []);
+        const nextTrips: TripListItem[] = data.trips || [];
+        setTrips(nextTrips);
+        return nextTrips;
       } else {
         const data = await res.json();
         toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Failed to fetch trips");

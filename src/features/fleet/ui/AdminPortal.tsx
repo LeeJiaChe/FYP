@@ -8,6 +8,10 @@ import ConfirmModal from "@/components/ConfirmModal";
 import Modal from "@/components/Modal";
 import { DriversTab, useCurrentUser } from "@/features/identity/ui";
 import { TripsTab, useTrips } from "@/features/trips/ui";
+import {
+  resolveAdminMonitoredTripId,
+  selectAdminActiveTrips,
+} from "@/features/trips/public";
 import { LiveMonitoringTab } from "@/features/location/ui";
 import BusesTab from "@/features/fleet/ui/BusesTab";
 import RoutesTab from "@/features/fleet/ui/RoutesTab";
@@ -55,8 +59,11 @@ export default function AdminPortal({
 
   // Realtime Live Seat Monitoring state
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
-  const activeTripId = selectedTripId ?? trips[0]?.id ?? null;
+  const activeTrips = selectAdminActiveTrips(trips);
+  const activeTripId = resolveAdminMonitoredTripId(trips, selectedTripId);
   const [liveTripDetails, setLiveTripDetails] = useState<any>(null);
+  const displayedLiveTripDetails =
+    liveTripDetails?.id === activeTripId ? liveTripDetails : null;
 
   // CRUD Data State
   const [buses, setBuses] = useState<any[]>([]);
@@ -177,7 +184,6 @@ export default function AdminPortal({
     };
   }, [adminNavOpen]);
 
-
   useEffect(() => {
     if (!activeTripId) return;
 
@@ -201,7 +207,17 @@ export default function AdminPortal({
       socket = io(socketUrl, { auth: { token: subscription.token } });
       socket.on("connect", () => fetchTripDetails(activeTripId));
       socket.on("occupancy.changed", () => fetchTripDetails(activeTripId));
-      socket.on("trip.changed", () => fetchTripDetails(activeTripId));
+      socket.on("trip.changed", () => {
+        void Promise.all([
+          fetchTripDetails(activeTripId),
+          fetchTrips(),
+        ]).then(([, refreshedTrips]) => {
+          if (!refreshedTrips || disposed) return;
+          setSelectedTripId((current) =>
+            resolveAdminMonitoredTripId(refreshedTrips, current),
+          );
+        });
+      });
       socket.on("location.changed", () => fetchTripDetails(activeTripId));
     });
 
@@ -210,7 +226,19 @@ export default function AdminPortal({
       window.clearTimeout(initialFetch);
       socket?.disconnect();
     };
-  }, [activeTripId]);
+  }, [activeTripId, fetchTrips]);
+
+  async function refreshTripLifecycle(tripId: string) {
+    const [, refreshedTrips] = await Promise.all([
+      fetchTripDetails(tripId),
+      fetchTrips(),
+    ]);
+    if (refreshedTrips) {
+      setSelectedTripId((current) =>
+        resolveAdminMonitoredTripId(refreshedTrips, current),
+      );
+    }
+  }
 
   async function fetchTripDetails(tripId: string) {
     try {
@@ -671,9 +699,6 @@ export default function AdminPortal({
   const pendingAppeals = appeals.filter(
     (appeal) => appeal.status === "PENDING",
   ).length;
-  const activeTrips = trips.filter(
-    (trip) => trip.status === "BOARDING" || trip.status === "DEPARTED",
-  );
   const upcomingTrips = trips.filter((trip) => trip.status === "NOT_STARTED");
   const attentionBuses = buses.filter((bus) => bus.status !== "ACTIVE");
   const adminNavigation: Array<{
@@ -904,17 +929,22 @@ export default function AdminPortal({
 
           {activeTab === "live" && (
             <LiveMonitoringTab
-              trips={trips}
+              trips={activeTrips}
               selectedTripId={activeTripId}
               setSelectedTripId={setSelectedTripId}
-              liveTripDetails={liveTripDetails}
-              onRefresh={() => activeTripId && fetchTripDetails(activeTripId)}
+              liveTripDetails={displayedLiveTripDetails}
+              onRefresh={() => {
+                if (activeTripId) {
+                  void refreshTripLifecycle(activeTripId);
+                }
+              }}
             />
           )}
 
           {activeTab === "buses" && (
             <BusesTab
               buses={buses}
+              trips={trips}
               onOpenModal={() => {
                 setEditingBusId(null);
                 setNewBus({

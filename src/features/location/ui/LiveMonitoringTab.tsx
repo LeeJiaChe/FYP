@@ -7,7 +7,7 @@ import { AdminTripEtaPanel } from "@/features/eta/ui";
 interface LiveMonitoringTabProps {
   trips: any[];
   selectedTripId: string | null;
-  setSelectedTripId: (id: string) => void;
+  setSelectedTripId: (id: string | null) => void;
   liveTripDetails: any;
   onRefresh: () => void;
 }
@@ -23,7 +23,13 @@ export default function LiveMonitoringTab({
     <div className="live-operations animate-fade-in">
       <header className="live-operations-header">
         <div><p className="eyebrow">Live operations</p><h1 className="section-title">Current fleet activity</h1><p className="section-subtitle">Operational Trip state, current segment occupancy and persisted telemetry.</p></div>
-        <button onClick={onRefresh} className="btn-ghost"><RefreshCw aria-hidden />Refresh</button>
+        <button
+          onClick={onRefresh}
+          className="btn-ghost"
+          disabled={!selectedTripId}
+        >
+          <RefreshCw aria-hidden />Refresh
+        </button>
       </header>
       <div className="live-trip-selector">
         <Activity aria-hidden />
@@ -34,8 +40,9 @@ export default function LiveMonitoringTab({
             <select
               id="live-trip-select"
               value={selectedTripId || ""}
-              onChange={(e) => setSelectedTripId(e.target.value)}
+              onChange={(e) => setSelectedTripId(e.target.value || null)}
               className="input-field"
+              disabled={trips.length === 0}
             >
               {trips.length === 0 ? (
                 <option value="">No active trips</option>
@@ -126,7 +133,11 @@ export default function LiveMonitoringTab({
       ) : (
         <div className="live-operations-empty">
           <Activity aria-hidden />
-          <strong>Select a Trip to load live occupancy</strong>
+          <strong>
+            {trips.length === 0
+              ? "No active shuttle operations right now."
+              : "Loading active Trip occupancy…"}
+          </strong>
         </div>
       )}
     </div>

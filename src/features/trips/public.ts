@@ -20,3 +20,8 @@ export {
   evaluateServiceBlockContinuity,
   type ServiceBlockContinuity,
 } from "./domain/service-block-continuity";
+export {
+  resolveAdminMonitoredTripId,
+  selectAdminActiveTrips,
+  type AdminLiveTripCandidate,
+} from "./domain/admin-live-operation";
