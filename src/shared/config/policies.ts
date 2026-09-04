@@ -10,7 +10,6 @@ export interface ProductPolicy {
   readonly bookingRestrictionBelowCredit: number;
   readonly gpsSimulatorIntervalMs: number;
   readonly locationRetentionMs: number;
-  readonly trafficEtaCacheMs: number;
   readonly trafficEtaFailureCacheMs: number;
   readonly trafficEtaTimeoutMs: number;
   readonly trafficEtaMaxLocationAgeMs: number;
@@ -36,9 +35,6 @@ export function createProductPolicy(
   }
   if (policy.locationRetentionMs === 0) {
     throw new RangeError("locationRetentionMs must be greater than zero");
-  }
-  if (policy.trafficEtaCacheMs === 0) {
-    throw new RangeError("trafficEtaCacheMs must be greater than zero");
   }
   if (policy.trafficEtaFailureCacheMs === 0) {
     throw new RangeError("trafficEtaFailureCacheMs must be greater than zero");

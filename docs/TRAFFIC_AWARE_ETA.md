@@ -1,110 +1,169 @@
 # Traffic-Aware Shuttle ETA Integration
 
-## 1. Overview and Operational Purpose
+## Purpose and request contract
 
-The **Traffic-Aware Shuttle ETA Integration** connects the TAR UMT Campus Shuttle Management System with the **Google Maps Platform Routes API (`Compute Routes` v2)** to deliver real-time, traffic-aware arrival estimates for operational shuttle trips.
+This optional integration uses Google Maps Platform Routes API Compute Routes v2
+for operational shuttle arrival estimates. It does not change the authoritative
+Trip lifecycle, stop order, timetable, or telemetry model.
 
-Rather than decorative map polylines, this integration answers critical operational questions:
-- **Student ("My Journey")**: *"When will the shuttle arrive at MY specific boarding stop?"* (and once checked in, *"When will I reach my drop-off destination?"*).
-- **Admin ("Live Fleet Operations")**: *"When will this active shuttle reach its next stop and terminal stop, how does current road traffic affect travel duration, and how does that compare against timetable schedules?"*
+- Endpoint: `POST https://routes.googleapis.com/directions/v2:computeRoutes`
+- Travel mode: `DRIVE`
+- Routing preference: `TRAFFIC_AWARE`
+- Waypoint order optimization: disabled; the TripStop snapshot order is authoritative
+- Requested fields: route and leg `duration`, `staticDuration`, and `distanceMeters`
+- Maximum prototype route size: five stops. This means at most three intermediate
+  waypoints from the current bus position to the final remaining stop. Google
+  currently permits up to 25 intermediate waypoints per Compute Routes request.
 
----
+Google documents `TRAFFIC_AWARE` as considering current traffic conditions with
+latency-reduction optimizations. For this preference:
 
-## 2. API Contract & Google Maps Platform Requirements
+- `duration` is the ETA considering current/real-time traffic information.
+- `staticDuration` is the ETA considering historical traffic information without
+  current live traffic conditions.
 
-- **Official API Endpoint**:
-  `POST https://routes.googleapis.com/directions/v2:computeRoutes`
-- **Travel Mode**: `DRIVE`
-- **Routing Preference**: `TRAFFIC_AWARE` (calculates durations factoring in current road traffic conditions, congestion, and delays).
-- **Waypoint Optimization**: `optimizeWaypointOrder: false` (strictly forbidden; the campus shuttle route topology and stop snapshot sequence is authoritative).
-- **Minimal Field Mask (`X-Goog-FieldMask`)**:
-  `routes.duration,routes.staticDuration,routes.distanceMeters,routes.legs.duration,routes.legs.staticDuration,routes.legs.distanceMeters`
-- **Google Attribution Requirement**:
-  Per Google Maps Platform Terms of Service, when displaying content from Routes API without a Google Map, attribution to Google is required. The UI explicitly renders "Powered by Google Routes" / "Google Routes" alongside traffic-aware estimates.
+The internal `trafficImpactMinutes` field is therefore:
 
----
+```text
+max(0, round((duration - staticDuration) / 60))
+```
 
-## 3. Waypoint Cost Guard & Topology Audit
+It is displayed as **Current Traffic Impact — vs historical traffic baseline**.
+It is not an empty-road or zero-traffic measurement and does not prove exact
+congestion-only causality.
 
-Before implementation, an audit of all active routes was conducted:
-- **Wangsa Maju Inbound/Outbound**: 5 stops
-- **Teratai Residency Inbound/Outbound**: 5 stops
-- **Jalan Genting Klang Inbound/Outbound**: 4 stops
-- **Melati Utama Inbound/Outbound**: 5 stops
-- **PV10/PV12/PV13 Corridor Inbound/Outbound**: 5 stops
+## Pricing classification and cost controls
 
-**Finding**: The maximum stop count across all routes in the system is **5 stops**.
-In a Compute Routes request from current shuttle location to terminal, intermediate stops number at most 3 stops (well below Google's 25-intermediate-waypoint limits and cost thresholds). Waypoints follow authoritative remaining stops in order without truncation or reordering.
+`TRAFFIC_AWARE` currently triggers the **Routes: Compute Routes Pro** SKU. The
+route's low waypoint count avoids the separate 11–25 intermediate-waypoint Pro
+trigger, but it does not lower this request to another SKU because
+`TRAFFIC_AWARE` is independently a Pro trigger.
 
----
+**Current at time of implementation — verify Google pricing before deployment.**
+On 2026-09-04, Google's global pricing list showed a monthly free usage cap of
+5,000 billable events for Routes: Compute Routes Pro and USD $10 per 1,000 events
+in the first paid volume tier. Google pricing, caps, discounts, and SKU rules can
+change. These figures are documentation only and are not hard-coded into product
+logic or UI.
 
-## 4. Architectural Boundaries & Safe-by-Default Operation
+Before enabling the integration, configure and review:
 
-### 4.1 Server-Side Key Security
-- `GOOGLE_MAPS_ROUTES_API_KEY`: Server-only secret. It is **never** prefixed with `NEXT_PUBLIC_*` and is never sent to the browser or leaked in API responses or error logs.
-- `GOOGLE_TRAFFIC_ETA_ENABLED`: Defaults to `"false"` in `.env.example`. When disabled, the application builds, starts, and runs normally, falling back cleanly to schedule estimates without making external network calls.
+- a Google Cloud Billing budget and alerts;
+- suitable Routes API quota limits;
+- API usage and billing monitoring.
 
-### 4.2 In-Memory Caching & Throttling (Zero DB Migration)
-- **Database Safety**: No database tables or columns were created. Google responses are ephemeral and must not pollute the relational schema.
-- **Cache TTL (`trafficEtaCacheMs = 45,000 ms`)**: Successful trip ETAs are cached in server memory for 45 seconds. Repeated requests within 45 seconds return the cached estimate with zero external API calls.
-- **Failure Throttle Cache (`trafficEtaFailureCacheMs = 15,000 ms`)**: If Google Routes API fails (HTTP 4xx/5xx, timeout, or network glitch), the failure reason is cached for 15 seconds. Repeated calls during this window immediately return the schedule estimate fallback to avoid hammering Google or consuming quota.
-- **In-Flight Request Deduplication**: Concurrent requests for the same `tripId` share a single in-flight promise, preventing thundering-herd API spikes.
-- **Timeout (`trafficEtaTimeoutMs = 3,000 ms`)**: An `AbortController` enforces a 3-second hard timeout on external Google requests.
-- **Separation from GPS Simulator**: The background GPS simulator loop (`gpsSimulatorIntervalMs = 5000 ms`) remains completely independent and **never** calls Google Routes API. ETA is queried strictly on-demand by HTTP consumers.
+Google Cloud account settings are not changed by this repository. Quota and
+budget controls are the ultimate cost guard.
 
----
+## Caching compliance and request frequency
 
-## 5. Domain Metrics & Mathematical Formulations
+Successful Google route results are not cached after a request completes. No
+Google-derived duration, distance, ETA, route, leg, or response body is persisted
+or stored in process memory, Redis, PostgreSQL/Supabase, files, browser storage,
+or `localStorage` for reuse across requests.
 
-### 5.1 Traffic Impact Minutes
-Exposes the road traffic penalty compared to static free-flow traffic:
-$$\text{trafficImpactMinutes} = \max\left(0, \text{round}\left(\frac{\text{trafficDurationSeconds} - \text{staticDurationSeconds}}{60}\right)\right)$$
-*Rule*: Never labeled "schedule delay"; this metric measures current traffic conditions.
+The server retains only:
 
-### 5.2 Schedule Timetable Variance
-Measures performance relative to the published timetable:
-$$\text{scheduleVarianceMinutes} = \text{round}\left(\frac{\text{estimatedArrivalTimestamp} - \text{TripStop.plannedArrivalTimestamp}}{60,000}\right)$$
-- **Positive ($> 0$)**: Running later than timetable schedule.
-- **Negative ($< 0$)**: Running ahead of timetable schedule.
-- **Zero ($= 0$)**: Exactly on timetable schedule.
+- an active Promise while an identical Trip request is in flight, so concurrent
+  callers can await the same provider request; and
+- short-lived locally generated failure metadata (`API_TIMEOUT`, `API_ERROR`, or
+  `NO_ROUTE`, plus expiry) for retry throttling. It contains no Google response
+  Content.
 
----
+Student and Admin ETA surfaces both refresh from the server every **60 seconds**.
+Between server refreshes, a one-second client display timer derives minutes away
+from `estimatedArrival - current client time`; the timer does not call the ETA
+endpoint. Telemetry age similarly advances locally from `locationRecordedAt`.
+The five-second GPS simulator never calls Google.
 
-## 6. Telemetry Freshness & Fallback Modes
+At a 60-second interval, one continuously viewed active Trip surface normally
+makes about 60 Compute Routes requests per hour before coincident in-flight
+coalescing. If Student and Admin view the same Trip with perfectly non-overlapping
+timing, they can approach 120 requests per hour per server process. In-flight
+coalescing only reduces actually overlapping requests.
 
-When Google Routes API or live telemetry is unavailable, the system never returns 500; it falls back seamlessly to `SCHEDULE_ESTIMATE` with a typed `fallbackReason`:
-- `DISABLED`: Integration disabled via `GOOGLE_TRAFFIC_ETA_ENABLED="false"`.
-- `NO_API_KEY`: Key missing or empty while enabled.
-- `NO_LOCATION`: No `TripLocationSample` recorded for this active trip.
-- `STALE_LOCATION`: Latest location sample is older than `trafficEtaMaxLocationAgeMs` (60 seconds).
-- `API_TIMEOUT`: External Google API call exceeded 3,000 ms.
-- `API_ERROR`: Google returned HTTP error or network failure.
-- `NO_ROUTE`: Google returned 0 routes.
+The normal cost-protection model is:
 
-### Schedule Fallback Calculation
-$$\text{estimatedArrival} = \text{TripStop.plannedArrival} + (\text{Trip.delayMinutes} \times 60,000)$$
+- `GOOGLE_TRAFFIC_ETA_ENABLED=false` by default;
+- a server-only API key;
+- 60-second client request intervals;
+- in-flight request coalescing;
+- failure-metadata retry throttling; and
+- Google Cloud quotas, budget alerts, and usage monitoring.
 
----
+Normal teammate development, CI, and unit tests make zero paid Google calls;
+unit tests use fake providers.
 
-## 7. User Journeys & Endpoints
+## Runtime validation and fallback behavior
 
-### 7.1 Student Journey (`GET /api/bookings/:id/eta`)
-- Validates student ownership (`booking.studentId === actor.userId`); rejects unauthorized access with 404.
-- Target stop selection:
-  - **Before Check-in**: Resolves `booking.boardingTripStopId`.
-  - **After Check-in (`checkedInAt`)**: Automatically advances target to `booking.dropOffTripStopId`.
-- If the target stop has already departed, returns `isPassed: true` and `minutesAway: null` rather than a misleading distance estimate.
-- Renders `StudentBookingEtaCard` in Student Home and My Journeys tabs.
+Google JSON is treated as untrusted. A traffic-aware result is returned only when:
 
-### 7.2 Admin Fleet Operations (`GET /api/trips/:id/eta`)
-- Restricted to `ADMIN` (and assigned `DRIVER`); students receive 403 Forbidden.
-- Returns comprehensive multi-stop estimates: Next Stop ETA, Terminal ETA, Traffic Impact (+X min), Schedule Variance (+X min / ahead), location freshness, and simulated telemetry disclosure.
-- Renders `AdminTripEtaPanel` in Live Fleet Operations monitoring tab.
+- `routes` is an array with a first route;
+- all requested route and leg duration fields parse as non-negative finite values;
+- all requested distance fields are finite non-negative integers;
+- `legs` is an array; and
+- the leg count exactly equals `remainingStops.length`.
 
----
+Missing `staticDuration` is invalid rather than being replaced by `duration`.
+Missing distance is invalid rather than being replaced by zero. The domain ETA
+calculator independently rejects missing, extra, or invalid legs.
 
-## 8. Academic Honesty & Telemetry Disclosure
+Before a provider call, the latest origin and every remaining TripStop coordinate
+must be finite and within latitude `[-90, 90]` and longitude `[-180, 180]`.
+Invalid local coordinates produce `INVALID_ROUTE_DATA` with zero provider calls.
 
-Because this prototype operates using simulated GPS coordinates along TAR UMT bus corridors, the UI explicitly discloses:
-- **"Based on simulated shuttle location"** whenever `locationSource === "SIMULATED"`.
-- The system never claims that TAR UMT has deployed physical GPS hardware trackers or provides fake live hardware guarantees.
+Fallback reasons are:
+
+- `DISABLED`: optional integration disabled.
+- `NO_API_KEY`: enabled without a server key.
+- `NO_LOCATION`: no current telemetry.
+- `STALE_LOCATION`: location is older than 60 seconds at computation time.
+- `INVALID_ROUTE_DATA`: invalid local origin or TripStop coordinates.
+- `API_TIMEOUT`: the three-second request deadline elapsed.
+- `API_ERROR`: HTTP, network, invalid JSON, malformed metrics, or leg mismatch.
+- `NO_ROUTE`: Google returned a valid empty `routes` array.
+
+All fallbacks use timetable plus `Trip.delayMinutes`. A provider response uses a
+fresh response-time clock for `generatedAt`, arrival calculations, and telemetry
+age. Every settled request is followed by a fresh Trip/location read on the next
+request, so terminal status, stop progression, and stale telemetry cannot be
+bypassed by a completed-result cache.
+
+`NOT_STARTED` Trips show **Schedule estimate** and do not call Google. `ARRIVED`
+and `CANCELLED` Trips return no stop estimates and are rendered as **Trip
+completed** or **Trip cancelled**, not as a schedule fallback.
+
+## Attribution
+
+Only `TRAFFIC_AWARE` content displays Google attribution. The compact ETA cards
+use Google's permitted text method rather than an altered logo asset. The reusable
+UI attribution renders the exact text **Google Maps**, with `translate="no"`, normal
+weight and spacing, a permitted color, at least 12px text, and placement inside
+the Google-derived ETA container. Schedule fallbacks are not attributed to
+Google. The separate **Based on simulated shuttle location** disclosure identifies
+the telemetry source and is not combined with the routing attribution.
+
+## Terms and Privacy pre-deployment gate
+
+The repository currently has no publicly accessible application Terms of Use or
+Privacy Policy. Do not treat this prototype as meeting that deployment
+requirement, and do not invent legal text. Before any deployed production use of
+Routes API, the operator must publish suitable Terms and Privacy pages that meet
+the then-current Google Maps Platform requirements, including the required
+Google references, and obtain appropriate legal review. This is a pre-deployment
+checklist item, not legal advice. Keep `GOOGLE_TRAFFIC_ETA_ENABLED=false` in
+production until it is resolved.
+
+## Official Google documentation reviewed (2026-09-04)
+
+- [Method: computeRoutes](https://developers.google.com/maps/documentation/routes/reference/rest/v2/TopLevel/computeRoutes)
+- [Set the level of traffic data](https://developers.google.com/maps/documentation/routes/config_trade_offs)
+- [Routes API Usage and Billing](https://developers.google.com/maps/documentation/routes/usage-and-billing)
+- [Google Maps Platform API usage details](https://developers.google.com/maps/billing-and-pricing/sku-details)
+- [Google Maps Platform core services pricing list](https://developers.google.com/maps/billing-and-pricing/pricing)
+- [Policies and attributions for Routes API](https://developers.google.com/maps/documentation/routes/policies)
+- [Google Maps Platform Terms of Service](https://cloud.google.com/maps-platform/terms)
+- [Google Maps Platform Service Specific Terms](https://cloud.google.com/maps-platform/terms/maps-service-terms)
+
+Pricing and policy documents must be rechecked before deployment because Google
+can update them.

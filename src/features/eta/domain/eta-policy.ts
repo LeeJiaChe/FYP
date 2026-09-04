@@ -1,4 +1,3 @@
-export const DEFAULT_TRAFFIC_ETA_CACHE_MS = 45_000;
 export const DEFAULT_TRAFFIC_ETA_FAILURE_CACHE_MS = 15_000;
 export const DEFAULT_TRAFFIC_ETA_TIMEOUT_MS = 3_000;
 export const DEFAULT_TRAFFIC_ETA_MAX_LOCATION_AGE_MS = 60_000;
@@ -60,6 +59,14 @@ export function calculateTrafficImpactMinutes(
   trafficDurationSeconds: number,
   staticDurationSeconds: number,
 ): number {
+  if (
+    !Number.isFinite(trafficDurationSeconds) ||
+    trafficDurationSeconds < 0 ||
+    !Number.isFinite(staticDurationSeconds) ||
+    staticDurationSeconds < 0
+  ) {
+    throw new RangeError("Route durations must be finite and non-negative");
+  }
   const diffSeconds = trafficDurationSeconds - staticDurationSeconds;
   return Math.max(0, Math.round(diffSeconds / 60));
 }
@@ -134,19 +141,42 @@ export function calculateCumulativeLegEtas({
   remainingStops: readonly OperationalTripStopSnapshot[];
   legs: readonly RouteLegSnapshot[];
 }): DerivedStopEta[] {
+  if (legs.length !== remainingStops.length) {
+    throw new RangeError(
+      `Expected ${remainingStops.length} route legs, received ${legs.length}`,
+    );
+  }
+
+  for (const leg of legs) {
+    if (
+      !Number.isFinite(leg.durationSeconds) ||
+      leg.durationSeconds < 0 ||
+      !Number.isFinite(leg.staticDurationSeconds) ||
+      leg.staticDurationSeconds < 0 ||
+      !Number.isFinite(leg.distanceMeters) ||
+      leg.distanceMeters < 0
+    ) {
+      throw new RangeError("Route leg metrics must be finite and non-negative");
+    }
+  }
+
   let cumulativeSeconds = 0;
   let cumulativeDistance = 0;
 
   return remainingStops.map((stop, index) => {
-    const leg = legs[index];
-    if (leg) {
-      cumulativeSeconds += leg.durationSeconds;
-      cumulativeDistance += leg.distanceMeters;
+    const leg = legs[index]!;
+    cumulativeSeconds += leg.durationSeconds;
+    cumulativeDistance += leg.distanceMeters;
+    if (!Number.isFinite(cumulativeSeconds) || !Number.isFinite(cumulativeDistance)) {
+      throw new RangeError("Cumulative route metrics must remain finite");
     }
 
     const estimatedArrivalDate = new Date(
       generatedAt.getTime() + cumulativeSeconds * 1_000,
     );
+    if (!Number.isFinite(estimatedArrivalDate.getTime())) {
+      throw new RangeError("Calculated arrival time must be finite");
+    }
     const minutesAway = Math.max(0, Math.round(cumulativeSeconds / 60));
     const scheduleVariance = calculateScheduleVarianceMinutes(
       estimatedArrivalDate,

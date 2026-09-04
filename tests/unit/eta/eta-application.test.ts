@@ -6,7 +6,10 @@ import {
   getStudentBookingEtaService,
   getOperationalTripEtaService,
 } from "../../../src/features/eta/application/eta";
-import { FakeTrafficRouteProvider } from "../../../src/features/eta/infrastructure/google-routes.server";
+import {
+  FakeTrafficRouteProvider,
+  TrafficProviderError,
+} from "../../../src/features/eta/infrastructure/google-routes.server";
 import { EtaMemoryCache } from "../../../src/features/eta/infrastructure/eta-cache.server";
 import { fixedClock } from "../../../src/shared/time/clock";
 import { createProductPolicy } from "../../../src/shared/config/policies";
@@ -183,7 +186,7 @@ describe("ETA Application Service - Core traffic and fallback rules", () => {
     assert.equal(result.stopEstimates[0]!.estimatedArrival, "2026-09-04T10:07:00.000Z");
   });
 
-  it("serves repeated requests within cache TTL from in-memory cache", async () => {
+  it("does not reuse a completed Google result after the in-flight request settles", async () => {
     const trip = makeSampleTrip();
     const provider = new FakeTrafficRouteProvider();
     const cache = new EtaMemoryCache();
@@ -204,25 +207,20 @@ describe("ETA Application Service - Core traffic and fallback rules", () => {
         provider,
         cache,
         clock: fixedClock(currentInstant),
-        policy: createProductPolicy({ trafficEtaCacheMs: 45_000 }),
+        policy: createProductPolicy(),
         environment: { enabled: true, apiKey: "valid-key" },
       });
 
-    // Request 1: cache miss, provider called
     const first = await fetchEta();
     assert.equal(provider.callCount, 1);
     assert.equal(first.source, "TRAFFIC_AWARE");
 
-    // Request 2 (20 seconds later, within 45s TTL): cache hit, provider NOT called
+    // A later request performs a fresh provider call; no completed result is cached.
     currentInstant = "2026-09-04T10:05:20.000Z";
     const second = await fetchEta();
-    assert.equal(provider.callCount, 1);
-    assert.deepEqual(second, first);
-
-    // Request 3 (50 seconds later, past 45s TTL): cache expired, provider called again
-    currentInstant = "2026-09-04T10:05:50.000Z";
-    await fetchEta();
     assert.equal(provider.callCount, 2);
+    assert.equal(second.source, "TRAFFIC_AWARE");
+    assert.notEqual(second.generatedAt, first.generatedAt);
   });
 
   it("deduplicates concurrent in-flight requests for the same trip", async () => {
@@ -332,6 +330,34 @@ describe("ETA Application Service - Core traffic and fallback rules", () => {
     assert.equal(provider.callCount, 0);
     assert.equal(resArrived.source, "SCHEDULE_ESTIMATE");
     assert.equal(resCancelled.source, "SCHEDULE_ESTIMATE");
+    assert.equal(resArrived.tripStatus, "ARRIVED");
+    assert.equal(resCancelled.tripStatus, "CANCELLED");
+    assert.equal(resArrived.stopEstimates.length, 0);
+    assert.equal(resCancelled.stopEstimates.length, 0);
+  });
+
+  it("uses a schedule estimate without calling Google for NOT_STARTED trips", async () => {
+    const trip = makeSampleTrip({ status: "NOT_STARTED" });
+    const provider = new FakeTrafficRouteProvider();
+    const result = await getTripEtaService({
+      tripId: trip.id,
+      findTrip: async () => trip,
+      findLatestLocation: async () => locationForNotStartedShouldNotRun(),
+      provider,
+      cache: new EtaMemoryCache(),
+      clock: fixedClock("2026-09-04T10:05:00.000Z"),
+      policy: createProductPolicy(),
+      environment: { enabled: true, apiKey: "valid-key" },
+    });
+
+    assert.equal(provider.callCount, 0);
+    assert.equal(result.tripStatus, "NOT_STARTED");
+    assert.equal(result.source, "SCHEDULE_ESTIMATE");
+    assert.equal(result.fallbackReason, null);
+
+    function locationForNotStartedShouldNotRun(): never {
+      throw new Error("Location lookup must not run for NOT_STARTED Trip");
+    }
   });
 });
 
@@ -665,5 +691,274 @@ describe("ETA Application Service - Student and Admin authorization & journeys",
     assert.equal(result.isPassed, true);
     assert.equal(result.minutesAway, null);
     assert.equal(result.estimatedArrival, null);
+  });
+});
+
+describe("ETA Application Service - stabilization regressions", () => {
+  const environment = { enabled: true, apiKey: "valid-key" };
+  const locationFor = (tripId: string, recordedAt = "2026-09-04T10:04:55.000Z") => ({
+    tripId,
+    latitude: 3.212,
+    longitude: 101.72,
+    recordedAt: new Date(recordedAt),
+    source: "GPS" as const,
+    ageMs: 5_000,
+  });
+
+  it("maps a typed zero-route provider failure to NO_ROUTE schedule fallback", async () => {
+    const trip = makeSampleTrip();
+    const provider = new FakeTrafficRouteProvider();
+    provider.cannedError = new TrafficProviderError("NO_ROUTE", "No route");
+
+    const result = await getTripEtaService({
+      tripId: trip.id,
+      findTrip: async () => trip,
+      findLatestLocation: async () => locationFor(trip.id),
+      provider,
+      cache: new EtaMemoryCache(),
+      clock: fixedClock("2026-09-04T10:05:00.000Z"),
+      policy: createProductPolicy(),
+      environment,
+    });
+
+    assert.equal(result.source, "SCHEDULE_ESTIMATE");
+    assert.equal(result.fallbackReason, "NO_ROUTE");
+  });
+
+  it("maps an aborted provider request to API_TIMEOUT without string matching", async () => {
+    const trip = makeSampleTrip({ id: "timeout-trip" });
+    const provider = new FakeTrafficRouteProvider();
+    provider.delayMs = 30;
+
+    const result = await getTripEtaService({
+      tripId: trip.id,
+      findTrip: async () => trip,
+      findLatestLocation: async () => locationFor(trip.id),
+      provider,
+      cache: new EtaMemoryCache(),
+      clock: fixedClock("2026-09-04T10:05:00.000Z"),
+      policy: createProductPolicy({ trafficEtaTimeoutMs: 5 }),
+      environment,
+    });
+
+    assert.equal(result.source, "SCHEDULE_ESTIMATE");
+    assert.equal(result.fallbackReason, "API_TIMEOUT");
+  });
+
+  it("rejects provider results with too few or too many legs", async () => {
+    for (const legCount of [1, 3]) {
+      const trip = makeSampleTrip({ id: `trip-leg-count-${legCount}` });
+      const leg = {
+        durationSeconds: 120,
+        staticDurationSeconds: 100,
+        distanceMeters: 1_000,
+      };
+      const provider = new FakeTrafficRouteProvider({
+        durationSeconds: 240,
+        staticDurationSeconds: 200,
+        distanceMeters: 2_000,
+        legs: Array.from({ length: legCount }, () => leg),
+      });
+
+      const result = await getTripEtaService({
+        tripId: trip.id,
+        findTrip: async () => trip,
+        findLatestLocation: async () => locationFor(trip.id),
+        provider,
+        cache: new EtaMemoryCache(),
+        clock: fixedClock("2026-09-04T10:05:00.000Z"),
+        policy: createProductPolicy(),
+        environment,
+      });
+
+      assert.equal(result.source, "SCHEDULE_ESTIMATE");
+      assert.equal(result.fallbackReason, "API_ERROR");
+    }
+  });
+
+  it("rejects non-finite or negative provider metrics", async () => {
+    const trip = makeSampleTrip();
+    const provider = new FakeTrafficRouteProvider({
+      durationSeconds: Number.NaN,
+      staticDurationSeconds: 200,
+      distanceMeters: -1,
+      legs: [
+        { durationSeconds: 120, staticDurationSeconds: 100, distanceMeters: 1_000 },
+        { durationSeconds: 120, staticDurationSeconds: 100, distanceMeters: 1_000 },
+      ],
+    });
+
+    const result = await getTripEtaService({
+      tripId: trip.id,
+      findTrip: async () => trip,
+      findLatestLocation: async () => locationFor(trip.id),
+      provider,
+      cache: new EtaMemoryCache(),
+      clock: fixedClock("2026-09-04T10:05:00.000Z"),
+      policy: createProductPolicy(),
+      environment,
+    });
+
+    assert.equal(result.source, "SCHEDULE_ESTIMATE");
+    assert.equal(result.fallbackReason, "API_ERROR");
+  });
+
+  it("does not call the provider for invalid origin or TripStop coordinates", async () => {
+    const invalidCases = [
+      {
+        trip: makeSampleTrip({ id: "invalid-origin" }),
+        location: { ...locationFor("invalid-origin"), latitude: 999 },
+      },
+      {
+        trip: makeSampleTrip({ id: "nan-origin" }),
+        location: { ...locationFor("nan-origin"), longitude: Number.NaN },
+      },
+      {
+        trip: makeSampleTrip({
+          id: "invalid-stop",
+          tripStops: makeSampleTrip().tripStops.map((stop, index) =>
+            index === 1 ? { ...stop, latitude: 999 } : stop,
+          ),
+        }),
+        location: locationFor("invalid-stop"),
+      },
+    ];
+
+    for (const testCase of invalidCases) {
+      const provider = new FakeTrafficRouteProvider();
+      const result = await getTripEtaService({
+        tripId: testCase.trip.id,
+        findTrip: async () => testCase.trip,
+        findLatestLocation: async () => testCase.location,
+        provider,
+        cache: new EtaMemoryCache(),
+        clock: fixedClock("2026-09-04T10:05:00.000Z"),
+        policy: createProductPolicy(),
+        environment,
+      });
+
+      assert.equal(provider.callCount, 0);
+      assert.equal(result.source, "SCHEDULE_ESTIMATE");
+      assert.equal(result.fallbackReason, "INVALID_ROUTE_DATA");
+    }
+  });
+
+  it("re-reads ARRIVED and CANCELLED state after a traffic result", async () => {
+    for (const terminalStatus of ["ARRIVED", "CANCELLED"] as const) {
+      let trip = makeSampleTrip({ id: `state-${terminalStatus}` });
+      const provider = new FakeTrafficRouteProvider();
+      const cache = new EtaMemoryCache();
+      const options = {
+        tripId: trip.id,
+        findTrip: async () => trip,
+        findLatestLocation: async () => locationFor(trip.id),
+        provider,
+        cache,
+        clock: fixedClock("2026-09-04T10:05:00.000Z"),
+        policy: createProductPolicy(),
+        environment,
+      };
+
+      assert.equal((await getTripEtaService(options)).source, "TRAFFIC_AWARE");
+      trip = makeSampleTrip({ id: trip.id, status: terminalStatus });
+      const terminal = await getTripEtaService(options);
+
+      assert.equal(provider.callCount, 1);
+      assert.equal(terminal.source, "SCHEDULE_ESTIMATE");
+      assert.equal(terminal.tripStatus, terminalStatus);
+      assert.equal(terminal.stopEstimates.length, 0);
+    }
+  });
+
+  it("re-reads stop progression and starts the next route at the new remaining stop", async () => {
+    let trip = makeSampleTrip({ id: "progression-trip" });
+    const provider = new FakeTrafficRouteProvider();
+    const cache = new EtaMemoryCache();
+    const options = {
+      tripId: trip.id,
+      findTrip: async () => trip,
+      findLatestLocation: async () => locationFor(trip.id),
+      provider,
+      cache,
+      clock: fixedClock("2026-09-04T10:05:00.000Z"),
+      policy: createProductPolicy(),
+      environment,
+    };
+
+    const first = await getTripEtaService(options);
+    assert.equal(first.stopEstimates[0]?.stopCode, "PV18");
+
+    trip = makeSampleTrip({
+      id: trip.id,
+      tripStops: makeSampleTrip().tripStops.map((stop, index) =>
+        index === 1
+          ? {
+              ...stop,
+              actualDeparture: new Date("2026-09-04T10:05:00.000Z"),
+              passedAt: new Date("2026-09-04T10:05:00.000Z"),
+            }
+          : stop,
+      ),
+    });
+    const second = await getTripEtaService(options);
+
+    assert.equal(provider.callCount, 2);
+    assert.equal(second.stopEstimates.length, 1);
+    assert.equal(second.stopEstimates[0]?.stopCode, "TERMINAL");
+    assert.deepEqual(provider.lastRequest?.intermediates, []);
+  });
+
+  it("does not let a previous success bypass later stale-location policy", async () => {
+    const trip = makeSampleTrip({ id: "stale-after-success" });
+    const provider = new FakeTrafficRouteProvider();
+    const cache = new EtaMemoryCache();
+    let currentInstant = "2026-09-04T10:05:00.000Z";
+    const fetchEta = () =>
+      getTripEtaService({
+        tripId: trip.id,
+        findTrip: async () => trip,
+        findLatestLocation: async () => locationFor(trip.id),
+        provider,
+        cache,
+        clock: fixedClock(currentInstant),
+        policy: createProductPolicy(),
+        environment,
+      });
+
+    assert.equal((await fetchEta()).source, "TRAFFIC_AWARE");
+    currentInstant = "2026-09-04T10:06:10.000Z";
+    const stale = await fetchEta();
+
+    assert.equal(provider.callCount, 1);
+    assert.equal(stale.source, "SCHEDULE_ESTIMATE");
+    assert.equal(stale.fallbackReason, "STALE_LOCATION");
+    assert.equal(stale.locationAgeMs, 75_000);
+  });
+
+  it("uses the provider response-time clock for traffic arrivals and freshness", async () => {
+    const trip = makeSampleTrip({ id: "response-clock" });
+    const instants = [
+      new Date("2026-09-04T10:05:00.000Z"),
+      new Date("2026-09-04T10:05:03.000Z"),
+    ];
+    let clockCall = 0;
+    const clock = {
+      now: () => new Date(instants[Math.min(clockCall++, instants.length - 1)]!),
+    };
+
+    const result = await getTripEtaService({
+      tripId: trip.id,
+      findTrip: async () => trip,
+      findLatestLocation: async () => locationFor(trip.id),
+      provider: new FakeTrafficRouteProvider(),
+      cache: new EtaMemoryCache(),
+      clock,
+      policy: createProductPolicy(),
+      environment,
+    });
+
+    assert.equal(result.generatedAt, "2026-09-04T10:05:03.000Z");
+    assert.equal(result.stopEstimates[0]?.estimatedArrival, "2026-09-04T10:07:03.000Z");
+    assert.equal(result.locationAgeMs, 8_000);
   });
 });

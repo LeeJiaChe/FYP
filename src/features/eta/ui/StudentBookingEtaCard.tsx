@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Clock, Navigation, AlertCircle } from "lucide-react";
 
 import type { StudentBookingEta } from "../contracts/eta.schemas";
+import { GoogleMapsAttribution } from "./GoogleMapsAttribution";
+import { minutesUntil, useEtaDisplayClock } from "./useEtaDisplayClock";
 
 interface StudentBookingEtaCardProps {
   readonly bookingId: string;
@@ -12,11 +14,12 @@ interface StudentBookingEtaCardProps {
 
 export function StudentBookingEtaCard({
   bookingId,
-  refreshIntervalMs = 20_000,
+  refreshIntervalMs = 60_000,
 }: StudentBookingEtaCardProps) {
   const [eta, setEta] = useState<StudentBookingEta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const displayNowMs = useEtaDisplayClock();
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +67,15 @@ export function StudentBookingEtaCard({
     return null;
   }
 
+  if (eta.tripStatus === "ARRIVED" || eta.tripStatus === "CANCELLED") {
+    return (
+      <div className="eta-container flex items-center gap-2 rounded-xl bg-slate-50 p-2.5 text-xs text-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
+        <AlertCircle className="size-3.5 shrink-0" />
+        <span>{eta.tripStatus === "ARRIVED" ? "Trip completed" : "Trip cancelled"}</span>
+      </div>
+    );
+  }
+
   if (eta.isPassed) {
     return (
       <div className="eta-container flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 text-xs">
@@ -79,6 +91,9 @@ export function StudentBookingEtaCard({
 
   const isTrafficAware = eta.source === "TRAFFIC_AWARE";
   const targetLabel = eta.targetStopRole === "BOARDING" ? "Boarding at" : "Drop-off at";
+  const displayMinutesAway = eta.estimatedArrival
+    ? minutesUntil(eta.estimatedArrival, displayNowMs)
+    : eta.minutesAway;
 
   return (
     <div className="eta-container p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm space-y-2 text-xs">
@@ -100,7 +115,7 @@ export function StudentBookingEtaCard({
 
       <div className="flex items-baseline gap-2">
         <span className="text-lg font-bold text-slate-900 dark:text-white tabular-nums">
-          {eta.minutesAway !== null ? `~${eta.minutesAway} min` : "At stop"}
+          {displayMinutesAway !== null ? `~${displayMinutesAway} min` : "At stop"}
         </span>
         {eta.estimatedArrival && (
           <span className="text-slate-500 dark:text-slate-400 text-xs">
@@ -125,11 +140,7 @@ export function StudentBookingEtaCard({
           {!eta.locationSource && <span>Timetable estimate</span>}
         </div>
 
-        {isTrafficAware && (
-          <span className="text-[10px] text-slate-400 tracking-tight">
-            Powered by Google Routes
-          </span>
-        )}
+        <GoogleMapsAttribution source={eta.source} />
       </div>
     </div>
   );

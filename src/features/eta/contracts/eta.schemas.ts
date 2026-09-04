@@ -12,6 +12,7 @@ export const etaFallbackReasonSchema = z
     "API_TIMEOUT",
     "API_ERROR",
     "NO_ROUTE",
+    "INVALID_ROUTE_DATA",
   ])
   .nullable();
 export type EtaFallbackReason = z.infer<typeof etaFallbackReasonSchema>;
@@ -31,6 +32,13 @@ export type StopEta = z.infer<typeof stopEtaSchema>;
 
 export const tripEtaSchema = z.object({
   tripId: z.string(),
+  tripStatus: z.enum([
+    "NOT_STARTED",
+    "BOARDING",
+    "DEPARTED",
+    "ARRIVED",
+    "CANCELLED",
+  ]),
   source: etaSourceSchema,
   fallbackReason: etaFallbackReasonSchema,
   locationSource: z.enum(["SIMULATED", "GPS"]).nullable(),
@@ -45,6 +53,13 @@ export type TripEta = z.infer<typeof tripEtaSchema>;
 export const studentBookingEtaSchema = z.object({
   bookingId: z.string(),
   tripId: z.string(),
+  tripStatus: z.enum([
+    "NOT_STARTED",
+    "BOARDING",
+    "DEPARTED",
+    "ARRIVED",
+    "CANCELLED",
+  ]),
   targetStopId: z.string().uuid(),
   targetStopName: z.string(),
   targetStopRole: z.enum(["BOARDING", "DROP_OFF"]),

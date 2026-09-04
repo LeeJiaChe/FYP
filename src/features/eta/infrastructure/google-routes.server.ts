@@ -1,6 +1,24 @@
 import "server-only";
 
+import { z } from "zod";
+
 import { parseGoogleDurationSeconds } from "../domain/eta-policy";
+
+export type TrafficProviderFailureKind =
+  | "NO_ROUTE"
+  | "INVALID_RESPONSE"
+  | "HTTP_ERROR"
+  | "NETWORK_ERROR";
+
+export class TrafficProviderError extends Error {
+  constructor(
+    readonly kind: TrafficProviderFailureKind,
+    message: string,
+  ) {
+    super(message);
+    this.name = "TrafficProviderError";
+  }
+}
 
 export interface LatLngCoordinate {
   readonly latitude: number;
@@ -44,6 +62,24 @@ const REQUIRED_FIELD_MASK = [
   "routes.legs.staticDuration",
   "routes.legs.distanceMeters",
 ].join(",");
+
+const routeMetricSchema = z.object({
+  duration: z.string(),
+  staticDuration: z.string(),
+  distanceMeters: z.number().int().finite().nonnegative(),
+});
+
+const routeSchema = routeMetricSchema.extend({
+  legs: z.array(routeMetricSchema),
+});
+
+function parseRouteMetric(metric: z.infer<typeof routeMetricSchema>) {
+  return {
+    durationSeconds: parseGoogleDurationSeconds(metric.duration),
+    staticDurationSeconds: parseGoogleDurationSeconds(metric.staticDuration),
+    distanceMeters: metric.distanceMeters,
+  };
+}
 
 export class GoogleRoutesTrafficProvider implements TrafficRouteProvider {
   constructor(private readonly apiKey: string) {
@@ -101,61 +137,77 @@ export class GoogleRoutesTrafficProvider implements TrafficRouteProvider {
       });
     } catch (error) {
       if (signal?.aborted) {
-        throw new Error("Google Routes API request timed out");
+        throw error;
       }
-      throw new Error(
-        `Google Routes API network request failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      throw new TrafficProviderError(
+        "NETWORK_ERROR",
+        "Google Routes API network request failed",
       );
     }
 
     if (!response.ok) {
       const status = response.status;
       // Never include request headers or API key in error messages.
-      throw new Error(`Google Routes API returned HTTP status ${status}`);
+      throw new TrafficProviderError(
+        "HTTP_ERROR",
+        `Google Routes API returned HTTP status ${status}`,
+      );
     }
 
-    const json = (await response.json()) as {
-      routes?: Array<{
-        duration?: string;
-        staticDuration?: string;
-        distanceMeters?: number;
-        legs?: Array<{
-          duration?: string;
-          staticDuration?: string;
-          distanceMeters?: number;
-        }>;
-      }>;
-    };
-
-    const firstRoute = json.routes?.[0];
-    if (!firstRoute || !firstRoute.duration) {
-      throw new Error("Google Routes API returned no valid route");
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new TrafficProviderError(
+        "INVALID_RESPONSE",
+        "Google Routes API returned invalid JSON",
+      );
     }
 
-    const durationSeconds = parseGoogleDurationSeconds(firstRoute.duration);
-    const staticDurationSeconds = firstRoute.staticDuration
-      ? parseGoogleDurationSeconds(firstRoute.staticDuration)
-      : durationSeconds;
-    const distanceMeters = firstRoute.distanceMeters ?? 0;
+    const envelope = z.object({ routes: z.array(z.unknown()) }).safeParse(json);
+    if (!envelope.success) {
+      throw new TrafficProviderError(
+        "INVALID_RESPONSE",
+        "Google Routes API response is missing a routes array",
+      );
+    }
+    if (envelope.data.routes.length === 0) {
+      throw new TrafficProviderError(
+        "NO_ROUTE",
+        "Google Routes API returned no route",
+      );
+    }
 
-    const legs: RouteLegResult[] = (firstRoute.legs ?? []).map((leg) => {
-      const legDuration = leg.duration
-        ? parseGoogleDurationSeconds(leg.duration)
-        : 0;
-      const legStaticDuration = leg.staticDuration
-        ? parseGoogleDurationSeconds(leg.staticDuration)
-        : legDuration;
-      return {
-        durationSeconds: legDuration,
-        staticDurationSeconds: legStaticDuration,
-        distanceMeters: leg.distanceMeters ?? 0,
-      };
-    });
+    const parsedRoute = routeSchema.safeParse(envelope.data.routes[0]);
+    if (!parsedRoute.success) {
+      throw new TrafficProviderError(
+        "INVALID_RESPONSE",
+        "Google Routes API returned malformed route metrics",
+      );
+    }
+
+    let routeMetric: ReturnType<typeof parseRouteMetric>;
+    let legs: RouteLegResult[];
+    try {
+      routeMetric = parseRouteMetric(parsedRoute.data);
+      legs = parsedRoute.data.legs.map(parseRouteMetric);
+    } catch {
+      throw new TrafficProviderError(
+        "INVALID_RESPONSE",
+        "Google Routes API returned invalid duration values",
+      );
+    }
+
+    const expectedLegCount = request.intermediates.length + 1;
+    if (legs.length !== expectedLegCount) {
+      throw new TrafficProviderError(
+        "INVALID_RESPONSE",
+        `Google Routes API returned ${legs.length} legs; expected ${expectedLegCount}`,
+      );
+    }
 
     return {
-      durationSeconds,
-      staticDurationSeconds,
-      distanceMeters,
+      ...routeMetric,
       legs,
     };
   }

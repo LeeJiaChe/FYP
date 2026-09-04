@@ -7,7 +7,6 @@ import {
   calculateCumulativeLegEtas,
   calculateScheduleFallbackEtas,
   calculateTrafficImpactMinutes,
-  DEFAULT_TRAFFIC_ETA_CACHE_MS,
   DEFAULT_TRAFFIC_ETA_FAILURE_CACHE_MS,
   DEFAULT_TRAFFIC_ETA_MAX_LOCATION_AGE_MS,
   DEFAULT_TRAFFIC_ETA_TIMEOUT_MS,
@@ -16,17 +15,20 @@ import {
 } from "../domain/eta-policy";
 import {
   GoogleRoutesTrafficProvider,
+  TrafficProviderError,
   type TrafficRouteProvider,
+  type TrafficRouteResult,
 } from "../infrastructure/google-routes.server";
 import {
   EtaMemoryCache,
   sharedEtaCache,
+  type EtaFailureThrottleReason,
 } from "../infrastructure/eta-cache.server";
 import {
   findBookingForEta,
   findTripForEta,
 } from "../infrastructure/eta.prisma.server";
-import { latestLocation } from "@/features/location/server";
+import { assertCoordinate, latestLocation } from "@/features/location/server";
 import {
   forbidden,
   notFound,
@@ -106,6 +108,62 @@ export interface BookingForEtaSnapshot {
   };
 }
 
+function tripStatusForResponse(status: string): TripEta["tripStatus"] {
+  switch (status) {
+    case "NOT_STARTED":
+    case "BOARDING":
+    case "DEPARTED":
+    case "ARRIVED":
+    case "CANCELLED":
+      return status;
+    default:
+      throw new RangeError(`Unsupported Trip status: ${status}`);
+  }
+}
+
+function currentLocationAgeMs(
+  location: TelemetryLocationSnapshot,
+  now: Date,
+): number {
+  return Math.max(0, now.getTime() - location.recordedAt.getTime());
+}
+
+function hasValidRouteCoordinates(
+  location: Pick<TelemetryLocationSnapshot, "latitude" | "longitude"> | null,
+  stops: readonly OperationalTripStopSnapshot[],
+): boolean {
+  try {
+    if (location) assertCoordinate(location.latitude, location.longitude);
+    for (const stop of stops) {
+      assertCoordinate(stop.latitude, stop.longitude);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function assertValidTrafficRouteResult(
+  result: TrafficRouteResult,
+  expectedLegCount: number,
+): void {
+  if (
+    !Number.isFinite(result.durationSeconds) ||
+    result.durationSeconds < 0 ||
+    !Number.isFinite(result.staticDurationSeconds) ||
+    result.staticDurationSeconds < 0 ||
+    !Number.isFinite(result.distanceMeters) ||
+    result.distanceMeters < 0
+  ) {
+    throw new RangeError("Traffic provider returned invalid route metrics");
+  }
+  if (result.legs.length !== expectedLegCount) {
+    throw new RangeError(
+      `Expected ${expectedLegCount} route legs, received ${result.legs.length}`,
+    );
+  }
+}
+
 function normalizeCoordinates(
   stops: TripForEtaSnapshot["tripStops"],
 ): OperationalTripStopSnapshot[] {
@@ -150,11 +208,12 @@ function buildScheduleFallbackEta({
 
   return {
     tripId: trip.id,
+    tripStatus: tripStatusForResponse(trip.status),
     source: "SCHEDULE_ESTIMATE",
     fallbackReason,
     locationSource: location?.source ?? null,
     locationRecordedAt: location?.recordedAt ? location.recordedAt.toISOString() : null,
-    locationAgeMs: location?.ageMs ?? null,
+    locationAgeMs: location ? currentLocationAgeMs(location, now) : null,
     generatedAt: now.toISOString(),
     trafficImpactMinutes: null,
     stopEstimates,
@@ -186,15 +245,11 @@ export async function getTripEtaService({
   const now = clock.now();
   const nowMs = now.getTime();
 
-  // 1. Check in-memory success cache
-  const cachedEta = cache.getCachedTripEta(tripId, nowMs);
-  if (cachedEta) return cachedEta;
-
-  // 2. Check in-flight deduplication
+  // Concurrent callers may await the same active computation. Settled Google
+  // results are never retained for reuse.
   const inFlight = cache.getInFlight(tripId);
   if (inFlight) return inFlight;
 
-  // 3. Initiate new fetch and register in-flight
   const computePromise = (async () => {
     try {
       const trip = await findTrip(tripId);
@@ -221,18 +276,15 @@ export async function getTripEtaService({
         });
       }
 
-      // 4. Check failure cache throttle
-      const cachedFailure = cache.getCachedFailureReason(tripId, nowMs);
-      if (cachedFailure) {
+      if (!hasValidRouteCoordinates(null, remainingStops)) {
         return buildScheduleFallbackEta({
           trip,
           remainingStops,
-          fallbackReason: cachedFailure,
+          fallbackReason: "INVALID_ROUTE_DATA",
           now,
         });
       }
 
-      // 5. Check configuration
       if (!environment.enabled) {
         return buildScheduleFallbackEta({
           trip,
@@ -251,7 +303,6 @@ export async function getTripEtaService({
         });
       }
 
-      // 6. Check location telemetry
       const location = await findLatestLocation(tripId, clock);
       if (!location) {
         return buildScheduleFallbackEta({
@@ -262,9 +313,20 @@ export async function getTripEtaService({
         });
       }
 
+      if (!hasValidRouteCoordinates(location, remainingStops)) {
+        return buildScheduleFallbackEta({
+          trip,
+          remainingStops,
+          fallbackReason: "INVALID_ROUTE_DATA",
+          now,
+          location,
+        });
+      }
+
       const maxAgeMs =
         policy.trafficEtaMaxLocationAgeMs ?? DEFAULT_TRAFFIC_ETA_MAX_LOCATION_AGE_MS;
-      if (location.ageMs > maxAgeMs) {
+      const locationAgeMs = currentLocationAgeMs(location, now);
+      if (locationAgeMs > maxAgeMs) {
         return buildScheduleFallbackEta({
           trip,
           remainingStops,
@@ -274,7 +336,19 @@ export async function getTripEtaService({
         });
       }
 
-      // 7. Execute Google Routes call with timeout
+      // Failure throttling retains only local classification and expiry metadata.
+      // Authoritative configuration, Trip, route, and telemetry checks run first.
+      const cachedFailure = cache.getCachedFailureReason(tripId, nowMs);
+      if (cachedFailure) {
+        return buildScheduleFallbackEta({
+          trip,
+          remainingStops,
+          fallbackReason: cachedFailure,
+          now,
+          location,
+        });
+      }
+
       const activeProvider =
         provider ?? new GoogleRoutesTrafficProvider(environment.apiKey);
       const timeoutMs =
@@ -308,10 +382,12 @@ export async function getTripEtaService({
           },
           abortController.signal,
         );
-        clearTimeout(timeoutTimer);
+        assertValidTrafficRouteResult(routeResult, remainingStops.length);
+
+        const responseNow = clock.now();
 
         const stopEstimates = calculateCumulativeLegEtas({
-          generatedAt: now,
+          generatedAt: responseNow,
           remainingStops,
           legs: routeResult.legs,
         });
@@ -323,41 +399,45 @@ export async function getTripEtaService({
 
         const tripEta: TripEta = {
           tripId: trip.id,
+          tripStatus: tripStatusForResponse(trip.status),
           source: "TRAFFIC_AWARE",
           fallbackReason: null,
           locationSource: location.source,
           locationRecordedAt: location.recordedAt.toISOString(),
-          locationAgeMs: location.ageMs,
-          generatedAt: now.toISOString(),
+          locationAgeMs: currentLocationAgeMs(location, responseNow),
+          generatedAt: responseNow.toISOString(),
           trafficImpactMinutes,
           stopEstimates,
         };
 
-        const cacheTtlMs =
-          policy.trafficEtaCacheMs ?? DEFAULT_TRAFFIC_ETA_CACHE_MS;
-        cache.setCachedTripEta(trip.id, tripEta, cacheTtlMs, nowMs);
-
         return tripEta;
       } catch (error) {
-        clearTimeout(timeoutTimer);
-        const isTimeout =
-          abortController.signal.aborted ||
-          (error instanceof Error && /timed out/i.test(error.message));
-        const failureReason: EtaFallbackReason = isTimeout
+        const failureReason: EtaFailureThrottleReason = abortController.signal.aborted
           ? "API_TIMEOUT"
-          : "API_ERROR";
+          : error instanceof TrafficProviderError && error.kind === "NO_ROUTE"
+            ? "NO_ROUTE"
+            : "API_ERROR";
+
+        const failureNow = clock.now();
 
         const failureTtlMs =
           policy.trafficEtaFailureCacheMs ?? DEFAULT_TRAFFIC_ETA_FAILURE_CACHE_MS;
-        cache.setCachedFailure(trip.id, failureReason, failureTtlMs, nowMs);
+        cache.setCachedFailure(
+          trip.id,
+          failureReason,
+          failureTtlMs,
+          failureNow.getTime(),
+        );
 
         return buildScheduleFallbackEta({
           trip,
           remainingStops,
           fallbackReason: failureReason,
-          now,
+          now: failureNow,
           location,
         });
+      } finally {
+        clearTimeout(timeoutTimer);
       }
     } finally {
       cache.clearInFlight(tripId);
@@ -409,6 +489,7 @@ export async function getStudentBookingEtaService({
   return {
     bookingId: booking.id,
     tripId: booking.tripId,
+    tripStatus: tripEta.tripStatus,
     targetStopId: targetStop.id,
     targetStopName: targetStop.stopName,
     targetStopRole,

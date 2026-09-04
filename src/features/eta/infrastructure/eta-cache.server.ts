@@ -1,6 +1,11 @@
 import "server-only";
 
-import type { EtaFallbackReason, TripEta } from "../contracts/eta.schemas";
+import type { TripEta } from "../contracts/eta.schemas";
+
+export type EtaFailureThrottleReason =
+  | "API_TIMEOUT"
+  | "API_ERROR"
+  | "NO_ROUTE";
 
 interface CacheEntry<T> {
   readonly value: T;
@@ -8,39 +13,16 @@ interface CacheEntry<T> {
 }
 
 export class EtaMemoryCache {
-  private readonly etaStore = new Map<string, CacheEntry<TripEta>>();
   private readonly failureStore = new Map<
     string,
-    CacheEntry<EtaFallbackReason>
+    CacheEntry<EtaFailureThrottleReason>
   >();
   private readonly inFlightStore = new Map<string, Promise<TripEta>>();
-
-  getCachedTripEta(tripId: string, nowMs: number): TripEta | null {
-    const entry = this.etaStore.get(tripId);
-    if (!entry) return null;
-    if (nowMs >= entry.expiresAtMs) {
-      this.etaStore.delete(tripId);
-      return null;
-    }
-    return entry.value;
-  }
-
-  setCachedTripEta(
-    tripId: string,
-    eta: TripEta,
-    ttlMs: number,
-    nowMs: number,
-  ): void {
-    this.etaStore.set(tripId, {
-      value: eta,
-      expiresAtMs: nowMs + ttlMs,
-    });
-  }
 
   getCachedFailureReason(
     tripId: string,
     nowMs: number,
-  ): EtaFallbackReason | null {
+  ): EtaFailureThrottleReason | null {
     const entry = this.failureStore.get(tripId);
     if (!entry) return null;
     if (nowMs >= entry.expiresAtMs) {
@@ -52,7 +34,7 @@ export class EtaMemoryCache {
 
   setCachedFailure(
     tripId: string,
-    reason: EtaFallbackReason,
+    reason: EtaFailureThrottleReason,
     ttlMs: number,
     nowMs: number,
   ): void {
@@ -75,7 +57,6 @@ export class EtaMemoryCache {
   }
 
   clearAll(): void {
-    this.etaStore.clear();
     this.failureStore.clear();
     this.inFlightStore.clear();
   }

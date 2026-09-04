@@ -6,7 +6,6 @@ import {
   calculateScheduleFallbackEtas,
   calculateScheduleVarianceMinutes,
   calculateTrafficImpactMinutes,
-  DEFAULT_TRAFFIC_ETA_CACHE_MS,
   DEFAULT_TRAFFIC_ETA_FAILURE_CACHE_MS,
   DEFAULT_TRAFFIC_ETA_MAX_LOCATION_AGE_MS,
   DEFAULT_TRAFFIC_ETA_TIMEOUT_MS,
@@ -17,7 +16,6 @@ import {
 
 describe("ETA domain policy - constants and duration parsing", () => {
   it("defines explicit policy constants with expected values", () => {
-    assert.equal(DEFAULT_TRAFFIC_ETA_CACHE_MS, 45_000);
     assert.equal(DEFAULT_TRAFFIC_ETA_FAILURE_CACHE_MS, 15_000);
     assert.equal(DEFAULT_TRAFFIC_ETA_TIMEOUT_MS, 3_000);
     assert.equal(DEFAULT_TRAFFIC_ETA_MAX_LOCATION_AGE_MS, 60_000);
@@ -193,6 +191,61 @@ describe("ETA domain policy - remaining stops and cumulative legs", () => {
     assert.equal(stopEtas[2]!.estimatedArrival, "2026-09-04T10:10:00.000Z");
     assert.equal(stopEtas[2]!.scheduleVarianceMinutes, -20);
     assert.equal(stopEtas[2]!.cumulativeDistanceMeters, 3300);
+  });
+
+  it("rejects missing or extra route legs", () => {
+    const generatedAt = new Date("2026-09-04T10:04:00.000Z");
+    const remainingStops = sampleStops.slice(1, 3);
+    const leg = {
+      durationSeconds: 120,
+      staticDurationSeconds: 100,
+      distanceMeters: 1_000,
+    };
+
+    assert.throws(
+      () =>
+        calculateCumulativeLegEtas({
+          generatedAt,
+          remainingStops,
+          legs: [leg],
+        }),
+      /Expected 2 route legs, received 1/,
+    );
+    assert.throws(
+      () =>
+        calculateCumulativeLegEtas({
+          generatedAt,
+          remainingStops,
+          legs: [leg, leg, leg],
+        }),
+      /Expected 2 route legs, received 3/,
+    );
+    assert.equal(
+      calculateCumulativeLegEtas({
+        generatedAt,
+        remainingStops,
+        legs: [leg, leg],
+      }).length,
+      2,
+    );
+  });
+
+  it("rejects non-finite or negative leg metrics", () => {
+    assert.throws(
+      () =>
+        calculateCumulativeLegEtas({
+          generatedAt: new Date("2026-09-04T10:04:00.000Z"),
+          remainingStops: sampleStops.slice(1, 2),
+          legs: [
+            {
+              durationSeconds: Number.NaN,
+              staticDurationSeconds: 100,
+              distanceMeters: -1,
+            },
+          ],
+        }),
+      /finite and non-negative/,
+    );
   });
 
   it("calculates schedule fallback ETAs using timetable and trip delay", () => {

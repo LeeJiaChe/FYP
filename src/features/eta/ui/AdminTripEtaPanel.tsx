@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, Clock, ShieldAlert, Sparkles } from "lucide-react";
+import { Activity, Clock, ShieldAlert } from "lucide-react";
 
 import type { TripEta } from "../contracts/eta.schemas";
+import { GoogleMapsAttribution } from "./GoogleMapsAttribution";
+import { minutesUntil, useEtaDisplayClock } from "./useEtaDisplayClock";
 
 interface AdminTripEtaPanelProps {
   readonly tripId: string | null;
@@ -12,11 +14,12 @@ interface AdminTripEtaPanelProps {
 
 export function AdminTripEtaPanel({
   tripId,
-  refreshIntervalMs = 20_000,
+  refreshIntervalMs = 60_000,
 }: AdminTripEtaPanelProps) {
   const [eta, setEta] = useState<TripEta | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const displayNowMs = useEtaDisplayClock();
 
   useEffect(() => {
     if (!tripId) return;
@@ -72,12 +75,34 @@ export function AdminTripEtaPanel({
     );
   }
 
+  if (eta.tripStatus === "ARRIVED" || eta.tripStatus === "CANCELLED") {
+    return (
+      <div className="admin-eta-panel rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-800 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
+        {eta.tripStatus === "ARRIVED" ? "Trip completed" : "Trip cancelled"}
+      </div>
+    );
+  }
+
   const isTrafficAware = eta.source === "TRAFFIC_AWARE";
   const nextStop = eta.stopEstimates[0] ?? null;
   const terminalStop =
     eta.stopEstimates.length > 1
       ? eta.stopEstimates[eta.stopEstimates.length - 1]
       : null;
+  const nextStopMinutes = nextStop
+    ? minutesUntil(nextStop.estimatedArrival, displayNowMs)
+    : null;
+  const terminalStopMinutes = terminalStop
+    ? minutesUntil(terminalStop.estimatedArrival, displayNowMs)
+    : null;
+  const sourceLabel = isTrafficAware
+    ? "Traffic-Aware"
+    : eta.tripStatus === "NOT_STARTED"
+      ? "Schedule estimate"
+      : `Schedule (${eta.fallbackReason ?? "Fallback"})`;
+  const displayedLocationAgeMs = eta.locationRecordedAt
+    ? Math.max(0, displayNowMs - Date.parse(eta.locationRecordedAt))
+    : eta.locationAgeMs;
 
   return (
     <div className="admin-eta-panel p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-3">
@@ -96,13 +121,9 @@ export function AdminTripEtaPanel({
                 : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
             }`}
           >
-            {isTrafficAware ? "Traffic-Aware" : `Schedule (${eta.fallbackReason ?? "Fallback"})`}
+            {sourceLabel}
           </span>
-          {isTrafficAware && (
-            <span className="text-[10px] text-slate-400 flex items-center gap-1">
-              <Sparkles className="size-3 text-amber-500" /> Google Routes
-            </span>
-          )}
+          <GoogleMapsAttribution source={eta.source} />
         </div>
       </div>
 
@@ -112,7 +133,7 @@ export function AdminTripEtaPanel({
             Next Stop ({nextStop?.stopCode ?? "N/A"})
           </span>
           <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
-            {nextStop ? `~${nextStop.minutesAway} min` : "At terminal"}
+            {nextStopMinutes !== null ? `~${nextStopMinutes} min` : "At terminal"}
           </strong>
           {nextStop?.estimatedArrival && (
             <small className="block text-[10px] text-slate-500">
@@ -129,7 +150,7 @@ export function AdminTripEtaPanel({
             Terminal ({terminalStop?.stopCode ?? "Final"})
           </span>
           <strong className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
-            {terminalStop ? `~${terminalStop.minutesAway} min` : "Arrived"}
+            {terminalStopMinutes !== null ? `~${terminalStopMinutes} min` : "Arrived"}
           </strong>
           {terminalStop?.estimatedArrival && (
             <small className="block text-[10px] text-slate-500">
@@ -157,7 +178,7 @@ export function AdminTripEtaPanel({
               : "N/A"}
           </strong>
           <small className="block text-[10px] text-slate-500">
-            vs static free-flow
+            vs historical traffic baseline
           </small>
         </div>
 
@@ -199,9 +220,9 @@ export function AdminTripEtaPanel({
           {!eta.locationSource && <span>No live telemetry available</span>}
         </div>
 
-        {eta.locationAgeMs !== null && (
+        {displayedLocationAgeMs !== null && (
           <span className="tabular-nums">
-            Telemetry age: {Math.round(eta.locationAgeMs / 1_000)}s
+            Telemetry age: {Math.round(displayedLocationAgeMs / 1_000)}s
           </span>
         )}
       </div>
