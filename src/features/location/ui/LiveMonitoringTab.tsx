@@ -2,6 +2,7 @@
 
 import SeatGrid from "@/components/SeatGrid";
 import { Activity, RefreshCw } from "lucide-react";
+import { AdminTripEtaPanel } from "@/features/eta/ui";
 
 interface LiveMonitoringTabProps {
   trips: any[];
@@ -47,6 +48,11 @@ export default function LiveMonitoringTab({
               )}
             </select>
       </div>
+      {liveTripDetails && (
+        <div className="live-eta-section my-4">
+          <AdminTripEtaPanel tripId={selectedTripId} />
+        </div>
+      )}
 
       {liveTripDetails ? (
         <div className="live-operations-workspace">

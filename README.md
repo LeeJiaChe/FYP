@@ -19,6 +19,7 @@
 - **Walk-in Pass** — Records intent but clearly does not guarantee standing admission; capacity is claimed only when scanned
 - **Journey-Aware Waitlist** — Oldest-compatible-first FIFO; skipped incompatible entries retain priority
 - **Live Bus Location** — GPS simulator coordinates displayed honestly as prototype telemetry, not schedule interpolation
+- **Traffic-Aware ETA** — Optional Google Maps Platform Routes API (`Compute Routes` v2) estimates with automatic timetable fallback; disabled by default
 - **Booking History** — View all past and upcoming bookings
 - **Credit Score** — Tracks reliability; drops on no-shows, triggers booking restrictions
 - **Penalty Appeals** — Submit appeals against no-show penalties with written justification
@@ -36,7 +37,7 @@
 - **Route Management** — Directional ordered routes of approximately 2–5 reusable stops
 - **Trip Scheduling** — Derive per-stop planned times from route travel-duration offsets, assign buses/drivers, and record delay metadata
 - **Driver Management** — Create driver accounts and assign them to trips
-- **Live Operations** — Journey-aware reserved-seat and admitted-standing occupancy without seat-sensor/device-health simulation
+- **Live Operations** — Journey-aware reserved-seat and admitted-standing occupancy, with live traffic ETA predictions and timetable variance
 - **Analytics Dashboard** — Historical aggregations for ridership, route demand, and fleet utilisation using Recharts
 - **Penalty & Appeal Review** — Approve or reject student penalty appeals with admin comments
 
@@ -252,8 +253,15 @@ provide segment-aware reservations. Phase 5 adds `WalkInIntent`, admitted
 boarding, alighting evidence, and Trip progress. Phase 8 adds
 `TripLocationSample` and removes the obsolete Seat/device schema completely.
 See the [Phase 3 report](./framework/PHASE_3_TOPOLOGY_AND_INVENTORY.md),
-[Phase 4 report](./framework/PHASE_4_RESERVED_JOURNEYS.md), and
-[Phase 5 report](./framework/PHASE_5_BOARDING_AND_WALKIN.md).
+[Phase 4 report](./framework/PHASE_4_RESERVED_JOURNEYS.md),
+[Phase 5 report](./framework/PHASE_5_BOARDING_AND_WALKIN.md), and
+[Traffic-Aware Shuttle ETA Integration Guide](./docs/TRAFFIC_AWARE_ETA.md).
+
+The optional Routes API integration keeps its API key server-only and remains
+disabled by default. `TRAFFIC_AWARE` currently uses the Routes: Compute Routes
+Pro billing SKU. Review current Google pricing and deployment policy requirements,
+then configure Cloud Billing budgets, quota limits, and usage monitoring before
+enabling it.
 
 ---
 

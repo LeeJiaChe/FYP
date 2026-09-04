@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 
 import RestrictedBanner from "@/components/student/RestrictedBanner";
+import { selectStudentEtaBooking } from "@/features/bookings/ui/student-journey-presentation";
+import { StudentBookingEtaCard } from "@/features/eta/ui";
 
 interface StudentHomeUser {
   name?: string | null;
@@ -20,10 +22,13 @@ interface StudentHomeUser {
 interface StudentHomeBooking {
   id?: string;
   status: string;
+  checkedInAt?: string | null;
+  actualAlightedAt?: string | null;
   boardingStopName?: string;
   dropOffStopName?: string;
   trip?: {
     departureTime?: string;
+    status?: string;
     routeName?: string;
     route?: { name?: string };
   };
@@ -99,6 +104,7 @@ export default function StudentHome({
         new Date(a.trip?.departureTime ?? 0).getTime() -
         new Date(b.trip?.departureTime ?? 0).getTime(),
     )[0];
+  const etaBooking = selectStudentEtaBooking(bookings, now);
   const nextDeparture = formatDeparture(nextBooking?.trip?.departureTime);
   const score = user?.creditScore ?? defaultCreditScore;
   const fullName = user?.name?.trim() || "Student";
@@ -151,6 +157,12 @@ export default function StudentHome({
         isBookingRestricted={isRestricted}
         onViewPenalties={onViewAccount}
       />
+
+      {etaBooking?.id && (
+        <section className="student-home-eta-section my-3" aria-label="Current or next journey arrival estimate">
+          <StudentBookingEtaCard bookingId={etaBooking.id} />
+        </section>
+      )}
 
       <section className="student-home-primary" aria-labelledby="student-home-plan-title">
         <div className="student-home-primary-copy">

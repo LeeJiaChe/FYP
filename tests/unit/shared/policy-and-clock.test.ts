@@ -18,6 +18,9 @@ describe("central product policy", () => {
     assert.equal(productPolicy.bookingRestrictionBelowCredit, 40);
     assert.equal(productPolicy.gpsSimulatorIntervalMs, 5_000);
     assert.equal(productPolicy.locationRetentionMs, 7 * 24 * 60 * 60 * 1_000);
+    assert.equal(productPolicy.trafficEtaFailureCacheMs, 15_000);
+    assert.equal(productPolicy.trafficEtaTimeoutMs, 3_000);
+    assert.equal(productPolicy.trafficEtaMaxLocationAgeMs, 60_000);
   });
 
   it("supports narrow test overrides without mutating defaults", () => {

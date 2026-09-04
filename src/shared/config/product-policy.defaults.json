@@ -7,5 +7,8 @@
   "noShowPenaltyPoints": 15,
   "bookingRestrictionBelowCredit": 40,
   "gpsSimulatorIntervalMs": 5000,
-  "locationRetentionMs": 604800000
+  "locationRetentionMs": 604800000,
+  "trafficEtaFailureCacheMs": 15000,
+  "trafficEtaTimeoutMs": 3000,
+  "trafficEtaMaxLocationAgeMs": 60000
 }
