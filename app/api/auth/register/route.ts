@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { registerSchema } from "@/lib/validations";
 import { registerRateLimiter } from "@/lib/rate-limit";
 import {
@@ -17,15 +18,15 @@ export async function POST(req: Request) {
     const validated = registerSchema.parse(body);
 
     return NextResponse.json(await registerStudent(validated), { status: 201 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof StudentRegistrationError) {
       return NextResponse.json(
         { error: err.message },
         { status: err.code === "DELIVERY_UNAVAILABLE" ? 503 : 400 },
       );
     }
-    if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
+    if (err instanceof ZodError) {
+      const msg = err.issues[0]?.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

@@ -3418,6 +3418,18 @@ button.context-item:hover .context-action-cue {
   border-color: var(--border-subtle);
   background: radial-gradient(ellipse at 30% 24%, var(--surface-blue), transparent 46%), linear-gradient(145deg, var(--surface-secondary), var(--surface-primary));
 }
+.map-marker {
+  display: grid;
+  place-items: center;
+  border: 2px solid rgb(255 255 255 / .9);
+  border-radius: 999px;
+  color: #080b10;
+  font-size: .62rem;
+  font-weight: 900;
+  box-shadow: 0 5px 16px rgb(0 0 0 / .35);
+}
+.map-marker-stop { width: 1.55rem; height: 1.55rem; background: #f5f7fa; }
+.map-marker-shuttle { width: 2.15rem; height: 2.15rem; background: #74a9f5; }
 .telemetry-bus-marker { background: var(--success); box-shadow: 0 10px 24px rgb(38 68 62 / .18), 0 0 0 5px var(--surface-teal); }
 
 .account-credit-stage {

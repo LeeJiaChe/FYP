@@ -31,7 +31,10 @@ import { productPolicy } from "@/shared/config/policies";
 import { systemClock, type Clock } from "@/shared/time/clock";
 import { currentOperationalSegmentPosition } from "../domain/operational-segment";
 import { resolveDriverOperation } from "../domain/driver-operation";
-import { evaluateServiceBlockContinuity } from "../domain/service-block-continuity";
+import {
+  evaluateAdjacentBusTransition,
+  evaluateServiceBlockContinuity,
+} from "../domain/service-block-continuity";
 import {
   detectBulkResourceConflicts,
   generateBulkTripCandidates,
@@ -174,16 +177,27 @@ export async function previewBulkSchedule(
     });
   }
 
-  if (context.block) {
-    const sequence = [...context.block.trips, ...proposed].sort(
+  const busTransitions = new Map<string, Array<(typeof proposed)[number] | (typeof context.existingTrips)[number]>>();
+  for (const trip of [...context.existingTrips, ...proposed]) {
+    const sequence = busTransitions.get(trip.busId) ?? [];
+    sequence.push(trip);
+    busTransitions.set(trip.busId, sequence);
+  }
+  for (const sequence of busTransitions.values()) {
+    sequence.sort(
       (left, right) => left.departureTime.getTime() - right.departureTime.getTime(),
     );
     for (let index = 1; index < sequence.length; index += 1) {
+      const previous = sequence[index - 1]!;
       const current = sequence[index]!;
-      if (!("key" in current)) continue;
-      current.warnings.push(
-        evaluateServiceBlockContinuity(sequence[index - 1]!, current, productPolicy),
+      const advisory = evaluateAdjacentBusTransition(
+        previous,
+        current,
+        productPolicy,
       );
+      if (!advisory) continue;
+      if ("key" in current) current.warnings.push(advisory);
+      else if ("key" in previous) previous.warnings.push(advisory);
     }
   }
 
@@ -250,11 +264,20 @@ export async function listTrips(
     actor.role === "STUDENT" ? actor.userId : undefined,
   );
   const blockTrips = new Map<string, typeof trips>();
+  const busTrips = new Map<string, typeof trips>();
   for (const trip of trips) {
+    const assigned = busTrips.get(trip.busId) ?? [];
+    assigned.push(trip);
+    busTrips.set(trip.busId, assigned);
     if (!trip.blockId) continue;
     const values = blockTrips.get(trip.blockId) ?? [];
     values.push(trip);
     blockTrips.set(trip.blockId, values);
+  }
+  for (const values of busTrips.values()) {
+    values.sort(
+      (left, right) => left.departureTime.getTime() - right.departureTime.getTime(),
+    );
   }
   for (const values of blockTrips.values()) {
     values.sort(
@@ -284,6 +307,8 @@ export async function listTrips(
     ).length;
     const tripsInBlock = trip.blockId ? blockTrips.get(trip.blockId) : undefined;
     const blockIndex = tripsInBlock?.findIndex((item) => item.id === trip.id) ?? -1;
+    const tripsForBus = busTrips.get(trip.busId) ?? [];
+    const busIndex = tripsForBus.findIndex((item) => item.id === trip.id);
 
     const shared = {
       id: trip.id,
@@ -366,6 +391,14 @@ export async function listTrips(
         tripsInBlock && blockIndex > 0
           ? evaluateServiceBlockContinuity(
               tripsInBlock[blockIndex - 1]!,
+              trip,
+              productPolicy,
+            )
+          : null,
+      busTransitionFromPrevious:
+        busIndex > 0
+          ? evaluateAdjacentBusTransition(
+              tripsForBus[busIndex - 1]!,
               trip,
               productPolicy,
             )

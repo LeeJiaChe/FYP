@@ -1,4 +1,8 @@
-export type StudentTrackingState = "UPCOMING" | "LIVE" | "UNAVAILABLE";
+export type StudentTrackingState =
+  | "UPCOMING"
+  | "AWAITING_OPERATION"
+  | "LIVE"
+  | "UNAVAILABLE";
 
 export function resolveStudentTrackingState(
   tripStatus: string,
@@ -6,8 +10,10 @@ export function resolveStudentTrackingState(
   now: Date,
 ): StudentTrackingState {
   if (tripStatus === "BOARDING" || tripStatus === "DEPARTED") return "LIVE";
-  if (tripStatus === "NOT_STARTED" && departureTime.getTime() >= now.getTime()) {
-    return "UPCOMING";
+  if (tripStatus === "NOT_STARTED") {
+    return departureTime.getTime() >= now.getTime()
+      ? "UPCOMING"
+      : "AWAITING_OPERATION";
   }
   return "UNAVAILABLE";
 }

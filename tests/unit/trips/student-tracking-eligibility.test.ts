@@ -12,9 +12,15 @@ describe("student Trip tracking eligibility", () => {
     assert.equal(resolveStudentTrackingState("DEPARTED", now, now), "LIVE");
   });
 
-  it("excludes terminal and stale unprogressed Trips", () => {
+  it("keeps overdue unstarted Trips visible for operational attention", () => {
+    assert.equal(
+      resolveStudentTrackingState("NOT_STARTED", new Date(now.getTime() - 1), now),
+      "AWAITING_OPERATION",
+    );
+  });
+
+  it("excludes terminal Trips", () => {
     assert.equal(resolveStudentTrackingState("ARRIVED", now, now), "UNAVAILABLE");
     assert.equal(resolveStudentTrackingState("CANCELLED", now, now), "UNAVAILABLE");
-    assert.equal(resolveStudentTrackingState("NOT_STARTED", new Date(now.getTime() - 1), now), "UNAVAILABLE");
   });
 });

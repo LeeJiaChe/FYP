@@ -166,7 +166,7 @@ async function main() {
         email: "student1@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
       },
       {
         studentId: "24WAB01235",
@@ -174,7 +174,7 @@ async function main() {
         email: "student2@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
         creditScore: 85,
       },
       {
@@ -183,7 +183,7 @@ async function main() {
         email: "student3@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
         creditScore: 35,
       },
       {
@@ -192,7 +192,7 @@ async function main() {
         email: "student4@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
       },
       {
         studentId: "24WAB01238",
@@ -200,7 +200,7 @@ async function main() {
         email: "student5@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
       },
       {
         studentId: "24WAB01239",
@@ -208,7 +208,7 @@ async function main() {
         email: "student6@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
       },
       {
         studentId: "24WAB01240",
@@ -216,7 +216,7 @@ async function main() {
         email: "student7@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
       },
       {
         studentId: "24WAB01241",
@@ -224,7 +224,7 @@ async function main() {
         email: "student8@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
       },
       {
         studentId: "24WAB01242",
@@ -232,7 +232,7 @@ async function main() {
         email: "student9@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
         creditScore: 85,
       },
       {
@@ -241,7 +241,7 @@ async function main() {
         email: "student10@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
-        emailVerifiedAt: verifiedDemoAccountAt,
+        studentIdentityAssurance: "LEGACY_PROTOTYPE",
       },
     ],
   });

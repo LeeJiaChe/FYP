@@ -1,13 +1,21 @@
 -- Student registration must prove mailbox ownership before a session can be
 -- issued. Existing privileged operator accounts retain access; existing
--- students remain unverified because an email suffix is not proof of ownership.
+-- students remain usable but explicitly carry LEGACY_PROTOTYPE assurance because
+-- an email suffix is not proof of mailbox ownership.
+
+CREATE TYPE "StudentIdentityAssurance" AS ENUM ('LEGACY_PROTOTYPE', 'EMAIL_UNVERIFIED', 'EMAIL_VERIFIED');
 
 ALTER TABLE "User" ADD COLUMN "emailVerifiedAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN "studentIdentityAssurance" "StudentIdentityAssurance";
 ALTER TABLE "Notification" ADD COLUMN "contextPath" TEXT;
 
 UPDATE "User"
 SET "emailVerifiedAt" = "createdAt"
 WHERE "role" IN ('ADMIN', 'DRIVER');
+
+UPDATE "User"
+SET "studentIdentityAssurance" = 'LEGACY_PROTOTYPE'
+WHERE "role" = 'STUDENT';
 
 CREATE TABLE "EmailVerificationToken" (
     "id" TEXT NOT NULL,

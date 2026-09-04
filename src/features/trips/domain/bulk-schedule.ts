@@ -1,5 +1,6 @@
 import type { BulkScheduleInput } from "../contracts/trip.schemas";
 import { intervalsOverlap, toServiceDateKey } from "./scheduling-policy";
+import { mytLocalDateTimeToIso } from "@/shared/time/operational-time";
 
 export interface BulkTripCandidate {
   readonly key: string;
@@ -42,7 +43,7 @@ export function generateBulkTripCandidates(
       candidates.push({
         key: `${date}-${hour}${minute}-${index + 1}`,
         routeId: input.routeId,
-        departureTime: new Date(`${date}T${hour}:${minute}:00+08:00`),
+        departureTime: new Date(mytLocalDateTimeToIso(`${date}T${hour}:${minute}`)),
         busId: input.busIds[index % input.busIds.length]!,
         driverId,
         blockId: input.blockId,

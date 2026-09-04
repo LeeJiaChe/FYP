@@ -25,6 +25,16 @@ export interface TripListItem {
     minimumTurnaroundMinutes: number;
     message: string;
   } | null;
+  busTransitionFromPrevious?: {
+    status:
+      | "CONTINUOUS_OK"
+      | "TURNAROUND_TOO_SHORT"
+      | "DEADHEAD_REQUIRED"
+      | "DEADHEAD_TIME_INSUFFICIENT";
+    gapMinutes: number;
+    minimumTurnaroundMinutes: number;
+    message: string;
+  } | null;
   seatedCapacity?: number;
   standingCapacity?: number;
   departureTime: string;
@@ -33,7 +43,7 @@ export interface TripListItem {
   delayMinutes?: number;
   expectedDelayMinutes?: number;
   expectedDelayReason?: string | null;
-  trackingState?: "UPCOMING" | "LIVE" | "UNAVAILABLE";
+  trackingState?: "UPCOMING" | "AWAITING_OPERATION" | "LIVE" | "UNAVAILABLE";
   createdAt: string;
   route?: { id: string; name: string; stops: string[]; createdAt: string };
   bus?: {

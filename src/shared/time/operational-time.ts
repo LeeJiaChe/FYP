@@ -54,6 +54,43 @@ export function mytServiceDayBounds(serviceDate: string): {
   };
 }
 
+export function mytLocalDateTimeToIso(localValue: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)$/.exec(
+    localValue,
+  );
+  if (!match) throw new RangeError("MYT date-time must use YYYY-MM-DDTHH:mm");
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const calendarCheck = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  if (
+    calendarCheck.getUTCFullYear() !== year ||
+    calendarCheck.getUTCMonth() !== month - 1 ||
+    calendarCheck.getUTCDate() !== day
+  ) {
+    throw new RangeError("Invalid MYT calendar date-time");
+  }
+  return new Date(Date.UTC(year, month - 1, day, hour - 8, minute)).toISOString();
+}
+
+export function isoToMytLocalDateTime(value: string | Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(validDate(value));
+  const fields = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const hour = fields.hour === "24" ? "00" : fields.hour;
+  return `${fields.year}-${fields.month}-${fields.day}T${hour}:${fields.minute}`;
+}
+
 export function formatMytTime(value: string | Date): string {
   const formatted = new Intl.DateTimeFormat("en-MY", {
     timeZone: OPERATIONAL_TIME_ZONE,

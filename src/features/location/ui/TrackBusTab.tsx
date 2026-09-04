@@ -33,6 +33,13 @@ export default function TrackBusTab({
       ) !== "UNAVAILABLE",
   );
   const selectedTrip = trackableTrips.find((trip) => trip.id === trackedTrip?.id) ?? null;
+  const selectedTrackingState = selectedTrip
+    ? resolveStudentTrackingState(
+        selectedTrip.status,
+        new Date(selectedTrip.departureTime),
+        new Date(nowMs),
+      )
+    : "UNAVAILABLE";
   return (
     <div className="tracking-view animate-fade-in">
       <header className="tracking-header">
@@ -60,7 +67,7 @@ export default function TrackBusTab({
           {trackableTrips.map((t) => (
             <option key={t.id} value={t.id}>
               {t.routeName} ({t.busPlateNumber}) ·{" "}
-              {formatMytTime(t.departureTime)} MYT · {t.status === "NOT_STARTED" ? "Upcoming" : "Live"}
+              {formatMytTime(t.departureTime)} MYT · {resolveStudentTrackingState(t.status, new Date(t.departureTime), new Date(nowMs)) === "AWAITING_OPERATION" ? "Awaiting operation" : t.status === "NOT_STARTED" ? "Upcoming" : "Live"}
             </option>
           ))}
         </select>
@@ -90,7 +97,10 @@ export default function TrackBusTab({
                 { label: "Bus Plate", value: selectedTrip.busPlateNumber },
                 {
                   label: "Status",
-                  value: selectedTrip.status.replace("_", " "),
+                  value:
+                    selectedTrackingState === "AWAITING_OPERATION"
+                      ? "Scheduled departure passed · operation not started"
+                      : selectedTrip.status.replaceAll("_", " "),
                 },
                 {
                   label: "Departure",
@@ -111,6 +121,19 @@ export default function TrackBusTab({
                 </div>
               ))}
             </dl>
+
+            {selectedTrackingState === "AWAITING_OPERATION" && (
+              <section className="tracking-operational-note" role="status">
+                <strong>Awaiting operational start</strong>
+                <p>
+                  The scheduled departure has passed, but the Trip has not been
+                  marked boarding or departed. Live position may not be available yet.
+                  {selectedTrip.expectedDelayMinutes
+                    ? ` Reported expected delay: ${selectedTrip.expectedDelayMinutes} minutes.`
+                    : " No expected delay has been reported."}
+                </p>
+              </section>
+            )}
 
             <section className="tracking-route-stops">
               <h4>Route Stops</h4>

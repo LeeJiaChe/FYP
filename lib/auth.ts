@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { serverEnvironment } from "@/shared/config/env.server";
+import { canStudentIdentityAuthenticate } from "@/features/identity/public";
 
 const JWT_SECRET = serverEnvironment.session.signingSecret;
 export const COOKIE_NAME = "fyp_session";
@@ -51,13 +52,22 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
   // DB lookup to verify sessionVersion
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { sessionVersion: true, role: true, emailVerifiedAt: true }
+    select: {
+      sessionVersion: true,
+      role: true,
+      emailVerifiedAt: true,
+      studentIdentityAssurance: true,
+    },
   });
 
   if (
     !user ||
     user.sessionVersion !== payload.sessionVersion ||
-    (user.role === "STUDENT" && !user.emailVerifiedAt)
+    (user.role === "STUDENT" &&
+      !canStudentIdentityAuthenticate({
+        assurance: user.studentIdentityAssurance,
+        emailVerifiedAt: user.emailVerifiedAt,
+      }))
   ) {
     return null;
   }
@@ -83,7 +93,13 @@ export async function getCurrentUser() {
 
   if (!user) return null;
   if (user.sessionVersion !== payload.sessionVersion) return null;
-  if (user.role === "STUDENT" && !user.emailVerifiedAt) return null;
+  if (
+    user.role === "STUDENT" &&
+    !canStudentIdentityAuthenticate({
+      assurance: user.studentIdentityAssurance,
+      emailVerifiedAt: user.emailVerifiedAt,
+    })
+  ) return null;
   
   return user;
 }

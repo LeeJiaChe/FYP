@@ -5,6 +5,8 @@ import {
   formatMytDate,
   formatMytTime,
   getMytHour,
+  isoToMytLocalDateTime,
+  mytLocalDateTimeToIso,
   mytServiceDayBounds,
   toMytServiceDateKey,
 } from "../../../src/shared/time/operational-time";
@@ -19,6 +21,22 @@ describe("Malaysia operational time", () => {
     const bounds = mytServiceDayBounds("2026-09-05");
     assert.equal(bounds.startUtc.toISOString(), "2026-09-04T16:00:00.000Z");
     assert.equal(bounds.endUtcExclusive.toISOString(), "2026-09-05T16:00:00.000Z");
+  });
+
+  it("converts datetime-local input as MYT independent of host timezone", () => {
+    assert.equal(
+      mytLocalDateTimeToIso("2026-09-10T08:30"),
+      "2026-09-10T00:30:00.000Z",
+    );
+    assert.equal(
+      mytLocalDateTimeToIso("2026-09-10T00:00"),
+      "2026-09-09T16:00:00.000Z",
+    );
+    assert.equal(
+      isoToMytLocalDateTime("2026-09-09T16:00:00.000Z"),
+      "2026-09-10T00:00",
+    );
+    assert.throws(() => mytLocalDateTimeToIso("2026-02-30T08:30"), RangeError);
   });
 
   it("formats date and time independently of the host timezone", () => {

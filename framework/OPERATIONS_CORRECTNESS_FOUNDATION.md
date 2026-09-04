@@ -23,8 +23,10 @@ correctness, privacy and operational-realism repair.
   Actual departure delay is calculated from the origin TripStop's actual versus
   planned departure timestamp.
 - `minimumServiceBlockTurnaroundMs` is a named prototype policy (10 minutes).
-  Same-terminal short turns and different-terminal deadheads are warnings;
-  unknown repositioning duration is never fabricated.
+  The same transition evaluator applies to every adjacent same-Bus assignment,
+  with or without a ServiceBlock. Schedule overlap is a hard conflict;
+  same-terminal short turns and different-terminal deadheads are advisories.
+  Unknown repositioning duration is never fabricated.
 - Bulk generation is preview then confirm. Confirmation re-runs validation and
   transactionally creates ordinary Trips; there is no parallel timetable model.
 
@@ -45,9 +47,36 @@ unconfigured; a real provider must implement that interface without placing
 credentials in browser variables. `PasswordResetToken` prepares, but does not
 pretend to deliver, a future verified-email recovery workflow.
 
+Student identity assurance is explicit rather than inferred from an email
+suffix. Students present before this unapplied migration become
+`LEGACY_PROTOTYPE`: they retain prototype access while remaining clearly not
+mailbox verified. New self-registered Students start `EMAIL_UNVERIFIED`, cannot
+authenticate, and become `EMAIL_VERIFIED` only after consuming a valid token.
+Self-registration requires both the TAR UMT student email and an explicit
+Student ID; it never synthesizes one. Resend returns a generic response for
+unknown, legacy, and already-verified identities. For a pending identity it
+atomically consumes previous usable tokens, creates a new hashed token, and
+uses the same fail-closed delivery adapter and expiry policy.
+
+Admin `datetime-local` values are parsed as Malaysia civil time by
+`mytLocalDateTimeToIso`, independent of the browser timezone. A scheduled
+departure such as `2026-09-10T08:30` therefore always means
+`2026-09-10T00:30:00.000Z`.
+
+Student tracking classifies a late `NOT_STARTED` Trip as
+`AWAITING_OPERATION`, not historical. It remains selectable with schedule and
+expected-delay context, while the UI avoids implying that live telemetry is
+available before operational progress begins.
+
+The browser map initializes once. Stop markers, route polyline, and viewport
+change only with route topology; telemetry updates only move the shuttle's
+Advanced Marker. Failure still returns to the labelled coordinate schematic.
+
 ## Migration safety
 
-Prisma owns `20260904120000_verified_student_identity`. It adds verification
-and password-reset token tables plus notification context. The migration is not
+Prisma owns `20260904120000_verified_student_identity`. Because repository
+history records it as unapplied, the migration itself now adds the identity
+assurance enum alongside verification/password-reset tokens and notification
+context. The migration is not
 deployed to the shared Supabase project by this task and must be tested/deployed
 only through the repository's guarded isolated-database workflow.

@@ -9,6 +9,13 @@ export async function findStudentIdentityRecord(email: string, studentId: string
   });
 }
 
+export async function findIdentityForVerificationRecord(email: string) {
+  return prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, role: true, studentIdentityAssurance: true },
+  });
+}
+
 export async function createUnverifiedStudentRecord(input: {
   name: string;
   email: string;
@@ -26,6 +33,7 @@ export async function createUnverifiedStudentRecord(input: {
         studentId: input.studentId,
         passwordHash: input.passwordHash,
         role: "STUDENT",
+        studentIdentityAssurance: "EMAIL_UNVERIFIED",
         creditScore: input.initialCredit,
       },
       select: { id: true, email: true },
@@ -57,8 +65,34 @@ export async function consumeEmailVerificationTokenRecord(
     if (consumed.count !== 1) return null;
     await transaction.user.update({
       where: { id: token.userId },
-      data: { emailVerifiedAt: now, sessionVersion: { increment: 1 } },
+      data: {
+        emailVerifiedAt: now,
+        studentIdentityAssurance: "EMAIL_VERIFIED",
+        sessionVersion: { increment: 1 },
+      },
     });
     return { userId: token.userId };
+  });
+}
+
+export async function rotateEmailVerificationTokenRecord(input: {
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  now: Date;
+}) {
+  return prisma.$transaction(async (transaction) => {
+    await transaction.emailVerificationToken.updateMany({
+      where: { userId: input.userId, consumedAt: null },
+      data: { consumedAt: input.now },
+    });
+    return transaction.emailVerificationToken.create({
+      data: {
+        userId: input.userId,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+      },
+      select: { id: true },
+    });
   });
 }

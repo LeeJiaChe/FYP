@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword, signToken, COOKIE_NAME } from "@/lib/auth";
 import { loginSchema } from "@/lib/validations";
 import { loginRateLimiter } from "@/lib/rate-limit";
 import { isBookingRestricted } from "@/features/penalties/public";
 import { productPolicy } from "@/shared/config/policies";
+import { canStudentIdentityAuthenticate } from "@/features/identity/public";
 
 export async function POST(req: Request) {
   try {
@@ -33,7 +35,13 @@ export async function POST(req: Request) {
     if (!isMatch) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
-    if (user.role === "STUDENT" && !user.emailVerifiedAt) {
+    if (
+      user.role === "STUDENT" &&
+      !canStudentIdentityAuthenticate({
+        assurance: user.studentIdentityAssurance,
+        emailVerifiedAt: user.emailVerifiedAt,
+      })
+    ) {
       return NextResponse.json(
         { error: "Verify your student email before signing in" },
         { status: 403 },
@@ -42,7 +50,7 @@ export async function POST(req: Request) {
 
     const token = signToken({
       userId: user.id,
-      role: user.role as any,
+      role: user.role,
       email: user.email,
       name: user.name,
       sessionVersion: user.sessionVersion,
@@ -69,9 +77,9 @@ export async function POST(req: Request) {
     });
 
     return res;
-  } catch (err: any) {
-    if (err.name === "ZodError" || err.issues) {
-      const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      const msg = err.issues[0]?.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

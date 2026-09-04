@@ -20,6 +20,7 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [previewToken, setPreviewToken] = useState<string | null>(null);
+  const [awaitingVerification, setAwaitingVerification] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,6 +48,7 @@ export default function RegisterPage() {
       }
 
       setPreviewToken(data.previewToken ?? null);
+      setAwaitingVerification(true);
       setLoading(false);
     } catch {
       setError("Network error. Please try again.");
@@ -79,34 +81,45 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {previewToken ? (
+          {awaitingVerification ? (
             <div className="space-y-4" aria-live="polite">
               <h2 className="text-lg font-bold">Verify your student email</h2>
               <p className="text-sm text-[var(--text-secondary)]">
-                Your account is not active yet. This development build exposes the one-time verification action here; production requires a configured email delivery adapter.
+                Your account is not active yet. Follow the link sent to your TAR UMT
+                student email. If it expires or is lost, request another from the sign-in page.
               </p>
-              <button
-                type="button"
-                className="btn-primary w-full"
-                onClick={async () => {
-                  setLoading(true);
-                  const response = await fetch("/api/auth/verify-email", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ token: previewToken }),
-                  });
-                  const result = await response.json();
-                  if (!response.ok) {
-                    setError(result.error ?? "Verification failed");
-                    setLoading(false);
-                    return;
-                  }
-                  window.location.href = "/login?verified=1";
-                }}
-                disabled={loading}
-              >
-                {loading ? "Verifying…" : "Verify development account"}
-              </button>
+              {previewToken && (
+                <>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    This non-production build exposes the one-time verification action here.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-primary w-full"
+                    onClick={async () => {
+                      setLoading(true);
+                      const response = await fetch("/api/auth/verify-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ token: previewToken }),
+                      });
+                      const result = await response.json();
+                      if (!response.ok) {
+                        setError(result.error ?? "Verification failed");
+                        setLoading(false);
+                        return;
+                      }
+                      window.location.href = "/login?verified=1";
+                    }}
+                    disabled={loading}
+                  >
+                    {loading ? "Verifying…" : "Verify development account"}
+                  </button>
+                </>
+              )}
+              <Link href="/login" className="btn-secondary w-full">
+                Return to sign in
+              </Link>
             </div>
           ) : <form onSubmit={handleSubmit} className="space-y-4">
             <div>

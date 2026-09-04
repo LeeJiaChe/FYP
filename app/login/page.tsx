@@ -9,6 +9,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resendEmail, setResendEmail] = useState("");
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [resendPreviewToken, setResendPreviewToken] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,6 +40,31 @@ export default function LoginPage() {
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
+    }
+  }
+
+  async function handleResend(event: React.FormEvent) {
+    event.preventDefault();
+    setResending(true);
+    setResendStatus(null);
+    setResendPreviewToken(null);
+    try {
+      const response = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resendEmail }),
+      });
+      const data = await response.json();
+      setResendStatus(
+        response.ok
+          ? data.message
+          : data.error ?? "Unable to prepare a verification email.",
+      );
+      setResendPreviewToken(data.previewToken ?? null);
+    } catch {
+      setResendStatus("Network error. Please try again.");
+    } finally {
+      setResending(false);
     }
   }
 
@@ -128,6 +157,52 @@ export default function LoginPage() {
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
+
+          <details className="pt-4 border-t border-slate-800/80 text-xs">
+            <summary className="cursor-pointer font-semibold text-slate-300">
+              Need a new student verification link?
+            </summary>
+            <form onSubmit={handleResend} className="mt-3 space-y-3">
+              <label htmlFor="resend-email" className="sr-only">
+                Student email
+              </label>
+              <input
+                id="resend-email"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="your.name@student.tarc.edu.my"
+                value={resendEmail}
+                onChange={(event) => setResendEmail(event.target.value)}
+                className="input-field"
+              />
+              <button type="submit" disabled={resending} className="btn-secondary w-full">
+                {resending ? "Preparing…" : "Resend verification"}
+              </button>
+              {resendStatus && (
+                <p className="text-[11px] text-[var(--text-secondary)]" aria-live="polite">
+                  {resendStatus}
+                </p>
+              )}
+              {resendPreviewToken && (
+                <button
+                  type="button"
+                  className="btn-primary w-full"
+                  onClick={async () => {
+                    const response = await fetch("/api/auth/verify-email", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ token: resendPreviewToken }),
+                    });
+                    if (response.ok) window.location.href = "/login?verified=1";
+                    else setResendStatus("Verification link is invalid or expired.");
+                  }}
+                >
+                  Verify development account
+                </button>
+              )}
+            </form>
+          </details>
 
           {/* Quick Seed Credentials Box */}
           <div className="pt-4 border-t border-slate-800/80 space-y-2">

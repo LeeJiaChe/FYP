@@ -13,6 +13,12 @@ enum UserRole {
   ADMIN
 }
 
+enum StudentIdentityAssurance {
+  LEGACY_PROTOTYPE
+  EMAIL_UNVERIFIED
+  EMAIL_VERIFIED
+}
+
 enum BusStatus {
   ACTIVE
   MAINTENANCE
@@ -104,17 +110,18 @@ enum RouteDirection {
 }
 
 model User {
-  id              String    @id @default(uuid())
-  studentId       String?   @unique
-  name            String
-  email           String    @unique
-  passwordHash    String
-  role            UserRole
-  creditScore     Int       @default(100)
-  sessionVersion  Int       @default(1)
-  emailVerifiedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                       String                    @id @default(uuid())
+  studentId                String?                   @unique
+  name                     String
+  email                    String                    @unique
+  passwordHash             String
+  role                     UserRole
+  creditScore              Int                       @default(100)
+  sessionVersion           Int                       @default(1)
+  emailVerifiedAt          DateTime?
+  studentIdentityAssurance StudentIdentityAssurance?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
 
   driverTrips             Trip[]                   @relation("DriverTrips")
   bookings                Booking[]

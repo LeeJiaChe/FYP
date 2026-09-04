@@ -19,7 +19,12 @@ import StopsTab from "@/features/fleet/ui/StopsTab";
 import { AppealsTab } from "@/features/penalties/ui";
 import { AnalyticsTab } from "@/features/analytics/ui";
 import type { CurrentUser } from "@/shared/ui/current-user";
-import { formatMytDate, formatMytTime } from "@/shared/time/operational-time";
+import {
+  formatMytDate,
+  formatMytTime,
+  isoToMytLocalDateTime,
+  mytLocalDateTimeToIso,
+} from "@/shared/time/operational-time";
 import { useOperationalClock } from "@/shared/ui/useOperationalClock";
 
 import {
@@ -451,7 +456,7 @@ export default function AdminPortal({
         ? {
             driverId: newTrip.driverId || null,
             departureTime: newTrip.departureTime
-              ? new Date(newTrip.departureTime).toISOString()
+              ? mytLocalDateTimeToIso(newTrip.departureTime)
               : "",
           }
         : {
@@ -460,7 +465,7 @@ export default function AdminPortal({
             driverId: newTrip.driverId || undefined,
             blockId: newTrip.blockId || undefined,
             departureTime: newTrip.departureTime
-              ? new Date(newTrip.departureTime).toISOString()
+              ? mytLocalDateTimeToIso(newTrip.departureTime)
               : "",
           };
 
@@ -1106,9 +1111,7 @@ export default function AdminPortal({
                   busId: trip.busId,
                   driverId: trip.driverId || "",
                   blockId: trip.blockId || "",
-                  departureTime: new Date(trip.departureTime)
-                    .toISOString()
-                    .slice(0, 16),
+                  departureTime: isoToMytLocalDateTime(trip.departureTime),
                 });
                 setShowTripModal(true);
               }}

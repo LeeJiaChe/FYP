@@ -1,12 +1,17 @@
-import { randomBytes } from "node:crypto";
 import { hashPassword } from "@/lib/auth";
 import { productPolicy } from "@/shared/config/policies";
-import { hashEmailVerificationToken } from "../domain/email-verification";
+import {
+  createEmailVerificationToken,
+  hashEmailVerificationToken,
+  shouldRotateVerificationToken,
+} from "../domain/email-verification";
 import { getEmailVerificationDelivery } from "../infrastructure/email-verification-delivery.server";
 import {
   consumeEmailVerificationTokenRecord,
   createUnverifiedStudentRecord,
   findStudentIdentityRecord,
+  findIdentityForVerificationRecord,
+  rotateEmailVerificationTokenRecord,
 } from "../infrastructure/email-verification.prisma.server";
 
 export class StudentRegistrationError extends Error {
@@ -21,7 +26,7 @@ export class StudentRegistrationError extends Error {
 export async function registerStudent(input: {
   name: string;
   email: string;
-  studentId?: string;
+  studentId: string;
   password: string;
 }) {
   const delivery = getEmailVerificationDelivery();
@@ -31,8 +36,7 @@ export async function registerStudent(input: {
       "Student email verification delivery is not configured",
     );
   }
-  const studentId = input.studentId ?? `STU${Date.now().toString().slice(-6)}`;
-  const existing = await findStudentIdentityRecord(input.email, studentId);
+  const existing = await findStudentIdentityRecord(input.email, input.studentId);
   if (existing) {
     throw new StudentRegistrationError(
       "IDENTITY_EXISTS",
@@ -40,19 +44,57 @@ export async function registerStudent(input: {
     );
   }
 
-  const rawToken = randomBytes(32).toString("base64url");
   const now = new Date();
+  const token = createEmailVerificationToken(
+    now,
+    productPolicy.emailVerificationTtlMs,
+  );
   await createUnverifiedStudentRecord({
     name: input.name,
     email: input.email,
-    studentId,
+    studentId: input.studentId,
     passwordHash: await hashPassword(input.password),
-    tokenHash: hashEmailVerificationToken(rawToken),
-    expiresAt: new Date(now.getTime() + productPolicy.emailVerificationTtlMs),
+    tokenHash: token.tokenHash,
+    expiresAt: token.expiresAt,
     initialCredit: productPolicy.initialCredit,
   });
-  const deliveryResult = await delivery.deliver({ email: input.email, rawToken });
+  const deliveryResult = await delivery.deliver({
+    email: input.email,
+    rawToken: token.rawToken,
+  });
   return { requiresEmailVerification: true, ...deliveryResult };
+}
+
+export async function resendStudentVerification(email: string) {
+  const delivery = getEmailVerificationDelivery();
+  if (!delivery.available) {
+    throw new StudentRegistrationError(
+      "DELIVERY_UNAVAILABLE",
+      "Student email verification delivery is not configured",
+    );
+  }
+  const identity = await findIdentityForVerificationRecord(email);
+  if (!shouldRotateVerificationToken(identity)) {
+    return { accepted: true };
+  }
+  if (!identity) return { accepted: true };
+
+  const now = new Date();
+  const token = createEmailVerificationToken(
+    now,
+    productPolicy.emailVerificationTtlMs,
+  );
+  await rotateEmailVerificationTokenRecord({
+    userId: identity.id,
+    tokenHash: token.tokenHash,
+    expiresAt: token.expiresAt,
+    now,
+  });
+  const result = await delivery.deliver({
+    email: identity.email,
+    rawToken: token.rawToken,
+  });
+  return { accepted: true, ...result };
 }
 
 export async function verifyStudentEmail(rawToken: string) {

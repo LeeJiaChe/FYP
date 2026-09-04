@@ -2,6 +2,7 @@ import "server-only";
 
 export {
   registerStudent,
+  resendStudentVerification,
   StudentRegistrationError,
   verifyStudentEmail,
 } from "./application/register-student";

@@ -93,6 +93,12 @@ export default function TripsTab({
                           {trip.continuityFromPrevious?.status !== "CONTINUOUS_OK" && trip.continuityFromPrevious?.message && <small className="text-amber-400">{trip.continuityFromPrevious.message}</small>}
                         </>
                       )}
+                      {trip.busTransitionFromPrevious?.status !== "CONTINUOUS_OK" &&
+                        trip.busTransitionFromPrevious?.message && (
+                          <small className="text-amber-400">
+                            Bus transition advisory · {trip.busTransitionFromPrevious.message}
+                          </small>
+                        )}
                     </div>
                     <div className="timetable-load">
                       <span>

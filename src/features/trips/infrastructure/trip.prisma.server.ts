@@ -524,7 +524,9 @@ export async function loadBulkScheduleContext(input: {
       where: {
         status: { not: "CANCELLED" },
         departureTime: { lt: input.to },
-        estimatedArrivalTime: { gt: input.from },
+        estimatedArrivalTime: {
+          gt: new Date(input.from.getTime() - 24 * 60 * 60_000),
+        },
         OR: [
           { busId: { in: [...input.busIds] } },
           ...(input.driverIds.length ? [{ driverId: { in: [...input.driverIds] } }] : []),
@@ -536,6 +538,10 @@ export async function loadBulkScheduleContext(input: {
         driverId: true,
         departureTime: true,
         estimatedArrivalTime: true,
+        tripStops: {
+          orderBy: { position: "asc" },
+          select: { stopId: true, stopName: true, position: true },
+        },
       },
     }),
   ]);

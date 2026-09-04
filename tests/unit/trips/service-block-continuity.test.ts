@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { evaluateServiceBlockContinuity } from "../../../src/features/trips/domain/service-block-continuity";
+import {
+  evaluateAdjacentBusTransition,
+  evaluateServiceBlockContinuity,
+} from "../../../src/features/trips/domain/service-block-continuity";
 
 const policy = { minimumServiceBlockTurnaroundMs: 10 * 60_000 };
 
@@ -63,5 +66,58 @@ describe("ServiceBlock operational feasibility", () => {
     );
     assert.equal(result.status, "DEADHEAD_TIME_INSUFFICIENT");
     assert.match(result.message, /may be operationally insufficient/);
+  });
+});
+
+describe("general same-Bus transition advisories", () => {
+  const previous = {
+    ...trip("2026-09-04T00:00:00Z", "2026-09-04T00:30:00Z", ["TAR", "Gate 7"], ["PV18", "PV18"]),
+    busId: "bus-1",
+  };
+
+  it("applies adequate and short turnaround rules without a ServiceBlock", () => {
+    assert.equal(
+      evaluateAdjacentBusTransition(
+        previous,
+        { ...trip("2026-09-04T00:40:00Z", "2026-09-04T01:10:00Z", ["PV18", "PV18"], ["TAR", "Gate 7"]), busId: "bus-1" },
+        policy,
+      )?.status,
+      "CONTINUOUS_OK",
+    );
+    assert.equal(
+      evaluateAdjacentBusTransition(
+        previous,
+        { ...trip("2026-09-04T00:35:00Z", "2026-09-04T01:05:00Z", ["PV18", "PV18"], ["TAR", "Gate 7"]), busId: "bus-1" },
+        policy,
+      )?.status,
+      "TURNAROUND_TOO_SHORT",
+    );
+  });
+
+  it("reports deadhead risk, preserves overlap as a hard-conflict concern, and ignores another Bus", () => {
+    assert.equal(
+      evaluateAdjacentBusTransition(
+        previous,
+        { ...trip("2026-09-04T00:35:00Z", "2026-09-04T01:05:00Z", ["WM", "Wangsa Maju"], ["TAR", "Gate 7"]), busId: "bus-1" },
+        policy,
+      )?.status,
+      "DEADHEAD_TIME_INSUFFICIENT",
+    );
+    assert.equal(
+      evaluateAdjacentBusTransition(
+        previous,
+        { ...trip("2026-09-04T00:20:00Z", "2026-09-04T00:50:00Z", ["PV18", "PV18"], ["TAR", "Gate 7"]), busId: "bus-1" },
+        policy,
+      )?.gapMinutes,
+      -10,
+    );
+    assert.equal(
+      evaluateAdjacentBusTransition(
+        previous,
+        { ...trip("2026-09-04T00:35:00Z", "2026-09-04T01:05:00Z", ["PV18", "PV18"], ["TAR", "Gate 7"]), busId: "bus-2" },
+        policy,
+      ),
+      null,
+    );
   });
 });

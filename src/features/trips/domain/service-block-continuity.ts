@@ -24,6 +24,19 @@ export interface ContinuityTrip {
   }[];
 }
 
+export interface BusTransitionTrip extends ContinuityTrip {
+  readonly busId: string;
+}
+
+export function evaluateAdjacentBusTransition(
+  previousTrip: BusTransitionTrip,
+  nextTrip: BusTransitionTrip,
+  policy: Pick<ProductPolicy, "minimumServiceBlockTurnaroundMs">,
+): ServiceBlockContinuity | null {
+  if (previousTrip.busId !== nextTrip.busId) return null;
+  return evaluateServiceBlockContinuity(previousTrip, nextTrip, policy);
+}
+
 export function evaluateServiceBlockContinuity(
   previousTrip: ContinuityTrip,
   nextTrip: ContinuityTrip,
