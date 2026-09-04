@@ -3,9 +3,13 @@ import { describe, it } from "node:test";
 
 import type { OperationsAnalyticsResponse } from "../../../src/features/analytics/contracts/analytics.schemas";
 import {
-  analyticsFingerprint,
   buildAnalyticsSnapshot,
 } from "../../../src/features/analytics/domain/intelligence";
+import {
+  demandHeatMaximum,
+  demandHeatValue,
+  formatAnalyticsDelta,
+} from "../../../src/features/analytics/domain/intelligence-presentation";
 import type { OperationsAnalyticsRawData } from "../../../src/features/analytics/infrastructure/analytics.prisma.server";
 
 const lineId = "11111111-1111-4111-8111-111111111111";
@@ -297,15 +301,129 @@ describe("Operations Intelligence snapshot and signals", () => {
     assert.ok(snapshot.signals.some((signal) => signal.type === "TURNAROUND_RISK"));
   });
 
-  it("fingerprints meaningful content but ignores generatedAt-only changes", () => {
-    const value = { generatedAt: "first", network: { value: 10 } };
-    assert.equal(
-      analyticsFingerprint(value),
-      analyticsFingerprint({ generatedAt: "second", network: { value: 10 } }),
-    );
+  it("keeps overdue and stale clock counters out of material fingerprint identity", () => {
+    const generatedAt20 = buildAnalyticsSnapshot({
+      current: analytics(), previous: analytics(), currentRaw: raw([]),
+      currentExceptionTrips: [], now: new Date("2026-09-04T00:20:00Z"),
+    });
+    const generatedAt21 = buildAnalyticsSnapshot({
+      current: analytics(), previous: analytics(), currentRaw: raw([]),
+      currentExceptionTrips: [], now: new Date("2026-09-04T00:21:00Z"),
+    });
+    assert.notEqual(generatedAt20.generatedAt, generatedAt21.generatedAt);
+    assert.equal(generatedAt20.fingerprint, generatedAt21.fingerprint);
+
+    const overdue = trip({
+      status: "NOT_STARTED",
+      departure: "2026-09-04T00:00:00Z",
+      actualDeparture: null,
+    });
+    const overdueAt20 = buildAnalyticsSnapshot({
+      current: analytics(), previous: analytics(), currentRaw: raw([]),
+      currentExceptionTrips: [overdue], now: new Date("2026-09-04T00:20:00Z"),
+    });
+    const overdueAt21 = buildAnalyticsSnapshot({
+      current: analytics(), previous: analytics(), currentRaw: raw([]),
+      currentExceptionTrips: [overdue], now: new Date("2026-09-04T00:21:00Z"),
+    });
+    assert.equal(overdueAt20.fingerprint, overdueAt21.fingerprint);
     assert.notEqual(
-      analyticsFingerprint(value),
-      analyticsFingerprint({ generatedAt: "second", network: { value: 11 } }),
+      overdueAt20.signals.find((item) => item.type === "OVERDUE_UNSTARTED_TRIP")?.observedValue,
+      overdueAt21.signals.find((item) => item.type === "OVERDUE_UNSTARTED_TRIP")?.observedValue,
     );
+
+    const active = {
+      ...trip({ status: "BOARDING", actualDeparture: null }),
+      locationSamples: [{ recordedAt: new Date("2026-09-04T00:00:00Z") }],
+    };
+    const staleAt20 = buildAnalyticsSnapshot({
+      current: analytics(), previous: analytics(), currentRaw: raw([]),
+      currentExceptionTrips: [active], now: new Date("2026-09-04T00:20:00Z"),
+    });
+    const staleAt21 = buildAnalyticsSnapshot({
+      current: analytics(), previous: analytics(), currentRaw: raw([]),
+      currentExceptionTrips: [active], now: new Date("2026-09-04T00:21:00Z"),
+    });
+    assert.equal(staleAt20.fingerprint, staleAt21.fingerprint);
+    assert.notEqual(
+      staleAt20.signals.find((item) => item.type === "STALE_TELEMETRY")?.observedValue,
+      staleAt21.signals.find((item) => item.type === "STALE_TELEMETRY")?.observedValue,
+    );
+  });
+
+  it("changes material fingerprints for state, signal, metric, period, and scope changes", () => {
+    const notStarted = trip({
+      status: "NOT_STARTED",
+      departure: "2026-09-04T00:00:00Z",
+      actualDeparture: null,
+    });
+    const boarding = { ...notStarted, status: "BOARDING" };
+    const baseInput = {
+      current: analytics({ utilization: 20, unserved: 0 }),
+      previous: analytics({ utilization: 20, unserved: 0 }),
+      currentRaw: raw([]),
+      now: new Date("2026-09-04T00:20:00Z"),
+    };
+    const base = buildAnalyticsSnapshot({ ...baseInput, currentExceptionTrips: [notStarted] });
+    const statusChanged = buildAnalyticsSnapshot({ ...baseInput, currentExceptionTrips: [boarding] });
+    const newHighSignal = buildAnalyticsSnapshot({
+      ...baseInput,
+      current: analytics({ utilization: 92, unserved: 6 }),
+      currentExceptionTrips: [notStarted],
+    });
+    const metricChanged = buildAnalyticsSnapshot({
+      ...baseInput,
+      current: analytics({ utilization: 20, unserved: 0, boarded: 21 }),
+      currentExceptionTrips: [notStarted],
+    });
+    const periodChanged = buildAnalyticsSnapshot({
+      ...baseInput,
+      current: analytics({
+        from: "2026-09-02T16:00:00.000Z",
+        to: "2026-09-09T16:00:00.000Z",
+        utilization: 20,
+        unserved: 0,
+      }),
+      currentExceptionTrips: [notStarted],
+    });
+    const scopedAnalytics = {
+      ...baseInput.current,
+      filters: { lineId, direction: null },
+    };
+    const scopeChanged = buildAnalyticsSnapshot({
+      ...baseInput,
+      current: scopedAnalytics,
+      currentExceptionTrips: [notStarted],
+    });
+    assert.notEqual(base.fingerprint, statusChanged.fingerprint);
+    assert.notEqual(base.fingerprint, newHighSignal.fingerprint);
+    assert.notEqual(base.fingerprint, metricChanged.fingerprint);
+    assert.notEqual(base.fingerprint, periodChanged.fingerprint);
+    assert.notEqual(base.fingerprint, scopeChanged.fingerprint);
+  });
+
+  it("preserves null utilisation, numeric zero, and readable delta copy", () => {
+    const row = {
+      lineId,
+      lineCode: "TERATAI",
+      lineName: "Teratai",
+      direction: "OUTBOUND" as const,
+      bucket: "MORNING",
+      label: "06:00–09:59",
+      boardedPassengers: 0,
+      reservedSeatSegmentUtilization: null,
+      unservedDemand: 0,
+      operatedTrips: 0,
+    };
+    assert.equal(demandHeatValue(row, "reservedSeatSegmentUtilization"), null);
+    assert.equal(
+      demandHeatValue({ ...row, reservedSeatSegmentUtilization: 0 }, "reservedSeatSegmentUtilization"),
+      0,
+    );
+    assert.equal(demandHeatValue(row, "boardedPassengers"), 0);
+    assert.equal(demandHeatMaximum([row], "reservedSeatSegmentUtilization"), 1);
+    assert.equal(formatAnalyticsDelta(0, "pp"), "No change vs previous period");
+    assert.equal(formatAnalyticsDelta(4, ""), "+4 vs previous period");
+    assert.equal(formatAnalyticsDelta(-2, " min"), "-2 min vs previous period");
   });
 });

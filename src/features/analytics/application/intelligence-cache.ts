@@ -33,11 +33,11 @@ function prune(now: number) {
   }
 }
 
-export async function resolveCachedIntelligence(input: {
+export function readCachedIntelligence(input: {
   snapshot: AnalyticsSnapshot;
   enabled: boolean;
   model: string;
-  adapter?: GeminiOperationsAdapter;
+  adapterAvailable: boolean;
 }) {
   if (!input.enabled) {
     return {
@@ -47,7 +47,7 @@ export async function resolveCachedIntelligence(input: {
       message: "Gemini interpretation is disabled. Deterministic operational signals remain current.",
     };
   }
-  if (!input.adapter) {
+  if (!input.adapterAvailable) {
     return {
       interpretation: null,
       status: "UNAVAILABLE" as const,
@@ -55,9 +55,8 @@ export async function resolveCachedIntelligence(input: {
       message: "AI interpretation is unavailable. Deterministic operational signals remain current.",
     };
   }
-  const key = cacheKey(input.snapshot, input.model);
   prune(Date.now());
-  const existing = cache.get(key);
+  const existing = cache.get(cacheKey(input.snapshot, input.model));
   if (existing) {
     return {
       interpretation: existing.value,
@@ -66,10 +65,34 @@ export async function resolveCachedIntelligence(input: {
       message: null,
     };
   }
+  return {
+    interpretation: null,
+    status: "UPDATING" as const,
+    cached: false,
+    message: "Updating interpretation from the latest operational evidence…",
+  };
+}
+
+export async function resolveCachedIntelligence(input: {
+  snapshot: AnalyticsSnapshot;
+  enabled: boolean;
+  model: string;
+  adapter?: GeminiOperationsAdapter;
+}) {
+  const cached = readCachedIntelligence({
+    snapshot: input.snapshot,
+    enabled: input.enabled,
+    model: input.model,
+    adapterAvailable: Boolean(input.adapter),
+  });
+  if (cached.status !== "UPDATING") return cached;
+  const adapter = input.adapter;
+  if (!adapter) return cached;
+  const key = cacheKey(input.snapshot, input.model);
   try {
     let pending = inFlight.get(key);
     if (!pending) {
-      pending = input.adapter.interpret(input.snapshot).then((candidate) => {
+      pending = adapter.interpret(input.snapshot).then((candidate) => {
         const grounded = validateGroundedIntelligence(candidate, input.snapshot);
         if (!grounded) throw new Error("Gemini output failed grounding validation");
         const entry: CacheEntry = {

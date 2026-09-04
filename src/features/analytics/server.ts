@@ -8,6 +8,7 @@ export {
 export {
   askOperationsIntelligence,
   getOperationsIntelligence,
+  interpretOperationsIntelligence,
 } from "./application/operations-intelligence";
 export {
   analyticsRangeSchema,
@@ -15,4 +16,5 @@ export {
 } from "./contracts/analytics.schemas";
 export {
   askIntelligenceInputSchema,
+  interpretIntelligenceInputSchema,
 } from "./contracts/intelligence.schemas";

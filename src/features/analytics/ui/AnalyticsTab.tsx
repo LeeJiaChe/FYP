@@ -37,9 +37,16 @@ import {
 import type {
   AnalyticsSignal,
   AskIntelligenceAnswer,
-  GeminiIntelligence,
   OperationsIntelligenceResponse,
+  OperationsInterpretationResponse,
 } from "../contracts/intelligence.schemas";
+import { buildExecutiveBrief } from "../domain/executive-brief";
+import {
+  demandHeatMaximum,
+  demandHeatValue,
+  formatAnalyticsDelta,
+  type DemandHeatMetric,
+} from "../domain/intelligence-presentation";
 import {
   calculateMytPresetRange,
   parseMytDateStringToUtc,
@@ -47,7 +54,6 @@ import {
 import { formatMytDateTime } from "@/shared/time/operational-time";
 
 type PresetRange = "7d" | "30d" | "90d" | "custom";
-type HeatMetric = "boardedPassengers" | "reservedSeatSegmentUtilization" | "unservedDemand";
 
 const severityLabel = {
   HIGH: "High",
@@ -59,12 +65,6 @@ const severityLabel = {
 
 function formatRate(value: number | null) {
   return value === null ? "Insufficient data" : `${value}%`;
-}
-
-function formatDelta(value: number | null, unit = "") {
-  if (value === null) return "No comparable baseline";
-  if (value === 0) return `No change${unit}`;
-  return `${value > 0 ? "+" : ""}${value}${unit} vs previous period`;
 }
 
 function signalClass(severity: AnalyticsSignal["severity"]) {
@@ -98,7 +98,7 @@ export default function AnalyticsTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const [heatMetric, setHeatMetric] = useState<HeatMetric>("boardedPassengers");
+  const [heatMetric, setHeatMetric] = useState<DemandHeatMetric>("boardedPassengers");
   const [evidenceSignalId, setEvidenceSignalId] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
@@ -154,36 +154,83 @@ export default function AnalyticsTab() {
 
   const snapshot = result?.snapshot;
   const analytics = result?.analytics;
+  const assistantStatus = result?.assistant.status;
+  const snapshotFingerprint = snapshot?.fingerprint;
+
+  useEffect(() => {
+    if (
+      assistantStatus !== "UPDATING" ||
+      !snapshot ||
+      !snapshotFingerprint
+    ) return;
+    const controller = new AbortController();
+    const updateInterpretation = async () => {
+      try {
+        const response = await fetch("/api/analytics/intelligence/interpret", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            fingerprint: snapshotFingerprint,
+            from: snapshot.period.from,
+            to: snapshot.period.to,
+            ...(snapshot.scope.lineId ? { lineId: snapshot.scope.lineId } : {}),
+            ...(snapshot.scope.direction
+              ? { direction: snapshot.scope.direction }
+              : {}),
+          }),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            body.error?.message ?? body.error ?? "AI interpretation unavailable",
+          );
+        }
+        const enrichment = body.data as OperationsInterpretationResponse;
+        setResult((current) =>
+          current?.snapshot.fingerprint === enrichment.fingerprint
+            ? {
+                ...current,
+                interpretation: enrichment.interpretation,
+                assistant: enrichment.assistant,
+                history: enrichment.history,
+              }
+            : current,
+        );
+      } catch {
+        if (controller.signal.aborted) return;
+        setResult((current) =>
+          current?.snapshot.fingerprint === snapshotFingerprint
+            ? {
+                ...current,
+                assistant: {
+                  ...current.assistant,
+                  status: "UNAVAILABLE",
+                  cached: false,
+                  message:
+                    "AI interpretation is temporarily unavailable. Deterministic operational signals remain current.",
+                },
+              }
+            : current,
+        );
+      }
+    };
+    void updateInterpretation();
+    return () => controller.abort();
+  }, [assistantStatus, snapshot, snapshotFingerprint]);
+
   const focus = snapshot?.signals.find((signal) => signal.id === snapshot.focusSignalId) ?? null;
   const intelligence = result?.interpretation;
-  const executive = useMemo(() => {
-    if (!snapshot) return [];
-    if (intelligence) return intelligence.insights;
-    return snapshot.signals.slice(0, 5).map((signal) => ({
-      signalId: signal.id,
-      severity: signal.severity,
-      category: signal.category,
-      headline: signal.headline,
-      observation: signal.observation,
-      interpretation: signal.deterministicInterpretation,
-      evidenceMetricKeys: [...signal.evidenceMetricKeys],
-      recommendedReview: signal.recommendedReview,
-      confidence: signal.evidenceStrength,
-      limitations:
-        signal.evidenceStrength === "LOW"
-          ? ["The current sample is too small to establish a recurring trend."]
-          : [],
-    })) satisfies GeminiIntelligence["insights"];
-  }, [intelligence, snapshot]);
+  const executive = useMemo(
+    () => (snapshot ? buildExecutiveBrief(snapshot, intelligence ?? null) : []),
+    [intelligence, snapshot],
+  );
 
   const selectedEvidence = snapshot?.signals.find(
     (signal) => signal.id === evidenceSignalId,
   );
   const heatRows = snapshot?.timeBuckets ?? [];
-  const maxHeatValue = Math.max(
-    1,
-    ...heatRows.map((row) => Number(row[heatMetric] ?? 0)),
-  );
+  const maxHeatValue = demandHeatMaximum(heatRows, heatMetric);
   const heatBuckets = ["OVERNIGHT", "MORNING", "MIDDAY", "EVENING", "NIGHT"];
   const heatLines = [
     ...new Map(
@@ -371,7 +418,7 @@ export default function AnalyticsTab() {
               </div>
             )}
             <div className={`oi-assistant-state is-${result.assistant.status.toLowerCase()}`}>
-              {result.assistant.status === "READY" ? <Sparkles aria-hidden /> : <BotOff aria-hidden />}
+              {result.assistant.status === "READY" ? <Sparkles aria-hidden /> : result.assistant.status === "UPDATING" ? <RefreshCw aria-hidden /> : <BotOff aria-hidden />}
               <span>
                 {result.assistant.status === "READY"
                   ? `Grounded interpretation · ${result.assistant.model}${result.assistant.cached ? " · cached" : ""}`
@@ -417,7 +464,7 @@ export default function AnalyticsTab() {
                   <metric.icon aria-hidden />
                   <span>{metric.label}</span>
                   <strong>{metric.value === null ? "Insufficient data" : metric.rate ? `${metric.value}%` : metric.minutes ? `${metric.value} min` : metric.value}</strong>
-                  <small>{formatDelta(metric.change, metric.unit)}</small>
+                  <small>{formatAnalyticsDelta(metric.change, metric.unit)}</small>
                 </article>
               ))}
             </div>
@@ -440,8 +487,9 @@ export default function AnalyticsTab() {
                     <strong>{line.lineCode}<small>{line.direction}</small></strong>
                     {heatBuckets.map((bucket) => {
                       const candidates = heatRows.filter((row) => row.lineId === line.lineId && row.direction === line.direction && row.bucket === bucket);
-                      const values = candidates.map((row) => Number(row[heatMetric] ?? 0));
-                      const value = values.length ? values[0]! : null;
+                      const value = candidates[0]
+                        ? demandHeatValue(candidates[0], heatMetric)
+                        : null;
                       const intensity = value === null ? 0 : Math.max(8, Math.round((value / maxHeatValue) * 48));
                       return <div key={bucket} className="oi-heat-cell" style={{ background: `color-mix(in srgb, var(--accent) ${intensity}%, var(--surface-secondary))`, borderColor: `color-mix(in srgb, var(--accent) ${Math.round(intensity * .75)}%, var(--border-subtle))` }} title={value === null ? "Insufficient data" : `${value}${heatMetric === "reservedSeatSegmentUtilization" ? "%" : ""}`}><span>{value === null ? "—" : `${value}${heatMetric === "reservedSeatSegmentUtilization" ? "%" : ""}`}</span><small>{candidates.reduce((sum, row) => sum + row.operatedTrips, 0)} Trips</small></div>;
                     })}

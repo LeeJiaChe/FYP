@@ -50,7 +50,6 @@ function stableValue(value: unknown): unknown {
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => key !== "generatedAt" && key !== "fingerprint")
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([key, nested]) => [key, stableValue(nested)]),
     );
@@ -62,6 +61,68 @@ export function analyticsFingerprint(value: unknown): string {
   return createHash("sha256")
     .update(JSON.stringify(stableValue(value)), "utf8")
     .digest("hex");
+}
+
+const CLOCK_VOLATILE_SIGNAL_TYPES = new Set<AnalyticsSignal["type"]>([
+  "OVERDUE_UNSTARTED_TRIP",
+  "STALE_TELEMETRY",
+]);
+
+/**
+ * Builds the explicit material identity used by the Gemini cache. Exact live
+ * exception evidence remains in the snapshot for Admin display, while minute-
+ * by-minute counters and prose are intentionally absent from cache identity.
+ */
+export function buildAnalyticsFingerprintPayload(
+  snapshot: Omit<AnalyticsSnapshot, "fingerprint"> | AnalyticsSnapshot,
+) {
+  const quality = snapshot.dataQuality;
+  return {
+    period: snapshot.period,
+    comparisonPeriod: snapshot.comparisonPeriod,
+    scope: snapshot.scope,
+    eligibleTripCount: snapshot.eligibleTripCount,
+    dataQuality: {
+      excludedAdministrativeCleanupTrips:
+        quality.excludedAdministrativeCleanupTrips,
+      completedTripSamples: quality.completedTripSamples,
+      actualDepartureSamples: quality.actualDepartureSamples,
+      eligibleBookingOutcomes: quality.eligibleBookingOutcomes,
+      hasSufficientReliabilitySample: quality.hasSufficientReliabilitySample,
+      hasSufficientNoShowSample: quality.hasSufficientNoShowSample,
+      prototypeData: quality.prototypeData,
+      timezone: quality.timezone,
+      missingActualDepartureCount: quality.missingActualDepartureCount,
+      comparisonAvailable: quality.comparisonAvailable,
+    },
+    network: snapshot.network,
+    serviceLines: snapshot.serviceLines,
+    previousServiceLines: snapshot.previousServiceLines,
+    timeBuckets: snapshot.timeBuckets,
+    originDestination: snapshot.originDestination,
+    segmentLoads: snapshot.segmentLoads,
+    reliability: snapshot.reliability,
+    demand: snapshot.demand,
+    fleet: snapshot.fleet,
+    passengerBehaviour: snapshot.passengerBehaviour,
+    tripEvidence: snapshot.tripEvidence,
+    signals: snapshot.signals.map((signal) => ({
+      id: signal.id,
+      type: signal.type,
+      scope: signal.scope,
+      severity: signal.severity,
+      recommendationLevel: signal.recommendationLevel,
+      observedValue: CLOCK_VOLATILE_SIGNAL_TYPES.has(signal.type)
+        ? null
+        : signal.observedValue,
+      comparisonValue: signal.comparisonValue,
+      change: signal.change,
+      sampleSize: signal.sampleSize,
+      evidenceStrength: signal.evidenceStrength,
+      evidenceMetricKeys: signal.evidenceMetricKeys,
+    })),
+    focusSignalId: snapshot.focusSignalId,
+  };
 }
 
 function signalId(type: string, scope: object, period: { from: string; to: string }) {
@@ -1045,6 +1106,7 @@ export function buildAnalyticsSnapshot(input: {
       from: previous.range.from,
       to: previous.range.to,
     },
+    scope: current.filters,
     generatedAt: input.now.toISOString(),
     eligibleTripCount: current.overview.operatedTrips,
     dataQuality: {
@@ -1102,24 +1164,8 @@ export function buildAnalyticsSnapshot(input: {
   };
   return {
     ...snapshotWithoutFingerprint,
-    fingerprint: analyticsFingerprint(snapshotWithoutFingerprint),
+    fingerprint: analyticsFingerprint(
+      buildAnalyticsFingerprintPayload(snapshotWithoutFingerprint),
+    ),
   };
-}
-
-export function deterministicExecutiveInsights(snapshot: AnalyticsSnapshot) {
-  return snapshot.signals.slice(0, 5).map((signal) => ({
-    signalId: signal.id,
-    severity: signal.severity,
-    category: signal.category,
-    headline: signal.headline,
-    observation: signal.observation,
-    interpretation: signal.deterministicInterpretation,
-    evidenceMetricKeys: [...signal.evidenceMetricKeys],
-    recommendedReview: signal.recommendedReview,
-    confidence: signal.evidenceStrength,
-    limitations:
-      signal.evidenceStrength === "LOW"
-        ? ["Current sample is too small to establish a recurring trend."]
-        : [],
-  }));
 }

@@ -152,6 +152,7 @@ export interface TripEvidenceRow {
 export interface AnalyticsSnapshot {
   readonly period: { readonly from: string; readonly to: string; readonly timezone: string };
   readonly comparisonPeriod: { readonly from: string; readonly to: string };
+  readonly scope: OperationsAnalyticsResponse["filters"];
   readonly generatedAt: string;
   readonly fingerprint: string;
   readonly eligibleTripCount: number;
@@ -221,6 +222,14 @@ export const askIntelligenceInputSchema = z.object({
   direction: z.enum(["OUTBOUND", "INBOUND"]).optional(),
 });
 
+export const interpretIntelligenceInputSchema = z.object({
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  from: z.coerce.date(),
+  to: z.coerce.date(),
+  lineId: z.string().trim().uuid().optional(),
+  direction: z.enum(["OUTBOUND", "INBOUND"]).optional(),
+});
+
 export const askIntelligenceAnswerSchema = z.object({
   answer: z.string().trim().min(1).max(1500),
   evidenceMetricKeys: z.array(z.string().min(1)).min(1).max(12),
@@ -243,7 +252,7 @@ export interface OperationsIntelligenceResponse {
   readonly snapshot: AnalyticsSnapshot;
   readonly interpretation: GeminiIntelligence | null;
   readonly assistant: {
-    readonly status: "READY" | "DISABLED" | "UNAVAILABLE";
+    readonly status: "READY" | "UPDATING" | "DISABLED" | "UNAVAILABLE";
     readonly model: string | null;
     readonly cached: boolean;
     readonly message: string | null;
@@ -255,4 +264,11 @@ export interface OperationsIntelligenceResponse {
     generatedAt: string;
     headlines: readonly string[];
   }[];
+}
+
+export interface OperationsInterpretationResponse {
+  readonly fingerprint: string;
+  readonly interpretation: GeminiIntelligence | null;
+  readonly assistant: OperationsIntelligenceResponse["assistant"];
+  readonly history: OperationsIntelligenceResponse["history"];
 }

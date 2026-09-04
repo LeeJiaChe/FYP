@@ -6,6 +6,8 @@ import {
   clearIntelligenceCacheForTests,
   resolveCachedIntelligence,
 } from "../../../src/features/analytics/application/intelligence-cache";
+import { getOperationsIntelligence } from "../../../src/features/analytics/application/operations-intelligence";
+import type { OperationsAnalyticsResponse } from "../../../src/features/analytics/contracts/analytics.schemas";
 import {
   askIntelligenceAnswerSchema,
   geminiIntelligenceSchema,
@@ -16,14 +18,17 @@ import {
 } from "../../../src/features/analytics/contracts/intelligence.schemas";
 import {
   buildGeminiContext,
+  deterministicOverallState,
   validateGroundedAnswer,
   validateGroundedIntelligence,
 } from "../../../src/features/analytics/domain/gemini-grounding";
+import { buildExecutiveBrief } from "../../../src/features/analytics/domain/executive-brief";
 import {
   APPROVED_ANALYTICS_TOOL_NAMES,
   analyticsToolDeclarations,
   executeReadOnlyAnalyticsTool,
 } from "../../../src/features/analytics/domain/read-only-tools";
+import { fixedClock } from "../../../src/shared/time/clock";
 
 const signal: AnalyticsSignal = {
   id: "capacity-pressure-verified",
@@ -49,6 +54,7 @@ function snapshot(fingerprint = "fingerprint-one"): AnalyticsSnapshot {
   return {
     period: { ...signal.period, timezone: "Asia/Kuala_Lumpur" },
     comparisonPeriod: { from: "2026-08-25T00:00:00Z", to: signal.period.from },
+    scope: { lineId: null, direction: null },
     generatedAt: "2026-09-08T00:00:00Z",
     fingerprint,
     eligibleTripCount: 8,
@@ -146,6 +152,21 @@ describe("Gemini Operations Intelligence security and grounding", () => {
     );
   });
 
+  it("rejects duplicate AI signal IDs and an AI healthy state over attention signals", () => {
+    const valid = interpretation();
+    assert.equal(
+      validateGroundedIntelligence({
+        ...valid,
+        insights: [valid.insights[0]!, valid.insights[0]!],
+      }, snapshot()),
+      null,
+    );
+    assert.equal(
+      validateGroundedIntelligence({ ...valid, overallState: "HEALTHY" }, snapshot()),
+      null,
+    );
+  });
+
   it("rejects unsupported numerical claims even when evidence references exist", () => {
     const valid = interpretation();
     assert.equal(
@@ -162,6 +183,13 @@ describe("Gemini Operations Intelligence security and grounding", () => {
       }, snapshot()),
       null,
     );
+    assert.equal(
+      validateGroundedIntelligence({
+        ...valid,
+        summary: "Network utilisation is 47%.",
+      }, snapshot()),
+      null,
+    );
   });
 
   it("keeps recommendation wording at the deterministic policy boundary", () => {
@@ -171,6 +199,54 @@ describe("Gemini Operations Intelligence security and grounding", () => {
       insights: [{ ...valid.insights[0]!, recommendedReview: "Immediately add buses." }],
     }, snapshot());
     assert.equal(grounded?.insights[0]?.recommendedReview, signal.recommendedReview);
+  });
+
+  it("keeps deterministic Executive Brief membership and priority when AI is partial", () => {
+    const secondSignal: AnalyticsSignal = {
+      ...signal,
+      id: "reliability-second",
+      type: "RELIABILITY_DETERIORATION",
+      severity: "MEDIUM",
+      category: "RELIABILITY",
+      headline: "Reliability requires review",
+      deterministicInterpretation: "Deterministic second interpretation.",
+    };
+    const ordered = { ...snapshot(), signals: [signal, secondSignal] };
+    const empty = buildExecutiveBrief(ordered, {
+      summary: "Attention is required.",
+      overallState: "ATTENTION_REQUIRED",
+      insights: [],
+    });
+    assert.equal(empty[0]?.signalId, signal.id);
+    assert.equal(empty[0]?.severity, "HIGH");
+    assert.equal(empty[0]?.interpretation, signal.deterministicInterpretation);
+
+    const partial = buildExecutiveBrief(ordered, {
+      summary: "Attention is required.",
+      overallState: "ATTENTION_REQUIRED",
+      insights: [{
+        ...interpretation().insights[0]!,
+        signalId: secondSignal.id,
+        severity: secondSignal.severity,
+        category: secondSignal.category,
+        headline: secondSignal.headline,
+        interpretation: "Gemini enrichment for the second signal.",
+      }],
+    });
+    assert.deepEqual(partial.map((item) => item.signalId), [signal.id, secondSignal.id]);
+    assert.equal(partial[0]?.interpretation, signal.deterministicInterpretation);
+    assert.equal(partial[1]?.interpretation, "Gemini enrichment for the second signal.");
+  });
+
+  it("allows the no-exception state only when no deterministic signals exist", () => {
+    const empty = { ...snapshot(), signals: [], focusSignalId: null };
+    assert.deepEqual(buildExecutiveBrief(empty, interpretation()), []);
+    assert.equal(deterministicOverallState(empty), "HEALTHY");
+    assert.ok(validateGroundedIntelligence({
+      summary: "No significant operational exceptions detected.",
+      overallState: "HEALTHY",
+      insights: [],
+    }, empty));
   });
 
   it("fails schema parsing safely for malformed and invalid-enum output", () => {
@@ -212,6 +288,30 @@ describe("Gemini Operations Intelligence security and grounding", () => {
 });
 
 describe("Gemini application cache and failure modes", () => {
+  it("returns cold-cache deterministic intelligence without constructing a Gemini adapter", async () => {
+    clearIntelligenceCacheForTests();
+    let adapterConstructions = 0;
+    const result = await getOperationsIntelligence(
+      { role: "ADMIN" },
+      {},
+      fixedClock("2026-09-08T00:00:00Z"),
+      {
+        configuration: { enabled: true, apiKey: "configured", model: "model" },
+        loadDeterministic: async () => ({
+          analytics: {} as OperationsAnalyticsResponse,
+          snapshot: snapshot(),
+        }),
+        createAdapter: () => {
+          adapterConstructions += 1;
+          throw new Error("GET must not construct Gemini");
+        },
+      },
+    );
+    assert.equal(result.assistant.status, "UPDATING");
+    assert.equal(result.interpretation, null);
+    assert.equal(adapterConstructions, 0);
+  });
+
   it("coalesces the same fingerprint and creates a new result after meaningful change", async () => {
     clearIntelligenceCacheForTests();
     let calls = 0;

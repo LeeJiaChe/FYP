@@ -42,3 +42,4 @@ export const loginRateLimiter = new RateLimiter(60 * 1000, 100); // 100 attempts
 export const registerRateLimiter = new RateLimiter(60 * 1000, 100); // 100 registrations per minute for tests
 export const resendVerificationRateLimiter = new RateLimiter(10 * 60 * 1000, 5);
 export const askIntelligenceRateLimiter = new RateLimiter(60 * 1000, 10);
+export const interpretIntelligenceRateLimiter = new RateLimiter(60 * 1000, 10);

@@ -1,12 +1,16 @@
 import type { OperationsAnalyticsQuery } from "../contracts/analytics.schemas";
-import type { AskIntelligenceAnswer } from "../contracts/intelligence.schemas";
+import type {
+  AskIntelligenceAnswer,
+  OperationsInterpretationResponse,
+} from "../contracts/intelligence.schemas";
 import { buildAnalyticsSnapshot } from "../domain/intelligence";
 import { validateGroundedAnswer } from "../domain/gemini-grounding";
 import { fetchOperationsAnalyticsRawData } from "../infrastructure/analytics.prisma.server";
 import { GoogleGeminiOperationsAdapter } from "../infrastructure/google-gemini.server";
-import { forbidden } from "@/shared/application/application-error";
+import { conflict, forbidden } from "@/shared/application/application-error";
 import { serverEnvironment } from "@/shared/config/env.server";
 import { systemClock, type Clock } from "@/shared/time/clock";
+import type { GeminiOperationsAdapter } from "./gemini-adapter";
 import {
   getOperationsAnalytics,
   resolveAnalyticsRange,
@@ -14,8 +18,23 @@ import {
 } from "./analytics";
 import {
   intelligenceHistory,
+  readCachedIntelligence,
   resolveCachedIntelligence,
 } from "./intelligence-cache";
+
+interface GeminiOperationsConfiguration {
+  readonly enabled: boolean;
+  readonly apiKey: string;
+  readonly model: string;
+}
+
+interface IntelligenceRetrievalDependencies {
+  readonly loadDeterministic?: typeof getDeterministicOperationsIntelligence;
+  readonly configuration?: GeminiOperationsConfiguration;
+  readonly createAdapter?: (
+    configuration: GeminiOperationsConfiguration,
+  ) => GeminiOperationsAdapter | undefined;
+}
 
 export async function getDeterministicOperationsIntelligence(
   actor: AnalyticsActor,
@@ -59,8 +78,9 @@ export async function getDeterministicOperationsIntelligence(
   };
 }
 
-function configuredAdapter() {
-  const configuration = serverEnvironment.geminiOperations;
+function configuredAdapter(
+  configuration: GeminiOperationsConfiguration = serverEnvironment.geminiOperations,
+) {
   return configuration.enabled && configuration.apiKey
     ? new GoogleGeminiOperationsAdapter(configuration.apiKey, configuration.model)
     : undefined;
@@ -70,21 +90,62 @@ export async function getOperationsIntelligence(
   actor: AnalyticsActor,
   query: OperationsAnalyticsQuery,
   clock: Clock = systemClock,
+  dependencies: IntelligenceRetrievalDependencies = {},
 ) {
-  const deterministic = await getDeterministicOperationsIntelligence(
+  const loadDeterministic =
+    dependencies.loadDeterministic ?? getDeterministicOperationsIntelligence;
+  const deterministic = await loadDeterministic(
     actor,
     query,
     clock,
   );
-  const configuration = serverEnvironment.geminiOperations;
+  const configuration =
+    dependencies.configuration ?? serverEnvironment.geminiOperations;
+  const resolved = readCachedIntelligence({
+    snapshot: deterministic.snapshot,
+    enabled: configuration.enabled,
+    model: configuration.model,
+    adapterAvailable: Boolean(configuration.apiKey),
+  });
+  return {
+    ...deterministic,
+    interpretation: resolved.interpretation,
+    assistant: {
+      status: resolved.status,
+      model: configuration.enabled ? configuration.model : null,
+      cached: resolved.cached,
+      message: resolved.message,
+    },
+    history: intelligenceHistory(),
+  };
+}
+
+export async function interpretOperationsIntelligence(
+  actor: AnalyticsActor,
+  input: OperationsAnalyticsQuery & { fingerprint: string },
+  clock: Clock = systemClock,
+  dependencies: IntelligenceRetrievalDependencies = {},
+): Promise<OperationsInterpretationResponse> {
+  if (actor.role !== "ADMIN") throw forbidden("Admin role required");
+  const loadDeterministic =
+    dependencies.loadDeterministic ?? getDeterministicOperationsIntelligence;
+  const deterministic = await loadDeterministic(actor, input, clock);
+  if (deterministic.snapshot.fingerprint !== input.fingerprint) {
+    throw conflict(
+      "Operational evidence changed; refresh Analytics before requesting interpretation",
+    );
+  }
+  const configuration =
+    dependencies.configuration ?? serverEnvironment.geminiOperations;
+  const createAdapter = dependencies.createAdapter ?? configuredAdapter;
   const resolved = await resolveCachedIntelligence({
     snapshot: deterministic.snapshot,
     enabled: configuration.enabled,
     model: configuration.model,
-    adapter: configuredAdapter(),
+    adapter: createAdapter(configuration),
   });
   return {
-    ...deterministic,
+    fingerprint: deterministic.snapshot.fingerprint,
     interpretation: resolved.interpretation,
     assistant: {
       status: resolved.status,
@@ -103,7 +164,7 @@ export async function askOperationsIntelligence(
 ): Promise<AskIntelligenceAnswer> {
   if (actor.role !== "ADMIN") throw forbidden("Admin role required");
   const configuration = serverEnvironment.geminiOperations;
-  const adapter = configuredAdapter();
+  const adapter = configuredAdapter(configuration);
   if (!configuration.enabled || !adapter) {
     throw new Error("Operations Intelligence assistant is unavailable");
   }

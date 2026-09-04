@@ -5,9 +5,14 @@ import type {
 } from "../contracts/intelligence.schemas";
 
 export function buildGeminiContext(snapshot: AnalyticsSnapshot) {
+  const requestedSignals = snapshot.signals.slice(0, 5);
+  const requestedEvidenceKeys = new Set(
+    requestedSignals.flatMap((signal) => signal.evidenceMetricKeys),
+  );
   return {
     period: snapshot.period,
     comparisonPeriod: snapshot.comparisonPeriod,
+    scope: snapshot.scope,
     eligibleTripCount: snapshot.eligibleTripCount,
     dataQuality: snapshot.dataQuality,
     network: snapshot.network,
@@ -29,9 +34,57 @@ export function buildGeminiContext(snapshot: AnalyticsSnapshot) {
     segmentLoads: snapshot.segmentLoads.slice(0, 30),
     fleet: snapshot.fleet,
     passengerBehaviour: snapshot.passengerBehaviour,
-    signals: snapshot.signals,
-    evidence: snapshot.evidence,
+    requiredOverallState: deterministicOverallState(snapshot),
+    signals: requestedSignals.map((signal) => {
+      if (signal.type === "OVERDUE_UNSTARTED_TRIP") {
+        return {
+          ...signal,
+          observation:
+            "Scheduled departure has passed without operational progress.",
+          observedValue: null,
+        };
+      }
+      if (signal.type === "STALE_TELEMETRY") {
+        return {
+          ...signal,
+          observation:
+            "Telemetry is absent or beyond the configured freshness threshold.",
+          observedValue: null,
+        };
+      }
+      return signal;
+    }),
+    evidence: Object.fromEntries(
+      Object.entries(snapshot.evidence)
+        .filter(([key]) => requestedEvidenceKeys.has(key))
+        .map(([key, metric]) => [
+          key,
+          key.endsWith(".overdueMinutes") ||
+          key.endsWith(".telemetryAgeMinutes")
+            ? { ...metric, value: null }
+            : metric,
+        ]),
+    ),
   };
+}
+
+export function deterministicOverallState(
+  snapshot: AnalyticsSnapshot,
+): GeminiIntelligence["overallState"] {
+  if (snapshot.signals.length === 0) return "HEALTHY";
+  if (
+    snapshot.signals.some(
+      (signal) => signal.severity === "HIGH" || signal.severity === "MEDIUM",
+    )
+  ) return "ATTENTION_REQUIRED";
+  if (
+    snapshot.signals.every(
+      (signal) =>
+        signal.type === "INSUFFICIENT_SAMPLE" ||
+        signal.type === "DATA_QUALITY_WARNING",
+    )
+  ) return "INSUFFICIENT_DATA";
+  return "MIXED";
 }
 
 function numbersIn(text: string): number[] {
@@ -78,7 +131,15 @@ export function validateGroundedIntelligence(
   snapshot: AnalyticsSnapshot,
 ): GeminiIntelligence | null {
   const signalById = new Map(snapshot.signals.map((signal) => [signal.id, signal]));
+  const requestedSignalIds = new Set(
+    snapshot.signals.slice(0, 5).map((signal) => signal.id),
+  );
+  const receivedSignalIds = new Set<string>();
+  if (intelligence.overallState !== deterministicOverallState(snapshot)) return null;
   for (const insight of intelligence.insights) {
+    if (receivedSignalIds.has(insight.signalId)) return null;
+    receivedSignalIds.add(insight.signalId);
+    if (!requestedSignalIds.has(insight.signalId)) return null;
     const signal = signalById.get(insight.signalId);
     if (!signal) return null;
     if (
@@ -110,6 +171,18 @@ export function validateGroundedIntelligence(
       )
     ) return null;
   }
+  const summaryEvidenceKeys = intelligence.insights.flatMap(
+    (insight) => insight.evidenceMetricKeys,
+  );
+  const summarySignalIds = intelligence.insights.map(
+    (insight) => insight.signalId,
+  );
+  if (
+    !numericClaimsAreGrounded(
+      intelligence.summary,
+      supportedNumbers(snapshot, summaryEvidenceKeys, summarySignalIds),
+    )
+  ) return null;
   return {
     ...intelligence,
     insights: intelligence.insights.map((insight) => ({
