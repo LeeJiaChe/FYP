@@ -22,6 +22,7 @@ import {
 import { conflict, forbidden, notFound, validationError } from "@/shared/application/application-error";
 import { productPolicy, type ProductPolicy } from "@/shared/config/policies";
 import { systemClock, type Clock } from "@/shared/time/clock";
+import { selectCurrentStopPendingWalkIns } from "../domain/manual-walk-in";
 
 export type BoardingActor = BoardingActorRecord;
 
@@ -248,9 +249,14 @@ export async function progressTrip(
   );
 }
 
-export async function getDriverManifest(actor: BoardingActor, tripId: string) {
+export async function getDriverManifest(
+  actor: BoardingActor,
+  tripId: string,
+  clock: Clock = systemClock,
+) {
+  const now = clock.now();
   const { trip, currentStop } = await mapFailure(() =>
-    getDriverManifestRecord(actor, tripId),
+    getDriverManifestRecord(actor, tripId, now),
   );
   const manifest = [
     ...trip.bookings.map((booking) => ({
@@ -288,6 +294,8 @@ export async function getDriverManifest(actor: BoardingActor, tripId: string) {
       status: trip.status,
       delayMinutes: trip.delayMinutes,
       delayReason: trip.delayReason,
+      expectedDelayMinutes: trip.delayMinutes,
+      expectedDelayReason: trip.delayReason,
       standingCapacity: trip.standingCapacity,
     },
     currentStop: currentStop
@@ -309,5 +317,18 @@ export async function getDriverManifest(actor: BoardingActor, tripId: string) {
       passedAt: stop.passedAt,
     })),
     manifest,
+    pendingWalkIns: selectCurrentStopPendingWalkIns(
+      trip.walkInIntents,
+      trip.id,
+      currentStop?.id ?? null,
+      now,
+    ).map((intent) => ({
+      id: intent.id,
+      passengerName: intent.student.name,
+      studentId: intent.student.studentId,
+      boardingStop: intent.boardingTripStop.stopName,
+      dropOffStop: intent.dropOffTripStop.stopName,
+      issuedAt: intent.issuedAt,
+    })),
   };
 }

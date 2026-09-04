@@ -15,13 +15,25 @@ export interface TripListItem {
   blockId?: string | null;
   blockCode?: string | null;
   blockSequence?: number | null;
-  continuityFromPrevious?: "CONTINUOUS" | "DEADHEAD_REQUIRED" | null;
+  continuityFromPrevious?: {
+    status:
+      | "CONTINUOUS_OK"
+      | "TURNAROUND_TOO_SHORT"
+      | "DEADHEAD_REQUIRED"
+      | "DEADHEAD_TIME_INSUFFICIENT";
+    gapMinutes: number;
+    minimumTurnaroundMinutes: number;
+    message: string;
+  } | null;
   seatedCapacity?: number;
   standingCapacity?: number;
   departureTime: string;
   estimatedArrivalTime: string;
   status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
   delayMinutes?: number;
+  expectedDelayMinutes?: number;
+  expectedDelayReason?: string | null;
+  trackingState?: "UPCOMING" | "LIVE" | "UNAVAILABLE";
   createdAt: string;
   route?: { id: string; name: string; stops: string[]; createdAt: string };
   bus?: {
@@ -50,6 +62,23 @@ export interface TripListItem {
     plannedArrival: string;
     plannedDeparture: string;
     boardingDeadline: string;
+    actualArrival?: string | null;
+    actualDeparture?: string | null;
+    passedAt?: string | null;
+    bookingEligibility?: {
+      canReserve: boolean;
+      canJoinWaitlist: boolean;
+      canCreateWalkInIntent: boolean;
+      reason:
+        | "AVAILABLE"
+        | "BOOKING_NOT_OPEN"
+        | "BOOKING_CLOSED"
+        | "TRIP_CANCELLED"
+        | "TRIP_COMPLETED"
+        | "CREDIT_RESTRICTED"
+        | "FULL";
+      opensAt?: string;
+    };
   }>;
   routeStops?: string[];
 }

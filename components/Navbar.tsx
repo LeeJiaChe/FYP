@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { productPolicy } from "@/shared/config/policies";
+import { formatMytTime } from "@/shared/time/operational-time";
 
 interface User {
   id: string;
@@ -36,6 +37,7 @@ interface NotificationItem {
   message: string;
   isRead: boolean;
   createdAt: string;
+  contextPath?: string | null;
 }
 
 export default function Navbar({ initialUser }: { initialUser?: User | null }) {
@@ -91,8 +93,13 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
     } catch {}
   }
 
-  async function markAsRead(id: string) {
+  async function openNotification(item: NotificationItem) {
+    const id = item.id;
     await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+    if (item.contextPath?.startsWith("/") && !item.contextPath.startsWith("//")) {
+      window.location.href = item.contextPath;
+      return;
+    }
     void fetchNotifications();
   }
 
@@ -183,12 +190,12 @@ export default function Navbar({ initialUser }: { initialUser?: User | null }) {
                       {notifications.length === 0 ? (
                         <p className="px-4 py-10 text-center text-sm text-[var(--text-muted)]">No notifications yet.</p>
                       ) : notifications.map((item) => (
-                        <button key={item.id} type="button" onClick={() => markAsRead(item.id)} className={`flex w-full gap-3 rounded-[10px] px-3 py-3 text-left transition-colors hover:bg-[var(--surface-subtle)] ${item.isRead ? "" : "bg-[var(--brand-subtle)]"}`}>
+                        <button key={item.id} type="button" onClick={() => void openNotification(item)} className={`flex w-full gap-3 rounded-[10px] px-3 py-3 text-left transition-colors hover:bg-[var(--surface-subtle)] ${item.isRead ? "" : "bg-[var(--brand-subtle)]"}`}>
                           <span className="mt-0.5">{notificationIcon(item.type)}</span>
                           <span className="min-w-0 flex-1">
                             <span className="flex items-start justify-between gap-3">
                               <span className="text-[0.68rem] font-medium text-[var(--text-secondary)]">{item.type.replace(/_/g, " ").toLowerCase()}</span>
-                              <time className="shrink-0 text-[0.68rem] text-[var(--text-muted)]">{new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+                              <time className="shrink-0 text-[0.68rem] text-[var(--text-muted)]">{formatMytTime(item.createdAt)} MYT</time>
                             </span>
                             <span className="mt-1 block text-xs leading-relaxed text-[var(--text-secondary)]">{item.message}</span>
                           </span>

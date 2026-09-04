@@ -13,6 +13,7 @@ import type {
 } from "../contracts/trip.schemas";
 import { canEditSchedule, isSameServiceDate } from "../domain/scheduling-policy";
 import { prisma } from "@/shared/db/prisma.server";
+import { mytServiceDayBounds } from "@/shared/time/operational-time";
 
 export type TripPersistenceFailureCode =
   | "ROUTE_NOT_ACTIVE"
@@ -136,6 +137,7 @@ export async function cancelTripInTransaction(
         userId,
         type: "CANCELLED" as const,
         message: `Trip cancelled: ${reason}`,
+        contextPath: "/student?view=journeys",
         deduplicationKey: `trip-cancelled:${trip.id}:${userId}`,
       })),
       skipDuplicates: true,
@@ -273,11 +275,11 @@ export async function updateScheduledTripRecord(
   });
 }
 
-export async function createScheduledTripRecord(
+async function createScheduledTripInTransaction(
+  transaction: Prisma.TransactionClient,
   input: ScheduleTripInput,
   boardingCloseGraceMs: number,
 ) {
-  return prisma.$transaction(async (transaction) => {
     await lockScheduleKey(transaction, `route:${input.routeId}`);
     await lockScheduleKey(transaction, `bus:${input.busId}`);
     if (input.blockId) {
@@ -445,12 +447,105 @@ export async function createScheduledTripRecord(
         tripSeats: { orderBy: { seatNumber: "asc" } },
       },
     });
+}
+
+export async function createScheduledTripRecord(
+  input: ScheduleTripInput,
+  boardingCloseGraceMs: number,
+) {
+  return prisma.$transaction((transaction) =>
+    createScheduledTripInTransaction(transaction, input, boardingCloseGraceMs),
+  );
+}
+
+export async function createBulkScheduledTripRecords(
+  inputs: readonly ScheduleTripInput[],
+  boardingCloseGraceMs: number,
+) {
+  return prisma.$transaction(async (transaction) => {
+    const trips = [];
+    for (const input of inputs) {
+      trips.push(
+        await createScheduledTripInTransaction(
+          transaction,
+          input,
+          boardingCloseGraceMs,
+        ),
+      );
+    }
+    return trips;
   });
+}
+
+export async function loadBulkScheduleContext(input: {
+  readonly routeId: string;
+  readonly busIds: readonly string[];
+  readonly driverIds: readonly string[];
+  readonly blockId?: string;
+  readonly from: Date;
+  readonly to: Date;
+}) {
+  const [route, buses, drivers, block, existingTrips] = await Promise.all([
+    prisma.route.findFirst({
+      where: { id: input.routeId, deletedAt: null },
+      include: {
+        line: true,
+        routeStops: {
+          orderBy: { position: "asc" },
+          include: { stop: true },
+        },
+      },
+    }),
+    prisma.bus.findMany({
+      where: { id: { in: [...input.busIds] }, deletedAt: null, status: "ACTIVE" },
+      select: { id: true, plateNumber: true },
+    }),
+    prisma.user.findMany({
+      where: { id: { in: [...input.driverIds] }, role: "DRIVER" },
+      select: { id: true, name: true },
+    }),
+    input.blockId
+      ? prisma.serviceBlock.findUnique({
+          where: { id: input.blockId },
+          include: {
+            trips: {
+              where: { status: { not: "CANCELLED" } },
+              include: {
+                tripStops: {
+                  orderBy: { position: "asc" },
+                  select: { stopId: true, stopName: true, position: true },
+                },
+              },
+            },
+          },
+        })
+      : Promise.resolve(null),
+    prisma.trip.findMany({
+      where: {
+        status: { not: "CANCELLED" },
+        departureTime: { lt: input.to },
+        estimatedArrivalTime: { gt: input.from },
+        OR: [
+          { busId: { in: [...input.busIds] } },
+          ...(input.driverIds.length ? [{ driverId: { in: [...input.driverIds] } }] : []),
+        ],
+      },
+      select: {
+        id: true,
+        busId: true,
+        driverId: true,
+        departureTime: true,
+        estimatedArrivalTime: true,
+      },
+    }),
+  ]);
+  return { route, buses, drivers, block, existingTrips };
 }
 
 export async function listTripRecords(
   query: ListTripsQuery,
   enforcedDriverId?: string,
+  viewerStudentId?: string,
 ) {
   const where: Prisma.TripWhereInput = {};
   if (query.routeId) where.routeId = query.routeId;
@@ -458,12 +553,12 @@ export async function listTripRecords(
     where.driverId = enforcedDriverId ?? query.driverId;
   }
   if (query.date) {
-    const start = new Date(`${query.date}T00:00:00.000Z`);
-    const end = new Date(`${query.date}T23:59:59.999Z`);
-    where.departureTime = { gte: start, lte: end };
+    const { startUtc, endUtcExclusive } = mytServiceDayBounds(query.date);
+    where.departureTime = { gte: startUtc, lt: endUtcExclusive };
   }
 
-  return prisma.trip.findMany({
+  const [records, viewer] = await Promise.all([
+    prisma.trip.findMany({
     where,
     include: {
       route: {
@@ -484,7 +579,18 @@ export async function listTripRecords(
       walkInJourneys: { select: { status: true } },
     },
     orderBy: { departureTime: "asc" },
-  });
+    }),
+    viewerStudentId
+      ? prisma.user.findUnique({
+          where: { id: viewerStudentId },
+          select: { creditScore: true },
+        })
+      : Promise.resolve(null),
+  ]);
+  return records.map((record) => ({
+    ...record,
+    viewerCreditScore: viewer?.creditScore,
+  }));
 }
 
 export async function findTripDetailRecord(tripId: string) {

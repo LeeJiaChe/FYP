@@ -6,7 +6,7 @@ export function useEtaDisplayClock(): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    const timer = setInterval(() => setNowMs(Date.now()), 1_000);
+    const timer = setInterval(() => setNowMs(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
 

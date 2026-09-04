@@ -8,6 +8,7 @@ import { notifyRealtime } from "@/lib/realtime-client";
 
 export {
   cancelTripSchema,
+  bulkScheduleSchema,
   createServiceBlockSchema,
   listTripsQuerySchema,
   scheduleTripSchema,
@@ -16,10 +17,12 @@ export {
 } from "./contracts/trip.schemas";
 export {
   createServiceBlock,
+  confirmBulkSchedule,
   getDriverOperation,
   getTripDetail,
   listServiceBlocks,
   listTrips,
+  previewBulkSchedule,
   scheduleTrip,
 } from "./application/schedule-trip";
 export { cancelTripInTransaction } from "./infrastructure/trip.prisma.server";

@@ -1,6 +1,8 @@
 "use client";
 
 import { Edit, Plus, Trash2 } from "lucide-react";
+import { formatMytTime } from "@/shared/time/operational-time";
+import { useOperationalClock } from "@/shared/ui/useOperationalClock";
 import {
   deriveBusOperationalAssignment,
   type BusAssignmentTrip,
@@ -23,10 +25,7 @@ function AssignmentDetails({
       <small>{trip.routeName || "Route unavailable"}</small>
       <small>Driver {trip.driverName || "Unassigned"}</small>
       <small>
-        {new Date(trip.departureTime).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
+        {formatMytTime(trip.departureTime)} MYT
         {` · ${trip.status}`}
       </small>
     </div>
@@ -46,7 +45,7 @@ export default function BusesTab({
   onEditBus: (bus: any) => void;
   onRetireBus: (bus: any) => void;
 }) {
-  const now = new Date();
+  const now = new Date(useOperationalClock());
 
   return (
     <div className="management-view animate-fade-in">

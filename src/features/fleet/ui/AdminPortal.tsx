@@ -19,6 +19,8 @@ import StopsTab from "@/features/fleet/ui/StopsTab";
 import { AppealsTab } from "@/features/penalties/ui";
 import { AnalyticsTab } from "@/features/analytics/ui";
 import type { CurrentUser } from "@/shared/ui/current-user";
+import { formatMytDate, formatMytTime } from "@/shared/time/operational-time";
+import { useOperationalClock } from "@/shared/ui/useOperationalClock";
 
 import {
   Activity,
@@ -50,6 +52,7 @@ export default function AdminPortal({
 }: {
   initialUser: CurrentUser;
 }) {
+  const operationalNow = useOperationalClock();
   const { user } = useCurrentUser(initialUser);
   const { trips, fetchTrips } = useTrips();
   const [activeTab, setActiveTab] = useState<AdminView>("dashboard");
@@ -98,6 +101,7 @@ export default function AdminPortal({
   });
 
   const [showTripModal, setShowTripModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [editingTripId, setEditingTripId] = useState<string | null>(null);
   const [newTrip, setNewTrip] = useState({
@@ -113,6 +117,19 @@ export default function AdminPortal({
     serviceDate: "",
     busId: "",
   });
+  const [bulkInput, setBulkInput] = useState({
+    routeId: "",
+    serviceDateFrom: "",
+    serviceDateTo: "",
+    weekdays: [] as number[],
+    startTime: "08:00",
+    endTime: "10:00",
+    headwayMinutes: 30,
+    busIds: [] as string[],
+    driverIds: [] as string[],
+    blockId: "",
+  });
+  const [bulkPreview, setBulkPreview] = useState<any | null>(null);
 
   const [selectedAppeal, setSelectedAppeal] = useState<any>(null);
   const [adminComment, setAdminComment] = useState("");
@@ -136,17 +153,18 @@ export default function AdminPortal({
   }, []);
 
   useEffect(() => {
-    if (!showBusModal && !showRouteModal && !showTripModal && !showBlockModal) return;
+    if (!showBusModal && !showRouteModal && !showTripModal && !showBlockModal && !showBulkModal) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setShowBusModal(false);
       setShowRouteModal(false);
       setShowTripModal(false);
       setShowBlockModal(false);
+      setShowBulkModal(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [showBlockModal, showBusModal, showRouteModal, showTripModal]);
+  }, [showBlockModal, showBulkModal, showBusModal, showRouteModal, showTripModal]);
 
   useEffect(() => {
     if (!adminNavOpen) return;
@@ -485,6 +503,51 @@ export default function AdminPortal({
     }
   }
 
+  function bulkPayload() {
+    return { ...bulkInput, blockId: bulkInput.blockId || undefined };
+  }
+
+  async function handleBulkPreview(event: React.FormEvent) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setBulkPreview(null);
+    try {
+      const response = await fetch("/api/admin/trips/bulk-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bulkPayload()),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message ?? result.error ?? "Preview failed");
+      setBulkPreview(result.preview);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Preview failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleBulkConfirm() {
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/admin/trips/bulk-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bulkPayload()),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message ?? result.error ?? "Generation failed");
+      toast.success(`${result.createdCount} Trips created`);
+      setShowBulkModal(false);
+      setBulkPreview(null);
+      await Promise.all([fetchTrips(), fetchServiceBlocks()]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Generation failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function handleCreateBlock(event: React.FormEvent) {
     event.preventDefault();
     setIsSubmitting(true);
@@ -699,7 +762,11 @@ export default function AdminPortal({
   const pendingAppeals = appeals.filter(
     (appeal) => appeal.status === "PENDING",
   ).length;
-  const upcomingTrips = trips.filter((trip) => trip.status === "NOT_STARTED");
+  const upcomingTrips = trips.filter(
+    (trip) =>
+      trip.status === "NOT_STARTED" &&
+      new Date(trip.departureTime).getTime() >= operationalNow,
+  );
   const attentionBuses = buses.filter((bus) => bus.status !== "ACTIVE");
   const adminNavigation: Array<{
     label: string;
@@ -816,7 +883,7 @@ export default function AdminPortal({
                   </p>
                 </div>
                 <time>
-                  {new Date().toLocaleDateString("en-MY", {
+                  {formatMytDate(new Date(operationalNow), {
                     weekday: "long",
                     day: "numeric",
                     month: "long",
@@ -852,10 +919,7 @@ export default function AdminPortal({
                       {activeTrips.slice(0, 5).map((trip) => (
                         <article key={trip.id}>
                           <time>
-                            {new Date(trip.departureTime).toLocaleTimeString(
-                              [],
-                              { hour: "2-digit", minute: "2-digit" },
-                            )}
+                            {formatMytTime(trip.departureTime)}
                           </time>
                           <div>
                             <strong>{trip.routeName}</strong>
@@ -912,10 +976,7 @@ export default function AdminPortal({
                     upcomingTrips.slice(0, 4).map((trip) => (
                       <article key={trip.id}>
                         <time>
-                          {new Date(trip.departureTime).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {formatMytTime(trip.departureTime)}
                         </time>
                         <strong>{trip.routeName}</strong>
                         <span>{trip.busPlateNumber}</span>
@@ -1028,6 +1089,10 @@ export default function AdminPortal({
                   departureTime: "",
                 });
                 setShowTripModal(true);
+              }}
+              onOpenBulk={() => {
+                setBulkPreview(null);
+                setShowBulkModal(true);
               }}
               onCreateBlock={() => {
                 setNewBlock({ code: "", serviceDate: "", busId: "" });
@@ -1479,7 +1544,7 @@ export default function AdminPortal({
                 key: "blockId",
                 opts: serviceBlocks.map((block: any) => ({
                   v: block.id,
-                  l: `${block.code} · ${block.busPlateNumber} · ${new Date(block.serviceDate).toLocaleDateString("en-MY")}`,
+                  l: `${block.code} · ${block.busPlateNumber} · ${formatMytDate(block.serviceDate, { day: "numeric", month: "short", year: "numeric" })}`,
                 })),
                 ph: "No ServiceBlock",
                 req: false,
@@ -1576,6 +1641,63 @@ export default function AdminPortal({
                     ? "Save Schedule"
                     : "Schedule Trip"}
               </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {showBulkModal && (
+        <Modal
+          isOpen
+          onClose={() => setShowBulkModal(false)}
+          title="Generate timetable"
+          description="Preview resource conflicts and continuity warnings before normal Trip records are created."
+          maxWidth="lg"
+        >
+          <form onSubmit={handleBulkPreview} className="admin-form">
+            <label>
+              <span>Directional Route</span>
+              <select required className="input-field" value={bulkInput.routeId} onChange={(event) => setBulkInput({ ...bulkInput, routeId: event.target.value })}>
+                <option value="">Select Route</option>
+                {routes.map((route: any) => <option key={route.id} value={route.id}>{route.lineCode} · {route.direction} · {route.name}</option>)}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label><span>First service date</span><input required type="date" className="input-field" value={bulkInput.serviceDateFrom} onChange={(event) => setBulkInput({ ...bulkInput, serviceDateFrom: event.target.value })} /></label>
+              <label><span>Last service date</span><input required type="date" className="input-field" value={bulkInput.serviceDateTo} onChange={(event) => setBulkInput({ ...bulkInput, serviceDateTo: event.target.value })} /></label>
+              <label><span>Start time (MYT)</span><input required type="time" className="input-field" value={bulkInput.startTime} onChange={(event) => setBulkInput({ ...bulkInput, startTime: event.target.value })} /></label>
+              <label><span>End time (MYT)</span><input required type="time" className="input-field" value={bulkInput.endTime} onChange={(event) => setBulkInput({ ...bulkInput, endTime: event.target.value })} /></label>
+            </div>
+            <label><span>Headway (minutes)</span><input required min={5} max={240} type="number" className="input-field" value={bulkInput.headwayMinutes} onChange={(event) => setBulkInput({ ...bulkInput, headwayMinutes: Number(event.target.value) })} /></label>
+            <fieldset>
+              <legend className="text-xs font-bold mb-2">Weekdays (none selects every day)</legend>
+              <div className="flex flex-wrap gap-3">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) => <label key={day} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={bulkInput.weekdays.includes(index)} onChange={() => setBulkInput({ ...bulkInput, weekdays: bulkInput.weekdays.includes(index) ? bulkInput.weekdays.filter((item) => item !== index) : [...bulkInput.weekdays, index] })} />{day}</label>)}
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend className="text-xs font-bold mb-2">Bus rotation</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {buses.filter((bus: any) => bus.status === "ACTIVE").map((bus: any) => <label key={bus.id} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={bulkInput.busIds.includes(bus.id)} onChange={() => setBulkInput({ ...bulkInput, busIds: bulkInput.busIds.includes(bus.id) ? bulkInput.busIds.filter((id) => id !== bus.id) : [...bulkInput.busIds, bus.id] })} />{bus.plateNumber}</label>)}
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend className="text-xs font-bold mb-2">Driver rotation (optional)</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {drivers.map((driver: any) => <label key={driver.id} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={bulkInput.driverIds.includes(driver.id)} onChange={() => setBulkInput({ ...bulkInput, driverIds: bulkInput.driverIds.includes(driver.id) ? bulkInput.driverIds.filter((id) => id !== driver.id) : [...bulkInput.driverIds, driver.id] })} />{driver.name}</label>)}
+              </div>
+            </fieldset>
+            <label><span>ServiceBlock (optional; single date and matching Bus)</span><select className="input-field" value={bulkInput.blockId} onChange={(event) => setBulkInput({ ...bulkInput, blockId: event.target.value })}><option value="">No ServiceBlock</option>{serviceBlocks.map((block: any) => <option key={block.id} value={block.id}>{block.code} · {block.busPlateNumber}</option>)}</select></label>
+            {bulkPreview && <section className="rounded-xl border border-[var(--border)] p-3 space-y-2" aria-live="polite">
+              <strong>{bulkPreview.entries.length} proposed departures · {bulkPreview.canConfirm ? "ready to confirm" : "resolve failures first"}</strong>
+              <div className="max-h-52 overflow-auto space-y-1">
+                {bulkPreview.entries.map((entry: any) => <div key={entry.key} className="text-xs flex justify-between gap-3"><span>{formatMytDate(entry.departureTime)} {formatMytTime(entry.departureTime)} · {entry.busPlateNumber} · {entry.driverName}</span><span className={entry.errors.length ? "text-red-400" : entry.warnings.some((warning: any) => warning.status !== "CONTINUOUS_OK") ? "text-amber-400" : "text-emerald-400"}>{entry.errors.length ? entry.errors.join(", ") : entry.warnings.filter((warning: any) => warning.status !== "CONTINUOUS_OK").map((warning: any) => warning.status).join(", ") || "VALID"}</span></div>)}
+              </div>
+            </section>}
+            <div className="admin-form-actions">
+              <button type="button" className="btn-ghost" onClick={() => setShowBulkModal(false)}>Cancel</button>
+              <button type="submit" disabled={isSubmitting || bulkInput.busIds.length === 0} className="btn-secondary">{isSubmitting ? "Checking…" : "Preview"}</button>
+              {bulkPreview?.canConfirm && <button type="button" disabled={isSubmitting} className="btn-primary" onClick={() => void handleBulkConfirm()}>Confirm {bulkPreview.entries.length} Trips</button>}
             </div>
           </form>
         </Modal>

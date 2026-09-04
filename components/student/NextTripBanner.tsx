@@ -1,6 +1,8 @@
 "use client";
 
 import { ArrowRight, Bus, Clock, MapPin, Ticket } from "lucide-react";
+import { formatMytDate, formatMytTime } from "@/shared/time/operational-time";
+import { useOperationalClock } from "@/shared/ui/useOperationalClock";
 
 interface NextBooking {
   status: string;
@@ -20,7 +22,7 @@ interface NextTripBannerProps {
 
 export default function NextTripBanner({ myBookings, onViewQR }: NextTripBannerProps) {
   // Find the next upcoming booking (closest departure time in the future)
-  const now = new Date().getTime();
+  const now = useOperationalClock();
   const upcomingBookings = myBookings
     .filter((b) => b.status === "CONFIRMED" && b.trip?.departureTime && new Date(b.trip.departureTime).getTime() > now)
     .sort((a, b) => new Date(a.trip!.departureTime).getTime() - new Date(b.trip!.departureTime).getTime());
@@ -31,9 +33,9 @@ export default function NextTripBanner({ myBookings, onViewQR }: NextTripBannerP
     <article className={`next-trip ${nextBooking ? "scheduled" : "empty"}`}>
       {nextBooking ? (
         <>
-          <header className="next-trip-heading"><span>Next journey</span><time dateTime={nextBooking.trip.departureTime}>{new Date(nextBooking.trip.departureTime).toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short" })}</time></header>
+          <header className="next-trip-heading"><span>Next journey</span><time dateTime={nextBooking.trip.departureTime}>{formatMytDate(nextBooking.trip.departureTime)}</time></header>
           <div className="next-trip-main">
-            <div className="next-trip-time"><Clock aria-hidden /><time dateTime={nextBooking.trip.departureTime}>{new Date(nextBooking.trip.departureTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>
+            <div className="next-trip-time"><Clock aria-hidden /><time dateTime={nextBooking.trip.departureTime}>{formatMytTime(nextBooking.trip.departureTime)}</time></div>
             <div className="next-trip-route"><h2>{nextBooking.trip.routeName || nextBooking.trip.route?.name || "Unknown Route"}</h2><p><MapPin aria-hidden /> {nextBooking.trip.busPlateNumber || nextBooking.trip.bus?.plateNumber || "Bus assignment pending"}</p></div>
           </div>
           <button onClick={() => onViewQR(nextBooking)} className="next-trip-action"><Ticket aria-hidden /> Boarding pass <ArrowRight aria-hidden /></button>

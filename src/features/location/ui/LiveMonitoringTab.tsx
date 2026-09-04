@@ -3,6 +3,7 @@
 import SeatGrid from "@/components/SeatGrid";
 import { Activity, RefreshCw } from "lucide-react";
 import { AdminTripEtaPanel } from "@/features/eta/ui";
+import { formatMytTime } from "@/shared/time/operational-time";
 
 interface LiveMonitoringTabProps {
   trips: any[];
@@ -70,14 +71,11 @@ export default function LiveMonitoringTab({
                 <h2>Bus {liveTripDetails.busPlateNumber}</h2>
                 <p>
                   {liveTripDetails.routeName} • Departs:{" "}
-                  {new Date(liveTripDetails.departureTime).toLocaleTimeString(
-                    [],
-                    { hour: "2-digit", minute: "2-digit" }
-                  )}
+                  {formatMytTime(liveTripDetails.departureTime)} MYT
                 </p>
                 <small>
                   {liveTripDetails.latestLocation
-                    ? `${liveTripDetails.latestLocation.source === "SIMULATED" ? "Simulated GPS / Prototype" : "GPS"} · ${new Date(liveTripDetails.latestLocation.recordedAt).toLocaleTimeString()}`
+                    ? `${liveTripDetails.latestLocation.source === "SIMULATED" ? "Simulated GPS / Prototype" : "GPS"} · ${formatMytTime(liveTripDetails.latestLocation.recordedAt)} MYT`
                     : "No live telemetry received yet"}
                 </small>
                 <strong className="live-segment">

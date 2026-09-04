@@ -19,6 +19,11 @@ export {
   findJourneyAvailability,
   listMyReservations,
 } from "./application/reservations";
+export {
+  resolveStudentBookingEligibility,
+  type StudentBookingEligibility,
+  type StudentBookingEligibilityReason,
+} from "./domain/reservation-policy";
 
 export async function createReservedBooking(
   ...args: Parameters<typeof createReservedBookingUseCase>

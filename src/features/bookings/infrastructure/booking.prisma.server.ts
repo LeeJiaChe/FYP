@@ -22,6 +22,7 @@ import {
 } from "../domain/reservation-policy";
 import type { ProductPolicy } from "@/shared/config/policies";
 import { prisma } from "@/shared/db/prisma.server";
+import { formatMytTime } from "@/shared/time/operational-time";
 
 export type BookingPersistenceFailureCode =
   | "STUDENT_NOT_FOUND"
@@ -183,7 +184,8 @@ async function createConfirmedBooking(
       data: {
         userId: input.studentId,
         type: "BOOKING_CONFIRMED",
-        message: `Seat ${booking.tripSeat.seatNumber} confirmed for ${input.routeName} from ${input.boardingDeparture.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        message: `Seat ${booking.tripSeat.seatNumber} confirmed for ${input.routeName} from ${formatMytTime(input.boardingDeparture)} MYT`,
+        contextPath: "/student?view=journeys",
       },
     });
   }
@@ -217,6 +219,8 @@ export async function findJourneyAvailabilityRecord(
     );
     return {
       tripId: selection.tripId,
+      tripStatus: journey.trip.status,
+      studentCredit: journey.student.creditScore,
       boardingTripStop: journey.boarding,
       dropOffTripStop: journey.dropOff,
       seats,
@@ -431,6 +435,7 @@ export async function promoteCompatibleWaitlistInTransaction(
           userId: entry.studentId,
           type: "WAITLIST_PROMOTED",
           message: `Your ${journey.boarding.stopName} to ${journey.dropOff.stopName} waitlist request has been promoted to Seat ${seat.seatNumber}.`,
+          contextPath: "/student?view=journeys",
         },
       });
       promoted.push({
@@ -489,6 +494,7 @@ export async function cancelReservedBookingRecord(
         userId: studentId,
         type: "CANCELLED",
         message: "Your reserved journey has been cancelled.",
+        contextPath: "/student?view=journeys",
       },
     });
     const promoted = await promoteCompatibleWaitlistInTransaction(

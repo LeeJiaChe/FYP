@@ -13,6 +13,7 @@ import {
 import RestrictedBanner from "@/components/student/RestrictedBanner";
 import { selectStudentEtaBooking } from "@/features/bookings/ui/student-journey-presentation";
 import { StudentBookingEtaCard } from "@/features/eta/ui";
+import { formatMytDate, formatMytTime, getMytHour } from "@/shared/time/operational-time";
 
 interface StudentHomeUser {
   name?: string | null;
@@ -62,15 +63,12 @@ function formatDeparture(value?: string) {
 
   return {
     dateTime: value,
-    day: departure.toLocaleDateString("en-MY", {
+    day: formatMytDate(departure, {
       weekday: "short",
       day: "numeric",
       month: "short",
     }),
-    time: departure.toLocaleTimeString("en-MY", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
+    time: formatMytTime(departure),
   };
 }
 
@@ -108,7 +106,7 @@ export default function StudentHome({
   const nextDeparture = formatDeparture(nextBooking?.trip?.departureTime);
   const score = user?.creditScore ?? defaultCreditScore;
   const fullName = user?.name?.trim() || "Student";
-  const greeting = greetingForHour(timeSnapshot.getHours());
+  const greeting = greetingForHour(getMytHour(timeSnapshot));
 
   return (
     <div className="student-home student-home-pilot">

@@ -21,6 +21,10 @@ export {
   type ServiceBlockContinuity,
 } from "./domain/service-block-continuity";
 export {
+  resolveStudentTrackingState,
+  type StudentTrackingState,
+} from "./domain/student-tracking-eligibility";
+export {
   resolveAdminMonitoredTripId,
   selectAdminActiveTrips,
   type AdminLiveTripCandidate,

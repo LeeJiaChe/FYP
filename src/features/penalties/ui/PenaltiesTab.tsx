@@ -2,6 +2,7 @@
 
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import { productPolicy } from "@/shared/config/policies";
+import { formatMytDate } from "@/shared/time/operational-time";
 
 interface PenaltiesTabProps {
   user?: any;
@@ -68,7 +69,7 @@ export default function PenaltiesTab({
                 <p className="penalty-meta">
                   {p.booking?.routeName} •{" "}
                   {p.booking?.departureTime &&
-                    new Date(p.booking.departureTime).toLocaleDateString()}
+                    formatMytDate(p.booking.departureTime)}
                 </p>
 
                 {p.appeal && (

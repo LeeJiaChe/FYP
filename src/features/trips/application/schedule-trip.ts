@@ -1,6 +1,7 @@
 import type {
   CancelTripInput,
   CreateServiceBlockInput,
+  BulkScheduleInput,
   ListTripsQuery,
   ScheduleTripInput,
   UpdateScheduledTripInput,
@@ -8,12 +9,14 @@ import type {
 import { TripSnapshotError } from "../domain/build-trip-snapshot";
 import {
   createScheduledTripRecord,
+  createBulkScheduledTripRecords,
   createServiceBlockRecord,
   cancelTripRecord,
   findTripDetailRecord,
   listTripRecords,
   listDriverOperationRecords,
   listServiceBlockRecords,
+  loadBulkScheduleContext,
   TripPersistenceError,
   updateScheduledTripRecord,
 } from "../infrastructure/trip.prisma.server";
@@ -29,6 +32,15 @@ import { systemClock, type Clock } from "@/shared/time/clock";
 import { currentOperationalSegmentPosition } from "../domain/operational-segment";
 import { resolveDriverOperation } from "../domain/driver-operation";
 import { evaluateServiceBlockContinuity } from "../domain/service-block-continuity";
+import {
+  detectBulkResourceConflicts,
+  generateBulkTripCandidates,
+  validateBulkServiceBlock,
+} from "../domain/bulk-schedule";
+import { projectTripSeatForActor } from "../domain/trip-seat-projection";
+import { resolveStudentTrackingState } from "../domain/student-tracking-eligibility";
+import { resolveStudentBookingEligibility } from "@/features/bookings/server";
+import { isWalkInIssuanceEligible } from "@/features/boarding/public";
 
 export interface TripActor {
   readonly userId: string;
@@ -92,9 +104,151 @@ export async function scheduleTrip(
   }
 }
 
-export async function listTrips(actor: TripActor, query: ListTripsQuery) {
+export async function previewBulkSchedule(
+  actor: TripActor,
+  input: BulkScheduleInput,
+  clock: Clock = systemClock,
+) {
+  if (actor.role !== "ADMIN") throw forbidden("Admin role required");
+  let candidates;
+  try {
+    candidates = generateBulkTripCandidates(input);
+  } catch (error) {
+    throw validationError(error instanceof Error ? error.message : "Invalid bulk timetable");
+  }
+  if (candidates.length === 0) throw validationError("No departures match the selected dates and weekdays");
+  const context = await loadBulkScheduleContext({
+    routeId: input.routeId,
+    busIds: input.busIds,
+    driverIds: input.driverIds,
+    blockId: input.blockId,
+    from: candidates[0]!.departureTime,
+    to: new Date(candidates.at(-1)!.departureTime.getTime() + 24 * 60 * 60_000),
+  });
+  if (!context.route) throw notFound("Active Route not found");
+  const routeDurationMinutes = context.route.routeStops.reduce(
+    (sum, stop) => sum + (stop.travelDurationToNextMinutes ?? 0),
+    0,
+  );
+  if (routeDurationMinutes <= 0) throw invariantViolation("Route travel duration is invalid");
+  const busById = new Map(context.buses.map((bus) => [bus.id, bus]));
+  const driverById = new Map(context.drivers.map((driver) => [driver.id, driver]));
+  const proposed: Array<{
+    key: string;
+    routeId: string;
+    busId: string;
+    driverId?: string;
+    blockId?: string;
+    departureTime: Date;
+    estimatedArrivalTime: Date;
+    tripStops: Array<{ stopId: string; stopName: string; position: number }>;
+    errors: string[];
+    warnings: ReturnType<typeof evaluateServiceBlockContinuity>[];
+  }> = [];
+
+  for (const candidate of candidates) {
+    const estimatedArrivalTime = new Date(
+      candidate.departureTime.getTime() + routeDurationMinutes * 60_000,
+    );
+    const errors: string[] = [];
+    if (candidate.departureTime <= clock.now()) errors.push("DEPARTURE_NOT_FUTURE");
+    if (!busById.has(candidate.busId)) errors.push("BUS_NOT_ACTIVE");
+    if (candidate.driverId && !driverById.has(candidate.driverId)) errors.push("DRIVER_NOT_VALID");
+    errors.push(
+      ...validateBulkServiceBlock(candidate, context.block, Boolean(input.blockId)),
+      ...detectBulkResourceConflicts(
+        { ...candidate, estimatedArrivalTime },
+        [...context.existingTrips, ...proposed],
+      ),
+    );
+    proposed.push({
+      ...candidate,
+      estimatedArrivalTime,
+      tripStops: context.route.routeStops.map((stop) => ({
+        stopId: stop.stopId,
+        stopName: stop.stop.name,
+        position: stop.position,
+      })),
+      errors: [...new Set(errors)],
+      warnings: [],
+    });
+  }
+
+  if (context.block) {
+    const sequence = [...context.block.trips, ...proposed].sort(
+      (left, right) => left.departureTime.getTime() - right.departureTime.getTime(),
+    );
+    for (let index = 1; index < sequence.length; index += 1) {
+      const current = sequence[index]!;
+      if (!("key" in current)) continue;
+      current.warnings.push(
+        evaluateServiceBlockContinuity(sequence[index - 1]!, current, productPolicy),
+      );
+    }
+  }
+
+  return {
+    route: {
+      id: context.route.id,
+      name: context.route.name,
+      lineCode: context.route.line.code,
+      direction: context.route.direction,
+    },
+    entries: proposed.map((item) => ({
+      key: item.key,
+      departureTime: item.departureTime,
+      estimatedArrivalTime: item.estimatedArrivalTime,
+      busId: item.busId,
+      busPlateNumber: busById.get(item.busId)?.plateNumber ?? "Unavailable",
+      driverId: item.driverId ?? null,
+      driverName: item.driverId ? driverById.get(item.driverId)?.name ?? "Unavailable" : "Unassigned",
+      errors: item.errors,
+      warnings: item.warnings,
+    })),
+    canConfirm: proposed.every((item) => item.errors.length === 0),
+  };
+}
+
+export async function confirmBulkSchedule(
+  actor: TripActor,
+  input: BulkScheduleInput,
+  clock: Clock = systemClock,
+) {
+  const preview = await previewBulkSchedule(actor, input, clock);
+  if (!preview.canConfirm) throw conflict("Bulk timetable preview contains scheduling failures");
+  const candidates = generateBulkTripCandidates(input);
+  try {
+    const trips = await createBulkScheduledTripRecords(
+      candidates.map((candidate) => ({
+        routeId: candidate.routeId,
+        busId: candidate.busId,
+        ...(candidate.driverId ? { driverId: candidate.driverId } : {}),
+        ...(candidate.blockId ? { blockId: candidate.blockId } : {}),
+        departureTime: candidate.departureTime.toISOString(),
+      })),
+      productPolicy.normalBoardingCloseGraceMs,
+    );
+    return { createdCount: trips.length, tripIds: trips.map((trip) => trip.id) };
+  } catch (error) {
+    if (error instanceof TripPersistenceError) mapPersistenceFailure(error);
+    throw error;
+  }
+}
+
+export async function listTrips(
+  actor: TripActor,
+  query: ListTripsQuery,
+  clock: Clock = systemClock,
+) {
+  if (!["ADMIN", "DRIVER", "STUDENT"].includes(actor.role)) {
+    throw forbidden("Recognized portal role required");
+  }
   const enforcedDriverId = actor.role === "DRIVER" ? actor.userId : undefined;
-  const trips = await listTripRecords(query, enforcedDriverId);
+  const trips = await listTripRecords(
+    query,
+    enforcedDriverId,
+    actor.role === "STUDENT" ? actor.userId : undefined,
+  );
   const blockTrips = new Map<string, typeof trips>();
   for (const trip of trips) {
     if (!trip.blockId) continue;
@@ -109,6 +263,7 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
     );
   }
 
+  const now = clock.now();
   return trips.map((trip) => {
     const routeStops =
       trip.tripStops.length > 0
@@ -130,9 +285,8 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
     const tripsInBlock = trip.blockId ? blockTrips.get(trip.blockId) : undefined;
     const blockIndex = tripsInBlock?.findIndex((item) => item.id === trip.id) ?? -1;
 
-    return {
+    const shared = {
       id: trip.id,
-      routeId: trip.routeId,
       routeName: trip.route.name,
       lineId: trip.route.lineId,
       lineCode: trip.route.line.code,
@@ -150,9 +304,56 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
         plannedArrival: stop.plannedArrival,
         plannedDeparture: stop.plannedDeparture,
         boardingDeadline: stop.boardingDeadline,
+        actualArrival: stop.actualArrival,
+        actualDeparture: stop.actualDeparture,
+        passedAt: stop.passedAt,
       })),
-      busId: trip.busId,
       busPlateNumber: trip.bus.plateNumber,
+      departureTime: trip.departureTime,
+      estimatedArrivalTime: trip.estimatedArrivalTime,
+      status: trip.status,
+      expectedDelayMinutes: trip.delayMinutes,
+      expectedDelayReason: trip.delayReason,
+    };
+
+    if (actor.role === "STUDENT") {
+      return {
+        ...shared,
+        trackingState: resolveStudentTrackingState(
+          trip.status,
+          trip.departureTime,
+          now,
+        ),
+        tripStops: shared.tripStops.map((stop) => ({
+          ...stop,
+          bookingEligibility: resolveStudentBookingEligibility(
+            {
+              tripStatus: trip.status,
+              boardingPlannedDeparture: stop.plannedDeparture,
+              boardingActualArrival: stop.actualArrival,
+              boardingActualDeparture: stop.actualDeparture,
+              boardingPassedAt: stop.passedAt,
+              studentCredit: trip.viewerCreditScore ?? productPolicy.initialCredit,
+              now,
+            },
+            productPolicy,
+            {
+              canCreateWalkInIntent: isWalkInIssuanceEligible(
+                now,
+                trip.status,
+                stop,
+                productPolicy,
+              ),
+            },
+          ),
+        })),
+      };
+    }
+
+    return {
+      ...shared,
+      routeId: trip.routeId,
+      busId: trip.busId,
       busCapacity: trip.seatedCapacity,
       seatedCapacity: trip.seatedCapacity,
       standingCapacity: trip.standingCapacity,
@@ -166,12 +367,10 @@ export async function listTrips(actor: TripActor, query: ListTripsQuery) {
           ? evaluateServiceBlockContinuity(
               tripsInBlock[blockIndex - 1]!,
               trip,
+              productPolicy,
             )
           : null,
-      departureTime: trip.departureTime,
-      estimatedArrivalTime: trip.estimatedArrivalTime,
       boardingDeadline: trip.boardingDeadline,
-      status: trip.status,
       delayMinutes: trip.delayMinutes,
       delayReason: trip.delayReason,
       stats: {
@@ -232,7 +431,11 @@ export async function listServiceBlocks(actor: TripActor) {
       continuityFromPrevious:
         index === 0
           ? null
-          : evaluateServiceBlockContinuity(block.trips[index - 1]!, trip),
+          : evaluateServiceBlockContinuity(
+              block.trips[index - 1]!,
+              trip,
+              productPolicy,
+            ),
     })),
   }));
 }
@@ -322,6 +525,9 @@ export async function updateScheduledTrip(
 }
 
 export async function getTripDetail(actor: TripActor, tripId: string) {
+  if (!["ADMIN", "DRIVER", "STUDENT"].includes(actor.role)) {
+    throw forbidden("Recognized portal role required");
+  }
   const trip = await findTripDetailRecord(tripId);
   if (!trip) throw notFound("Trip not found");
   if (actor.role === "DRIVER" && trip.driverId !== actor.userId) {
@@ -342,45 +548,14 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
     (segment) => segment.reservedSeatSegments,
   );
   const seats = trip.tripSeats.map((seat) => {
-    const visibleClaims = allClaims.filter(
-      (claim) =>
-        claim.tripSeatId === seat.id &&
-        (canViewManifest || claim.booking.studentId === actor.userId),
-    );
+    const seatClaims = allClaims.filter((claim) => claim.tripSeatId === seat.id);
     const currentClaim = currentSegment?.reservedSeatSegments.find(
       (claim) => claim.tripSeatId === seat.id,
     );
-    const primary = currentClaim?.booking ?? visibleClaims[0]?.booking;
-    return {
-      id: seat.id,
-      seatNumber: seat.seatNumber,
-      // This projection describes only the current/upcoming operational segment.
-      status: currentClaim?.booking.checkedInAt
-        ? "CHECKED_IN"
-        : currentClaim
-          ? "RESERVED"
-          : "AVAILABLE",
-      booking: primary
-        ? {
-            id: primary.id,
-            status: primary.status,
-            studentName: primary.student.name,
-            studentId: primary.student.studentId,
-            checkedInAt: primary.checkedInAt,
-            checkInMethod: primary.checkInMethod,
-          }
-        : null,
-      journeys: visibleClaims.map(({ booking }) => ({
-        bookingId: booking.id,
-        boardingStopName: booking.boardingTripStop.stopName,
-        dropOffStopName: booking.dropOffTripStop.stopName,
-        status: booking.status,
-      })),
-    };
+    return projectTripSeatForActor({ actor, seat, currentClaim, seatClaims });
   });
-  return {
+  const shared = {
     id: trip.id,
-    routeId: trip.routeId,
     routeName: trip.route.name,
     lineId: trip.route.line.id,
     lineCode: trip.route.line.code,
@@ -402,15 +577,9 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
       actualDeparture: stop.actualDeparture,
       passedAt: stop.passedAt,
     })),
-    busId: trip.busId,
     busPlateNumber: trip.bus.plateNumber,
     seatedCapacity: trip.seatedCapacity,
     standingCapacity: trip.standingCapacity,
-    driverId: trip.driverId,
-    driverName: trip.driver?.name ?? "Unassigned",
-    blockId: trip.blockId,
-    blockCode: trip.block?.code ?? null,
-    blockSequence: trip.blockSequence,
     departureTime: trip.departureTime,
     estimatedArrivalTime: trip.estimatedArrivalTime,
     status: trip.status,
@@ -436,6 +605,21 @@ export async function getTripDetail(actor: TripActor, tripId: string) {
     waitlist: canViewManifest
       ? trip.waitlistEntries
       : trip.waitlistEntries.filter((entry) => entry.studentId === actor.userId),
+  };
+
+  if (actor.role === "STUDENT") {
+    return shared;
+  }
+
+  return {
+    ...shared,
+    routeId: trip.routeId,
+    busId: trip.busId,
+    driverId: trip.driverId,
+    driverName: trip.driver?.name ?? "Unassigned",
+    blockId: trip.blockId,
+    blockCode: trip.block?.code ?? null,
+    blockSequence: trip.blockSequence,
     stats: {
       totalSeats: trip.seatedCapacity,
       availableSeats: seats.filter((seat) => seat.status === "AVAILABLE").length,

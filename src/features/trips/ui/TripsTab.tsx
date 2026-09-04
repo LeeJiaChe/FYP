@@ -1,11 +1,13 @@
 "use client";
 
 import { CalendarClock, Plus, XCircle } from "lucide-react";
+import { formatMytDate, formatMytTime } from "@/shared/time/operational-time";
 
 export default function TripsTab({
   isDriverPortal = false,
   trips,
   onOpenModal,
+  onOpenBulk,
   onCreateBlock,
   onEditTrip,
   onCancelTrip,
@@ -13,12 +15,13 @@ export default function TripsTab({
   isDriverPortal?: boolean;
   trips: any[];
   onOpenModal?: (() => void) | null;
+  onOpenBulk?: (() => void) | null;
   onCreateBlock?: (() => void) | null;
   onEditTrip?: ((trip: any) => void) | null;
   onCancelTrip?: ((trip: any) => void) | null;
 }) {
   const grouped = trips.reduce<Record<string, any[]>>((result, trip) => {
-    const key = new Date(trip.departureTime).toLocaleDateString("en-MY", {
+    const key = formatMytDate(trip.departureTime, {
       weekday: "long",
       day: "numeric",
       month: "long",
@@ -48,6 +51,11 @@ export default function TripsTab({
                 <Plus aria-hidden className="size-4" /> Schedule Trip
               </button>
             )}
+            {onOpenBulk && (
+              <button onClick={onOpenBulk} className="btn-secondary">
+                <CalendarClock aria-hidden className="size-4" /> Generate timetable
+              </button>
+            )}
           </div>
         )}
       </header>
@@ -65,10 +73,7 @@ export default function TripsTab({
                 .map((trip) => (
                   <article key={trip.id}>
                     <time>
-                      {new Date(trip.departureTime).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatMytTime(trip.departureTime)}
                     </time>
                     <div className="timetable-route">
                       <strong>{trip.routeName}</strong>
@@ -78,12 +83,15 @@ export default function TripsTab({
                           (trip.driverName || "Unassigned driver")}
                       </span>
                       {trip.blockCode && (
-                        <small>
-                          {trip.blockCode} · Seq {trip.blockSequence}
-                          {trip.continuityFromPrevious === "DEADHEAD_REQUIRED"
-                            ? " · Deadhead required"
-                            : ""}
-                        </small>
+                        <>
+                          <small>
+                            {trip.blockCode} · Seq {trip.blockSequence}
+                            {trip.continuityFromPrevious?.status !== "CONTINUOUS_OK"
+                              ? ` · ${trip.continuityFromPrevious?.status.replaceAll("_", " ")}`
+                              : ""}
+                          </small>
+                          {trip.continuityFromPrevious?.status !== "CONTINUOUS_OK" && trip.continuityFromPrevious?.message && <small className="text-amber-400">{trip.continuityFromPrevious.message}</small>}
+                        </>
                       )}
                     </div>
                     <div className="timetable-load">
@@ -101,7 +109,7 @@ export default function TripsTab({
                       className={`badge ${trip.status === "CANCELLED" ? "badge-red" : trip.status === "ARRIVED" ? "badge-green" : "badge-blue"}`}
                     >
                       {trip.status}
-                      {trip.delayMinutes ? ` +${trip.delayMinutes} min` : ""}
+                      {trip.delayMinutes ? ` · expected +${trip.delayMinutes} min` : ""}
                     </span>
                     <div className="row-actions">
                       {trip.status === "NOT_STARTED" && !isDriverPortal && onEditTrip && (

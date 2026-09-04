@@ -13,6 +13,9 @@ export interface ProductPolicy {
   readonly trafficEtaFailureCacheMs: number;
   readonly trafficEtaTimeoutMs: number;
   readonly trafficEtaMaxLocationAgeMs: number;
+  readonly minimumServiceBlockTurnaroundMs: number;
+  readonly importantDelayNotificationMinutes: number;
+  readonly emailVerificationTtlMs: number;
 }
 
 const defaultValues: ProductPolicy = approvedDefaults;
@@ -44,6 +47,15 @@ export function createProductPolicy(
   }
   if (policy.trafficEtaMaxLocationAgeMs === 0) {
     throw new RangeError("trafficEtaMaxLocationAgeMs must be greater than zero");
+  }
+  if (policy.minimumServiceBlockTurnaroundMs === 0) {
+    throw new RangeError("minimumServiceBlockTurnaroundMs must be greater than zero");
+  }
+  if (policy.importantDelayNotificationMinutes === 0) {
+    throw new RangeError("importantDelayNotificationMinutes must be greater than zero");
+  }
+  if (policy.emailVerificationTtlMs === 0) {
+    throw new RangeError("emailVerificationTtlMs must be greater than zero");
   }
 
   return Object.freeze(policy);

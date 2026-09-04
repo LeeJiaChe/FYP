@@ -441,6 +441,30 @@ export async function progressTripRecord(
         where: { id: tripId },
         data: { delayMinutes: input.delayMinutes, delayReason: input.reason },
       });
+      if (input.delayMinutes >= policy.importantDelayNotificationMinutes) {
+        const affected = await transaction.user.findMany({
+          where: {
+            OR: [
+              { bookings: { some: { tripId, status: "CONFIRMED" } } },
+              { waitlistEntries: { some: { tripId, status: "WAITING" } } },
+              { walkInIntents: { some: { tripId, status: "PENDING" } } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (affected.length > 0) {
+          await transaction.notification.createMany({
+            data: affected.map(({ id }) => ({
+              userId: id,
+              type: "TRIP_DELAYED" as const,
+              message: `Expected operational delay: ${input.delayMinutes} minutes (${input.reason}). Actual departure timing will be recorded separately.`,
+              contextPath: "/student?view=track",
+              deduplicationKey: `trip-delay:${tripId}:${id}:${input.delayMinutes}`,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
       return { trip: updated, autoAlighted: { reserved: 0, walkIn: 0 } };
     }
 
@@ -591,6 +615,7 @@ export async function loadStudentPassRecord(
 export async function getDriverManifestRecord(
   actor: BoardingActorRecord,
   tripId: string,
+  now: Date,
 ) {
   return prisma.$transaction(async (transaction) => {
     await authorizeOperator(transaction, actor, tripId);
@@ -615,6 +640,15 @@ export async function getDriverManifestRecord(
             boardingTripStop: { select: { stopName: true } },
             dropOffTripStop: { select: { id: true, stopName: true } },
           },
+        },
+        walkInIntents: {
+          where: { status: "PENDING", expiresAt: { gt: now } },
+          include: {
+            student: { select: { name: true, studentId: true } },
+            boardingTripStop: { select: { id: true, stopName: true } },
+            dropOffTripStop: { select: { id: true, stopName: true } },
+          },
+          orderBy: [{ issuedAt: "asc" }, { id: "asc" }],
         },
       },
     });

@@ -3145,3 +3145,27 @@ Whenever an owner-approved product decision changes:
 8. do not edit history to pretend the old behavior never existed.
 
 This prevents code, proposal, report, and AI agents from drifting into different versions of the product.
+
+---
+
+# 105. OPERATIONS CORRECTNESS FOUNDATION (SEPTEMBER 2026)
+
+The final prototype enforces least-privilege Trip projections: students see
+availability, public operational state, and only their own reservation details;
+administrators and the assigned driver may see the passenger identity required
+for operations. Booking actions are driven by the server-resolved eligibility
+reason for the selected intermediate-stop segment. Live tracking lists only
+future not-started or active Trips, and all service-day classification uses MYT.
+
+ServiceBlocks require the configurable minimum turnaround even at the same
+terminal and expose deadhead advisories for different terminals. Administrators
+may generate a date/headway timetable preview with Bus, Driver, Block and
+continuity findings, then explicitly confirm creation of normal Trip records.
+Driver-entered delay remains an expected operational report; actual departure
+delay is derived from actual and planned origin timestamps for analytics.
+
+Manual walk-in admission is selected from eligible, pending, current-stop
+passenger records rather than database identifiers. The optional browser map
+uses its own referrer-restricted Maps JavaScript key and falls back to the
+coordinate schematic. Student registration requires verified-email activation;
+production never silently verifies an address when delivery is unconfigured.

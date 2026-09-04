@@ -7,6 +7,23 @@ export class ReservationPolicyError extends Error {
   }
 }
 
+export type StudentBookingEligibilityReason =
+  | "AVAILABLE"
+  | "BOOKING_NOT_OPEN"
+  | "BOOKING_CLOSED"
+  | "TRIP_CANCELLED"
+  | "TRIP_COMPLETED"
+  | "CREDIT_RESTRICTED"
+  | "FULL";
+
+export interface StudentBookingEligibility {
+  readonly canReserve: boolean;
+  readonly canJoinWaitlist: boolean;
+  readonly canCreateWalkInIntent: boolean;
+  readonly reason: StudentBookingEligibilityReason;
+  readonly opensAt?: string;
+}
+
 export interface ReservationEligibility {
   readonly tripStatus: string;
   readonly boardingPlannedDeparture: Date;
@@ -17,29 +34,76 @@ export interface ReservationEligibility {
   readonly now: Date;
 }
 
-export function assertReservationEligibility(
+export function resolveStudentBookingEligibility(
   input: ReservationEligibility,
   policy: ProductPolicy,
-): void {
-  if (input.studentCredit < policy.bookingRestrictionBelowCredit) {
-    throw new ReservationPolicyError("RESTRICTED");
-  }
-  if (input.tripStatus === "ARRIVED" || input.tripStatus === "CANCELLED") {
-    throw new ReservationPolicyError("NOT_BOOKABLE");
-  }
+  options: {
+    readonly hasAvailableSeat?: boolean;
+    readonly canCreateWalkInIntent?: boolean;
+  } = {},
+): StudentBookingEligibility {
+  const opensAt = new Date(
+    input.boardingPlannedDeparture.getTime() - policy.bookingOpenLeadMs,
+  ).toISOString();
+  const unavailable = (
+    reason: Exclude<StudentBookingEligibilityReason, "AVAILABLE" | "FULL">,
+  ): StudentBookingEligibility => ({
+    canReserve: false,
+    canJoinWaitlist: false,
+    canCreateWalkInIntent: options.canCreateWalkInIntent ?? false,
+    reason,
+    opensAt,
+  });
 
-  const departure = input.boardingPlannedDeparture.getTime();
-  const now = input.now.getTime();
-  if (now < departure - policy.bookingOpenLeadMs) {
-    throw new ReservationPolicyError("TOO_EARLY");
+  if (input.tripStatus === "CANCELLED") return unavailable("TRIP_CANCELLED");
+  if (input.tripStatus === "ARRIVED") return unavailable("TRIP_COMPLETED");
+  if (input.studentCredit < policy.bookingRestrictionBelowCredit) {
+    return unavailable("CREDIT_RESTRICTED");
+  }
+  if (input.now.getTime() < new Date(opensAt).getTime()) {
+    return unavailable("BOOKING_NOT_OPEN");
   }
   if (
     input.boardingActualArrival !== null ||
     input.boardingActualDeparture !== null ||
     input.boardingPassedAt !== null
   ) {
+    return unavailable("BOOKING_CLOSED");
+  }
+  if (options.hasAvailableSeat === false) {
+    return {
+      canReserve: false,
+      canJoinWaitlist: true,
+      canCreateWalkInIntent: options.canCreateWalkInIntent ?? false,
+      reason: "FULL",
+      opensAt,
+    };
+  }
+  return {
+    canReserve: true,
+    canJoinWaitlist: false,
+    canCreateWalkInIntent: options.canCreateWalkInIntent ?? false,
+    reason: "AVAILABLE",
+    opensAt,
+  };
+}
+
+export function assertReservationEligibility(
+  input: ReservationEligibility,
+  policy: ProductPolicy,
+): void {
+  const eligibility = resolveStudentBookingEligibility(input, policy);
+  if (eligibility.canReserve) return;
+  if (eligibility.reason === "CREDIT_RESTRICTED") {
+    throw new ReservationPolicyError("RESTRICTED");
+  }
+  if (eligibility.reason === "BOOKING_NOT_OPEN") {
+    throw new ReservationPolicyError("TOO_EARLY");
+  }
+  if (eligibility.reason === "BOOKING_CLOSED") {
     throw new ReservationPolicyError("TOO_LATE");
   }
+  throw new ReservationPolicyError("NOT_BOOKABLE");
 }
 
 export interface WaitlistPromotionEligibility {

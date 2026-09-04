@@ -21,6 +21,9 @@ describe("central product policy", () => {
     assert.equal(productPolicy.trafficEtaFailureCacheMs, 15_000);
     assert.equal(productPolicy.trafficEtaTimeoutMs, 3_000);
     assert.equal(productPolicy.trafficEtaMaxLocationAgeMs, 60_000);
+    assert.equal(productPolicy.minimumServiceBlockTurnaroundMs, 10 * 60_000);
+    assert.equal(productPolicy.importantDelayNotificationMinutes, 10);
+    assert.equal(productPolicy.emailVerificationTtlMs, 24 * 60 * 60_000);
   });
 
   it("supports narrow test overrides without mutating defaults", () => {

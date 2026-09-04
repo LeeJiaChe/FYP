@@ -755,3 +755,32 @@ Before merging a feature change:
 
 Exceptions to these rules require a short architecture decision in this file or
 an adjacent ADR with the concrete FYP benefit and removal/maintenance cost.
+
+## 16. Operations correctness and privacy boundary
+
+`Trip` remains authoritative for Route, Bus and Driver. The application layer
+projects that record by actor: administrators and the assigned driver receive
+operational manifest identity, while students receive only public schedule and
+capacity data plus their own booking identity. A student-owned DTO must never be
+derived by selecting an arbitrary active seat claim.
+
+Booking eligibility is resolved once in the booking domain from Trip status,
+the passenger's boarding TripStop, credit and segment capacity. The UI renders
+that result but every mutation repeats the authoritative validation. Student
+tracking similarly admits only future `NOT_STARTED`, `BOARDING` and `DEPARTED`
+Trips. All service-day keys, day boundaries and presentation use
+`Asia/Kuala_Lumpur`; the client operational clock refreshes periodically while
+the server clock remains final for mutations.
+
+ServiceBlock continuity is advisory beyond hard overlap. The central product
+policy requires a ten-minute prototype turnaround at a common terminal;
+different terminals report deadhead-required/insufficient-gap warnings without
+claiming an unknown road duration. Bulk timetable confirmation creates ordinary
+Trips in one transaction after the same resource and block validations used by
+single scheduling.
+
+Student registration stores hashed, expiring email-verification tokens and
+issues no session until verification. Development may return a one-time preview
+token; production has no auto-verification fallback and must supply a real mail
+delivery adapter before public registration is enabled. Password-reset storage
+is reserved behind that same future verified-email delivery boundary.

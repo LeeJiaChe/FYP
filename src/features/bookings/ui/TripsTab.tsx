@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Bus, CalendarDays, Clock, MapPin, RefreshCw, Ticket } from "lucide-react";
 import ConnectedRouteLine from "./ConnectedRouteLine";
+import { formatMytDate, formatMytTime, toMytServiceDateKey } from "@/shared/time/operational-time";
+import { useOperationalClock } from "@/shared/ui/useOperationalClock";
 
 interface TripsTabProps {
   routes: any[];
@@ -14,16 +16,20 @@ interface TripsTabProps {
 }
 
 function dateKey(value: string | Date) {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return toMytServiceDateKey(value);
 }
 
 function readableDate(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString("en-MY", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+  return formatMytDate(`${value}T00:00:00+08:00`);
+}
+
+function eligibilityMessage(reason?: string, opensAt?: string) {
+  if (reason === "BOOKING_NOT_OPEN") return opensAt ? `Booking opens ${formatMytDate(opensAt)} at ${formatMytTime(opensAt)} MYT.` : "Booking has not opened yet.";
+  if (reason === "BOOKING_CLOSED") return "Booking closed when boarding began at this stop.";
+  if (reason === "TRIP_CANCELLED") return "This Trip was cancelled.";
+  if (reason === "TRIP_COMPLETED") return "This Trip has completed.";
+  if (reason === "CREDIT_RESTRICTED") return "Reservation is restricted by your passenger credit standing.";
+  return "Seat availability can be checked for this journey.";
 }
 
 export default function TripsTab({
@@ -37,6 +43,8 @@ export default function TripsTab({
   const [toStop, setToStop] = useState("");
   const [travelDate, setTravelDate] = useState("");
   const departureSectionRef = useRef<HTMLElement>(null);
+  const nowMs = useOperationalClock();
+  const refreshedOpeningRef = useRef<string | null>(null);
 
   const allStops = useMemo(() => {
     const values = new Set<string>();
@@ -77,6 +85,18 @@ export default function TripsTab({
   const departures = matchingTrips
     .filter((trip) => !travelDate || dateKey(trip.departureTime) === travelDate)
     .sort((a, b) => new Date(a.boardingStop?.plannedDeparture ?? a.departureTime).getTime() - new Date(b.boardingStop?.plannedDeparture ?? b.departureTime).getTime());
+
+  useEffect(() => {
+    const opening = departures.find(
+      (trip) =>
+        trip.boardingStop?.bookingEligibility?.reason === "BOOKING_NOT_OPEN" &&
+        trip.boardingStop.bookingEligibility.opensAt &&
+        new Date(trip.boardingStop.bookingEligibility.opensAt).getTime() <= nowMs,
+    );
+    if (!opening || refreshedOpeningRef.current === opening.id) return;
+    refreshedOpeningRef.current = opening.id;
+    onRefresh();
+  }, [departures, nowMs, onRefresh]);
 
   const selectedRoute = routes.find((route) => {
     const fromIndex = route.stops?.indexOf(fromStop) ?? -1;
@@ -173,12 +193,15 @@ export default function TripsTab({
             <div className="departure-list">
               {departures.map((trip) => {
                 const boardingTime = new Date(trip.boardingStop?.plannedDeparture ?? trip.departureTime);
+                const eligibility = trip.boardingStop?.bookingEligibility;
+                const canCheckSeats = eligibility?.canReserve === true && !isBookingRestricted;
                 return (
                   <article key={trip.id} className="departure-row">
-                    <div className="departure-time-block"><span>Departure</span><time className="departure-time" dateTime={boardingTime.toISOString()}>{boardingTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></div>
+                    <div className="departure-time-block"><span>Departure</span><time className="departure-time" dateTime={boardingTime.toISOString()}>{formatMytTime(boardingTime)}</time></div>
                     <div className="departure-route"><strong>{trip.routeName}</strong><span>{fromStop} → {toStop}</span></div>
-                    <div className="departure-meta"><span className="badge badge-blue">{trip.status.replaceAll("_", " ")}</span><span>Bus {trip.busPlateNumber}</span>{trip.delayMinutes ? <span className="badge badge-amber">{trip.delayMinutes} min delay</span> : null}</div>
-                    <button type="button" disabled={!!isBookingRestricted} onClick={() => onOpenSeatModal(trip.id, trip.boardingStop.id, trip.dropOffStop.id)} className="btn-secondary departure-seat-action"><Ticket aria-hidden className="size-4" /> Check seats</button>
+                    <div className="departure-meta"><span className="badge badge-blue">{trip.status.replaceAll("_", " ")}</span><span>Bus {trip.busPlateNumber}</span>{trip.expectedDelayMinutes ? <span className="badge badge-amber">Expected +{trip.expectedDelayMinutes} min</span> : null}<small>{eligibilityMessage(eligibility?.reason, eligibility?.opensAt)}</small></div>
+                    <button type="button" disabled={!canCheckSeats} aria-describedby={`eligibility-${trip.id}`} onClick={() => onOpenSeatModal(trip.id, trip.boardingStop.id, trip.dropOffStop.id)} className="btn-secondary departure-seat-action"><Ticket aria-hidden className="size-4" /> {canCheckSeats ? "Check seats" : "Unavailable"}</button>
+                    <span id={`eligibility-${trip.id}`} className="sr-only">{eligibilityMessage(eligibility?.reason, eligibility?.opensAt)}</span>
                   </article>
                 );
               })}

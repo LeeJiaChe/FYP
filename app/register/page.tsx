@@ -19,6 +19,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [previewToken, setPreviewToken] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,7 +46,8 @@ export default function RegisterPage() {
         return;
       }
 
-      window.location.href = "/student";
+      setPreviewToken(data.previewToken ?? null);
+      setLoading(false);
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
@@ -77,7 +79,36 @@ export default function RegisterPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {previewToken ? (
+            <div className="space-y-4" aria-live="polite">
+              <h2 className="text-lg font-bold">Verify your student email</h2>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Your account is not active yet. This development build exposes the one-time verification action here; production requires a configured email delivery adapter.
+              </p>
+              <button
+                type="button"
+                className="btn-primary w-full"
+                onClick={async () => {
+                  setLoading(true);
+                  const response = await fetch("/api/auth/verify-email", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token: previewToken }),
+                  });
+                  const result = await response.json();
+                  if (!response.ok) {
+                    setError(result.error ?? "Verification failed");
+                    setLoading(false);
+                    return;
+                  }
+                  window.location.href = "/login?verified=1";
+                }}
+                disabled={loading}
+              >
+                {loading ? "Verifying…" : "Verify development account"}
+              </button>
+            </div>
+          ) : <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label
                 htmlFor="register-name"
@@ -184,7 +215,7 @@ export default function RegisterPage() {
               {loading ? "Creating Account..." : "Register Account"}{" "}
               <ArrowRight className="w-4 h-4" />
             </button>
-          </form>
+          </form>}
         </div>
 
         <p className="text-center text-xs text-slate-400">

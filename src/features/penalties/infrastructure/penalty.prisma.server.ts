@@ -141,6 +141,7 @@ export async function processNoShowsAtTripStopInTransaction(
         type: "PENALTY_ISSUED",
         deduplicationKey: `penalty-issued:${penalty.id}`,
         message: `A reserved no-show penalty deducted ${deduction.pointsChanged} credit points for ${stop.stopName}.`,
+        contextPath: "/student?view=journeys",
       },
     });
     processed.push({
@@ -370,6 +371,7 @@ export async function resolveAppealRecord(
           decision === "APPROVED"
             ? `Your penalty appeal was approved. ${appeal.penalty.creditPointsDeducted} credit points were restored.${adminComment ? ` Staff note: ${adminComment}` : ""}`
             : `Your penalty appeal was rejected and the deduction remains.${adminComment ? ` Staff note: ${adminComment}` : ""}`,
+        contextPath: "/student?view=journeys",
       },
     });
     return {

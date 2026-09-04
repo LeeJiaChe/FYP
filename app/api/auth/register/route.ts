@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { hashPassword, signToken, COOKIE_NAME } from "@/lib/auth";
 import { registerSchema } from "@/lib/validations";
 import { registerRateLimiter } from "@/lib/rate-limit";
-import { productPolicy } from "@/shared/config/policies";
-import { isBookingRestricted } from "@/features/penalties/public";
+import {
+  registerStudent,
+  StudentRegistrationError,
+} from "@/features/identity/server";
 
 export async function POST(req: Request) {
   try {
@@ -16,65 +16,14 @@ export async function POST(req: Request) {
     const body = await req.json();
     const validated = registerSchema.parse(body);
 
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: validated.email },
-          ...(validated.studentId ? [{ studentId: validated.studentId }] : []),
-        ],
-      },
-    });
-
-    if (existingUser) {
+    return NextResponse.json(await registerStudent(validated), { status: 201 });
+  } catch (err: any) {
+    if (err instanceof StudentRegistrationError) {
       return NextResponse.json(
-        { error: "User with this email or Student ID already exists" },
-        { status: 400 }
+        { error: err.message },
+        { status: err.code === "DELIVERY_UNAVAILABLE" ? 503 : 400 },
       );
     }
-
-    const passwordHash = await hashPassword(validated.password);
-
-    const user = await prisma.user.create({
-      data: {
-        name: validated.name,
-        email: validated.email,
-        studentId: validated.studentId || `STU${Date.now().toString().slice(-6)}`,
-        passwordHash,
-        role: "STUDENT",
-        creditScore: productPolicy.initialCredit,
-      },
-    });
-
-    const token = signToken({
-      userId: user.id,
-      role: user.role as any,
-      email: user.email,
-      name: user.name,
-      sessionVersion: user.sessionVersion,
-    });
-
-    const res = NextResponse.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        studentId: user.studentId,
-        creditScore: user.creditScore,
-        isBookingRestricted: isBookingRestricted(user.creditScore, productPolicy),
-      },
-    });
-
-    res.cookies.set(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60,
-    });
-
-    return res;
-  } catch (err: any) {
     if (err.name === "ZodError" || err.issues) {
       const msg = err.issues?.[0]?.message || err.errors?.[0]?.message || err.message || "Validation error";
       return NextResponse.json({ error: msg }, { status: 400 });

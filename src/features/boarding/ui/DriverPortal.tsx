@@ -25,6 +25,7 @@ import { useCurrentUser } from "@/features/identity/ui";
 import { operationalProgressLabel } from "@/features/trips/public";
 import { TripsTab, useTrips } from "@/features/trips/ui";
 import type { CurrentUser } from "@/shared/ui/current-user";
+import { formatMytTime } from "@/shared/time/operational-time";
 import QRScannerModal from "./QRScannerModal";
 
 interface ManifestPassenger {
@@ -49,6 +50,8 @@ interface DriverManifest {
     status: "NOT_STARTED" | "BOARDING" | "DEPARTED" | "ARRIVED" | "CANCELLED";
     delayMinutes: number;
     delayReason: string | null;
+    expectedDelayMinutes: number;
+    expectedDelayReason: string | null;
     standingCapacity: number;
   };
   currentStop: { id: string; position: number; name: string } | null;
@@ -61,6 +64,14 @@ interface DriverManifest {
     passedAt: string | null;
   }>;
   manifest: ManifestPassenger[];
+  pendingWalkIns: Array<{
+    id: string;
+    passengerName: string;
+    studentId: string | null;
+    boardingStop: string;
+    dropOffStop: string;
+    issuedAt: string;
+  }>;
 }
 
 interface OperationTrip {
@@ -123,7 +134,6 @@ export default function DriverPortal({
   const [dialog, setDialog] = useState<DriverDialog>(null);
   const [delayMinutes, setDelayMinutes] = useState("0");
   const [reason, setReason] = useState("");
-  const [walkInIntentId, setWalkInIntentId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [pendingProgress, setPendingProgress] = useState<
     "DEPART_CURRENT_STOP" | "ARRIVE_NEXT_STOP" | null
@@ -210,21 +220,30 @@ export default function DriverPortal({
           delayMinutes: minutes,
           reason: reason.trim(),
         });
-        toast.success("Delay metadata updated");
-      } else {
-        if (!walkInIntentId.trim()) return;
-        await mutate(`/api/trips/${activeTripId}/manual-checkin`, {
-          kind: "WALK_IN",
-          walkInIntentId: walkInIntentId.trim(),
-        });
-        toast.success("Walk-in admission processed");
+        toast.success("Expected delay report updated");
       }
       setDialog(null);
       setReason("");
-      setWalkInIntentId("");
       setSecondaryOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Operation failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function manualWalkIn(intentId: string) {
+    if (!activeTripId) return;
+    setSubmitting(true);
+    try {
+      await mutate(`/api/trips/${activeTripId}/manual-checkin`, {
+        kind: "WALK_IN",
+        walkInIntentId: intentId,
+      });
+      toast.success("Walk-in passenger admitted");
+      setDialog(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Walk-in admission failed");
     } finally {
       setSubmitting(false);
     }
@@ -421,17 +440,9 @@ export default function DriverPortal({
         new Date(operation.currentTrip.departureTime).getTime() <
           new Date(operation.serverNow).getTime(),
     );
-  const formattedDepartureTime = assignment
-    ? new Date(assignment.departureTime).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
+  const formattedDepartureTime = assignment ? formatMytTime(assignment.departureTime) : "";
   const formattedActivationTime = operation?.activationAt
-    ? new Date(operation.activationAt).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatMytTime(operation.activationAt)
     : null;
 
   return (
@@ -564,7 +575,7 @@ export default function DriverPortal({
                     )}
                     {manifest.trip.delayMinutes > 0 && (
                       <span className="badge badge-amber">
-                        Delayed {manifest.trip.delayMinutes} min
+                        Expected delay {manifest.trip.delayMinutes} min
                       </span>
                     )}
                   </div>
@@ -597,7 +608,7 @@ export default function DriverPortal({
                           setSecondaryOpen(false);
                         }}
                       >
-                        <AlertTriangle aria-hidden /> Set delay
+                        <AlertTriangle aria-hidden /> Report expected delay
                       </button>
                     </div>
                   )}
@@ -816,15 +827,13 @@ export default function DriverPortal({
       <Modal
         isOpen={dialog !== null}
         onClose={() => !submitting && setDialog(null)}
-        title={
-          dialog === "delay" ? "Set Trip delay" : "Manual walk-in admission"
-        }
+        title={dialog === "delay" ? "Report expected delay" : "Manual walk-in admission"}
         maxWidth="sm"
       >
         <form onSubmit={submitDialog} className="driver-operation-form">
           {dialog === "delay" && (
             <label>
-              <span>Delay in minutes</span>
+              <span>Expected delay in minutes</span>
               <input
                 className="input-field tabular-nums"
                 type="number"
@@ -838,27 +847,49 @@ export default function DriverPortal({
           )}
           {dialog === "delay" && (
             <label>
-              <span>{"Delay reason"}</span>
-              <textarea
+              <span>{"Operational reason"}</span>
+              <select
                 className="input-field"
-                rows={3}
                 required
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-              />
+              >
+                <option value="">Select reason</option>
+                <option>Traffic</option>
+                <option>Boarding congestion</option>
+                <option>Vehicle issue</option>
+                <option>Other</option>
+              </select>
             </label>
           )}
           {dialog === "walkin" && (
-            <label>
-              <span>Walk-in Intent ID</span>
-              <input
-                className="input-field"
-                required
-                value={walkInIntentId}
-                onChange={(event) => setWalkInIntentId(event.target.value)}
-                autoComplete="off"
-              />
-            </label>
+            <div className="space-y-3">
+              <p className="text-xs text-[var(--text-muted)]">
+                Pending passengers for this Trip and current stop. Admission
+                rechecks standing capacity across the complete journey.
+              </p>
+              {manifest?.pendingWalkIns.length ? (
+                manifest.pendingWalkIns.map((intent) => (
+                  <article key={intent.id} className="rounded-xl border border-[var(--border)] p-3">
+                    <strong className="block text-sm">{intent.passengerName}</strong>
+                    <small className="block text-[var(--text-muted)]">
+                      {intent.studentId || "Student ID unavailable"}
+                    </small>
+                    <p className="mt-2 text-xs">{intent.boardingStop} → {intent.dropOffStop}</p>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => void manualWalkIn(intent.id)}
+                      className="btn-primary mt-3 w-full"
+                    >
+                      Admit
+                    </button>
+                  </article>
+                ))
+              ) : (
+                <p className="text-sm">No eligible pending walk-in passengers at this stop.</p>
+              )}
+            </div>
           )}
           <div className="driver-form-actions">
             <button
@@ -868,9 +899,11 @@ export default function DriverPortal({
             >
               Back
             </button>
-            <button disabled={submitting} className={"btn-primary"}>
-              {submitting ? "Saving…" : "Confirm"}
-            </button>
+            {dialog === "delay" && (
+              <button disabled={submitting} className="btn-primary">
+                {submitting ? "Saving…" : "Confirm"}
+              </button>
+            )}
           </div>
         </form>
       </Modal>

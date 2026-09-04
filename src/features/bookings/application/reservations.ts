@@ -21,6 +21,8 @@ import {
 } from "@/shared/application/application-error";
 import { productPolicy, type ProductPolicy } from "@/shared/config/policies";
 import { systemClock, type Clock } from "@/shared/time/clock";
+import { isWalkInIssuanceEligible } from "@/features/boarding/public";
+import { resolveStudentBookingEligibility } from "../domain/reservation-policy";
 
 export interface BookingActor {
   readonly userId: string;
@@ -99,6 +101,27 @@ export async function findJourneyAvailability(
     },
     seats: result.seats,
     hasAvailableSeat: result.seats.length > 0,
+    bookingEligibility: resolveStudentBookingEligibility(
+      {
+        tripStatus: result.tripStatus,
+        boardingPlannedDeparture: result.boardingTripStop.plannedDeparture,
+        boardingActualArrival: result.boardingTripStop.actualArrival,
+        boardingActualDeparture: result.boardingTripStop.actualDeparture,
+        boardingPassedAt: result.boardingTripStop.passedAt,
+        studentCredit: result.studentCredit,
+        now: clock.now(),
+      },
+      policy,
+      {
+        hasAvailableSeat: result.seats.length > 0,
+        canCreateWalkInIntent: isWalkInIssuanceEligible(
+          clock.now(),
+          result.tripStatus,
+          result.boardingTripStop,
+          policy,
+        ),
+      },
+    ),
   };
 }
 

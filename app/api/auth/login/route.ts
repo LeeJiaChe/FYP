@@ -33,6 +33,12 @@ export async function POST(req: Request) {
     if (!isMatch) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
+    if (user.role === "STUDENT" && !user.emailVerifiedAt) {
+      return NextResponse.json(
+        { error: "Verify your student email before signing in" },
+        { status: 403 },
+      );
+    }
 
     const token = signToken({
       userId: user.id,

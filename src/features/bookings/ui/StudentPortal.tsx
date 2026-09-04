@@ -17,13 +17,16 @@ import { useCurrentUser } from "@/features/identity/ui";
 import { useTrips } from "@/features/trips/ui";
 import { productPolicy } from "@/shared/config/policies";
 import type { CurrentUser } from "@/shared/ui/current-user";
+import { formatMytTime } from "@/shared/time/operational-time";
+import { useOperationalClock } from "@/shared/ui/useOperationalClock";
 
 import { AlertCircle, Bus, CheckCircle2, Home, Navigation, Ticket, UserRound } from "lucide-react";
 
 type StudentView = "home" | "book" | "journeys" | "track" | "account";
 
-export default function StudentPortal({ initialUser, initialTime }: { initialUser: CurrentUser; initialTime: string }) {
-  const [activeTab, setActiveTab] = useState<StudentView>("home");
+export default function StudentPortal({ initialUser, initialTime, initialView = "home" }: { initialUser: CurrentUser; initialTime: string; initialView?: StudentView }) {
+  const operationalNow = useOperationalClock();
+  const [activeTab, setActiveTab] = useState<StudentView>(initialView);
   const scrollViewportRef = useRef<HTMLElement>(null);
   const { user, fetchUser } = useCurrentUser(initialUser);
 
@@ -40,6 +43,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
     dropOffStopName: string;
   } | null>(null);
   const [tripSeats, setTripSeats] = useState<SeatItem[]>([]);
+  const [selectedEligibility, setSelectedEligibility] = useState<any>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
@@ -194,6 +198,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
         const trip = trips.find((candidate) => candidate.id === tripId);
         setSelectedTrip(trip);
         setSelectedJourney(data.availability.journey);
+        setSelectedEligibility(data.availability.bookingEligibility);
         setTripSeats(
           data.availability.seats.map((seat: { id: string; seatNumber: number }) => ({
             ...seat,
@@ -237,6 +242,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
         seatNumber: tripSeats.find((seat) => seat.id === selectedSeatId)?.seatNumber,
       });
       setSelectedTrip(null);
+      setSelectedEligibility(null);
       await Promise.all([fetchBookings(), fetchTrips()]);
       setActiveTab("journeys");
       toast.success("Reserved seat confirmed");
@@ -267,6 +273,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
         return;
       }
       setSelectedTrip(null);
+      setSelectedEligibility(null);
       await fetchBookings();
       setActiveTab("journeys");
       toast.success("Added to the journey waitlist");
@@ -303,6 +310,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
         trip: { routeName: selectedTrip.routeName },
       };
       setSelectedTrip(null);
+      setSelectedEligibility(null);
       await fetchWalkIns();
       openWalkInPass(intent);
     } catch {
@@ -372,7 +380,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
             user={user}
             bookings={myBookings}
             bookingsStatus={bookingsStatus}
-            currentTime={initialTime}
+            currentTime={new Date(Math.max(operationalNow, new Date(initialTime).getTime())).toISOString()}
             activeJourneyCount={activeBookingsCount}
             isRestricted={isRestricted}
             defaultCreditScore={productPolicy.initialCredit}
@@ -465,10 +473,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
               <p className="eyebrow">{selectedTrip.routeName}</p>
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               Bus: {selectedTrip.busPlateNumber} • Departs:{" "}
-              {new Date(selectedTrip.departureTime).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+              {formatMytTime(selectedTrip.departureTime)} MYT
               </p>
               {selectedJourney && (
               <h3>
@@ -523,7 +528,7 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
                   </button>
                 ) : (
                   <button
-                    disabled={bookingLoading}
+                    disabled={bookingLoading || !selectedEligibility?.canJoinWaitlist}
                     onClick={handleJoinWaitlist}
                     className="btn-primary text-xs"
                   >
@@ -536,9 +541,10 @@ export default function StudentPortal({ initialUser, initialTime }: { initialUse
               <p>
                 Prefer standing walk-in? This does not reserve capacity or guarantee boarding. Capacity is checked only when the driver scans the pass.
               </p>
-              <button disabled={bookingLoading} onClick={handleGenerateWalkInPass} className="btn-ghost text-xs shrink-0">
+              <button disabled={bookingLoading || !selectedEligibility?.canCreateWalkInIntent} onClick={handleGenerateWalkInPass} className="btn-ghost text-xs shrink-0">
                 Generate Walk-in Pass
               </button>
+              {!selectedEligibility?.canCreateWalkInIntent && <small>Walk-in intent is not open for this stop at the current operational time.</small>}
             </div>
           </div>
         </Modal>

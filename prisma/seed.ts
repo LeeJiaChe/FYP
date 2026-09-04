@@ -126,6 +126,7 @@ async function main() {
 
   const adminPasswordHash = await bcrypt.hash("admin1", 10);
   const defaultPasswordHash = await bcrypt.hash("password123", 10);
+  const verifiedDemoAccountAt = new Date();
 
   const [, driver1, driver2] = await Promise.all([
     prisma.user.create({
@@ -134,6 +135,7 @@ async function main() {
         email: "admin1@admin.tarc.edu.my",
         passwordHash: adminPasswordHash,
         role: "ADMIN",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
     }),
     prisma.user.create({
@@ -142,6 +144,7 @@ async function main() {
         email: "driver1@tarumt.edu.my",
         passwordHash: defaultPasswordHash,
         role: "DRIVER",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
     }),
     prisma.user.create({
@@ -150,6 +153,7 @@ async function main() {
         email: "driver2@tarumt.edu.my",
         passwordHash: defaultPasswordHash,
         role: "DRIVER",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
     }),
   ]);
@@ -162,6 +166,7 @@ async function main() {
         email: "student1@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
       {
         studentId: "24WAB01235",
@@ -169,6 +174,7 @@ async function main() {
         email: "student2@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
         creditScore: 85,
       },
       {
@@ -177,6 +183,7 @@ async function main() {
         email: "student3@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
         creditScore: 35,
       },
       {
@@ -185,6 +192,7 @@ async function main() {
         email: "student4@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
       {
         studentId: "24WAB01238",
@@ -192,6 +200,7 @@ async function main() {
         email: "student5@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
       {
         studentId: "24WAB01239",
@@ -199,6 +208,7 @@ async function main() {
         email: "student6@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
       {
         studentId: "24WAB01240",
@@ -206,6 +216,7 @@ async function main() {
         email: "student7@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
       {
         studentId: "24WAB01241",
@@ -213,6 +224,7 @@ async function main() {
         email: "student8@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
       {
         studentId: "24WAB01242",
@@ -220,6 +232,7 @@ async function main() {
         email: "student9@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
         creditScore: 85,
       },
       {
@@ -228,6 +241,7 @@ async function main() {
         email: "student10@student.tarc.edu.my",
         passwordHash: defaultPasswordHash,
         role: "STUDENT",
+        emailVerifiedAt: verifiedDemoAccountAt,
       },
     ],
   });

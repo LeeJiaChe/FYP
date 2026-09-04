@@ -51,10 +51,14 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
   // DB lookup to verify sessionVersion
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { sessionVersion: true }
+    select: { sessionVersion: true, role: true, emailVerifiedAt: true }
   });
 
-  if (!user || user.sessionVersion !== payload.sessionVersion) {
+  if (
+    !user ||
+    user.sessionVersion !== payload.sessionVersion ||
+    (user.role === "STUDENT" && !user.emailVerifiedAt)
+  ) {
     return null;
   }
 
@@ -79,6 +83,7 @@ export async function getCurrentUser() {
 
   if (!user) return null;
   if (user.sessionVersion !== payload.sessionVersion) return null;
+  if (user.role === "STUDENT" && !user.emailVerifiedAt) return null;
   
   return user;
 }

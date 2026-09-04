@@ -53,6 +53,26 @@ export const updateScheduledTripSchema = z
     "At least one schedulable field is required",
   );
 
+const serviceTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+export const bulkScheduleSchema = z
+  .object({
+    routeId: z.string().uuid(),
+    serviceDateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    serviceDateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    weekdays: z.array(z.number().int().min(0).max(6)).max(7).default([]),
+    startTime: serviceTimeSchema,
+    endTime: serviceTimeSchema,
+    headwayMinutes: z.number().int().min(5).max(240),
+    busIds: z.array(z.string().uuid()).min(1).max(20),
+    driverIds: z.array(z.string().uuid()).max(20).default([]),
+    blockId: z.string().uuid().optional(),
+  })
+  .refine((input) => input.serviceDateFrom <= input.serviceDateTo, {
+    message: "Service date range is reversed",
+    path: ["serviceDateTo"],
+  });
+
 type ParsedScheduleTripInput = z.infer<typeof scheduleTripSchema>;
 export type ScheduleTripInput = Omit<
   ParsedScheduleTripInput,
@@ -65,3 +85,4 @@ export type CreateServiceBlockInput = z.infer<typeof createServiceBlockSchema>;
 export type ListTripsQuery = z.infer<typeof listTripsQuerySchema>;
 export type CancelTripInput = z.infer<typeof cancelTripSchema>;
 export type UpdateScheduledTripInput = z.infer<typeof updateScheduledTripSchema>;
+export type BulkScheduleInput = z.infer<typeof bulkScheduleSchema>;

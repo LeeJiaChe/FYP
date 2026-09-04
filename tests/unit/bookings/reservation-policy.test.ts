@@ -7,6 +7,7 @@ import {
   canPromoteWaitlistEntry,
   canTransitionReservedBookingToCancelled,
   ReservationPolicyError,
+  resolveStudentBookingEligibility,
 } from "../../../src/features/bookings/domain/reservation-policy";
 import { createProductPolicy } from "../../../src/shared/config/policies";
 
@@ -76,6 +77,37 @@ describe("reserved booking operational timing and credit policy", () => {
       assertReservationEligibility(eligibility({ studentCredit: 40 }), policy),
     );
     assertPolicyCode(eligibility({ studentCredit: 39 }), "RESTRICTED");
+  });
+
+  it("returns stable student-facing reasons for terminal and timing states", () => {
+    const base = {
+      boardingPlannedDeparture: new Date("2026-09-10T01:00:00Z"),
+      boardingActualArrival: null,
+      boardingActualDeparture: null,
+      boardingPassedAt: null,
+      studentCredit: 100,
+      now: new Date("2026-09-10T00:59:58Z"),
+    };
+    assert.equal(resolveStudentBookingEligibility({ ...base, tripStatus: "CANCELLED" }, policy).reason, "TRIP_CANCELLED");
+    assert.equal(resolveStudentBookingEligibility({ ...base, tripStatus: "ARRIVED" }, policy).reason, "TRIP_COMPLETED");
+    assert.equal(resolveStudentBookingEligibility({ ...base, tripStatus: "NOT_STARTED" }, policy).reason, "BOOKING_NOT_OPEN");
+    assert.equal(resolveStudentBookingEligibility({ ...base, tripStatus: "NOT_STARTED", now: new Date("2026-09-10T00:59:59Z"), boardingActualArrival: new Date("2026-09-10T00:59:59Z") }, policy).reason, "BOOKING_CLOSED");
+  });
+
+  it("distinguishes reservable capacity from a full-journey waitlist", () => {
+    const input = {
+      tripStatus: "NOT_STARTED",
+      boardingPlannedDeparture: new Date("2026-09-10T01:00:00Z"),
+      boardingActualArrival: null,
+      boardingActualDeparture: null,
+      boardingPassedAt: null,
+      studentCredit: 100,
+      now: new Date("2026-09-10T00:59:59Z"),
+    };
+    assert.deepEqual(resolveStudentBookingEligibility(input, policy, { hasAvailableSeat: true }).canReserve, true);
+    const full = resolveStudentBookingEligibility(input, policy, { hasAvailableSeat: false });
+    assert.equal(full.reason, "FULL");
+    assert.equal(full.canJoinWaitlist, true);
   });
 });
 

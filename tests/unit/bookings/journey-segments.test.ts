@@ -22,6 +22,15 @@ describe("reserved journey segment derivation", () => {
     assert.deepEqual(result.map((segment) => segment.position), [0, 1]);
   });
 
+  it("allows an external intermediate Stop to another external Stop", () => {
+    const result = deriveJourneySegments(
+      { id: "stop-a", tripId: "trip-1", position: 1 },
+      { id: "stop-b", tripId: "trip-1", position: 2 },
+      segments,
+    );
+    assert.deepEqual(result.map((segment) => segment.position), [1]);
+  });
+
   it("rejects reverse, cross-Trip, and incomplete journeys", () => {
     assert.throws(
       () =>

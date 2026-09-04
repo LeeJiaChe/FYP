@@ -33,7 +33,7 @@ export const tripProgressSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("SET_DELAY"),
     delayMinutes: z.number().int().min(0).max(24 * 60),
-    reason: z.string().trim().min(1).max(500),
+    reason: z.enum(["Traffic", "Boarding congestion", "Vehicle issue", "Other"]),
   }),
 ]);
 
