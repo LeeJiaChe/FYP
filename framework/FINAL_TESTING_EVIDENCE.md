@@ -41,3 +41,15 @@ all six migrations were applied to clean isolated databases. The final
 acceptance suite expands this to **77 unit/specification**, **11 architecture**,
 **61 integration**, and **10 browser E2E** assertions; its exact pushed SHA and
 Actions run are recorded in `FINAL_ACCEPTANCE_FIXES.md` and the final handoff.
+
+## Institutional authentication phase
+
+The focused authentication suite adds unit coverage for authoritative Google
+claim validation, external-identity resolution outcomes, onboarding expiry and
+purpose separation, role-specific password login, shared application-session
+cookie policy, transactional email adapters, hashed/one-time staff password
+reset behavior, and central environment policy. Architecture checks cover
+server-only Google/Resend dependencies, raw-token persistence exclusions, thin
+auth transports, gated Quick Login UI, and preserved seed fixtures. PostgreSQL
+integration execution remains conditional on the guarded isolated
+`TEST_DATABASE_URL`; no shared Supabase database may be used for this phase.

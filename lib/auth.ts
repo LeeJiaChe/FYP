@@ -9,6 +9,7 @@ import { canStudentIdentityAuthenticate } from "@/features/identity/public";
 
 const JWT_SECRET = serverEnvironment.session.signingSecret;
 export const COOKIE_NAME = "fyp_session";
+export const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 export interface JWTPayload {
   userId: string;
@@ -22,7 +23,11 @@ export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+export async function verifyPassword(
+  password: string,
+  hash: string | null,
+): Promise<boolean> {
+  if (!hash) return false;
   return bcrypt.compare(password, hash);
 }
 
@@ -30,9 +35,54 @@ export function signToken(payload: JWTPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }
 
+export function applicationSessionCookieOptions(
+  runtime: "development" | "test" | "production" = serverEnvironment.runtime,
+) {
+  return {
+    httpOnly: true as const,
+    secure: runtime === "production",
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  };
+}
+
+export function createApplicationSession(user: {
+  id: string;
+  role: JWTPayload["role"];
+  email: string;
+  name: string;
+  sessionVersion: number;
+}) {
+  return {
+    name: COOKIE_NAME,
+    value: signToken({
+      userId: user.id,
+      role: user.role,
+      email: user.email,
+      name: user.name,
+      sessionVersion: user.sessionVersion,
+    }),
+    options: applicationSessionCookieOptions(),
+  };
+}
+
 function verifyToken(token: string): JWTPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as JWTPayload;
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (
+      typeof payload === "string" ||
+      typeof payload.userId !== "string" ||
+      (payload.role !== "STUDENT" &&
+        payload.role !== "DRIVER" &&
+        payload.role !== "ADMIN") ||
+      typeof payload.email !== "string" ||
+      typeof payload.name !== "string" ||
+      !Number.isInteger(payload.sessionVersion)
+    ) {
+      return null;
+    }
+    return payload as JWTPayload;
   } catch {
     return null;
   }
@@ -55,6 +105,7 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
     select: {
       sessionVersion: true,
       role: true,
+      passwordHash: true,
       emailVerifiedAt: true,
       studentIdentityAssurance: true,
     },
@@ -63,10 +114,14 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
   if (
     !user ||
     user.sessionVersion !== payload.sessionVersion ||
+    user.role !== payload.role ||
+    (user.role !== "STUDENT" && !user.passwordHash) ||
     (user.role === "STUDENT" &&
       !canStudentIdentityAuthenticate({
         assurance: user.studentIdentityAssurance,
         emailVerifiedAt: user.emailVerifiedAt,
+        demoPasswordLoginEnabled:
+          serverEnvironment.demoAuth.studentPasswordLoginEnabled,
       }))
   ) {
     return null;
@@ -93,11 +148,15 @@ export async function getCurrentUser() {
 
   if (!user) return null;
   if (user.sessionVersion !== payload.sessionVersion) return null;
+  if (user.role !== payload.role) return null;
+  if (user.role !== "STUDENT" && !user.passwordHash) return null;
   if (
     user.role === "STUDENT" &&
     !canStudentIdentityAuthenticate({
       assurance: user.studentIdentityAssurance,
       emailVerifiedAt: user.emailVerifiedAt,
+      demoPasswordLoginEnabled:
+        serverEnvironment.demoAuth.studentPasswordLoginEnabled,
     })
   ) return null;
   

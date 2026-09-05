@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import {
   resendStudentVerification,
@@ -7,11 +7,20 @@ import {
 } from "@/features/identity/server";
 import { resendVerificationRateLimiter } from "@/lib/rate-limit";
 import { studentEmailSchema } from "@/shared/validation/student-identity";
+import { assertSameOriginMutation } from "@/shared/http/origin-check";
+import { ApplicationError } from "@/shared/application/application-error";
+import { parseJsonBody } from "@/shared/http/handle-route.server";
 
 const GENERIC_MESSAGE =
   "If an unverified student account exists, a new verification link has been prepared.";
+const requestSchema = z.object({ email: studentEmailSchema });
 
 export async function POST(request: Request) {
+  try {
+    assertSameOriginMutation(request);
+  } catch {
+    return NextResponse.json({ error: "Cross-origin mutation rejected" }, { status: 403 });
+  }
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (!resendVerificationRateLimiter.check(ip)) {
     return NextResponse.json(
@@ -20,8 +29,7 @@ export async function POST(request: Request) {
     );
   }
   try {
-    const body = await request.json();
-    const email = studentEmailSchema.parse(body?.email);
+    const { email } = await parseJsonBody(request, requestSchema, 4_096);
     const result = await resendStudentVerification(email);
     return NextResponse.json({ message: GENERIC_MESSAGE, ...result });
   } catch (error) {
@@ -33,7 +41,7 @@ export async function POST(request: Request) {
     }
     // Invalid addresses and unknown/already verified accounts deliberately share
     // the same response to avoid exposing account existence.
-    if (error instanceof ZodError) {
+    if (error instanceof ZodError || error instanceof ApplicationError) {
       return NextResponse.json({ message: GENERIC_MESSAGE, accepted: true });
     }
     console.error("Verification resend failed", error);

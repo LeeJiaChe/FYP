@@ -24,24 +24,28 @@ export function isEmailVerificationTokenUsable(
   return token.consumedAt === null && token.expiresAt.getTime() > now.getTime();
 }
 
-export function verificationDeliveryMode(
-  runtime: "development" | "test" | "production",
-): "DEVELOPMENT_PREVIEW" | "UNCONFIGURED" {
-  return runtime === "production" ? "UNCONFIGURED" : "DEVELOPMENT_PREVIEW";
-}
-
 export type StudentIdentityAssurance =
   | "LEGACY_PROTOTYPE"
   | "EMAIL_UNVERIFIED"
-  | "EMAIL_VERIFIED";
+  | "EMAIL_VERIFIED"
+  | "GOOGLE_WORKSPACE_VERIFIED";
 
 export function canStudentIdentityAuthenticate(input: {
   assurance: StudentIdentityAssurance | null;
   emailVerifiedAt: Date | null;
+  demoPasswordLoginEnabled?: boolean;
 }): boolean {
+  if (
+    input.assurance === "GOOGLE_WORKSPACE_VERIFIED" &&
+    input.emailVerifiedAt !== null
+  ) {
+    return true;
+  }
+
   return (
-    input.assurance === "LEGACY_PROTOTYPE" ||
-    (input.assurance === "EMAIL_VERIFIED" && input.emailVerifiedAt !== null)
+    input.demoPasswordLoginEnabled === true &&
+    (input.assurance === "LEGACY_PROTOTYPE" ||
+      (input.assurance === "EMAIL_VERIFIED" && input.emailVerifiedAt !== null))
   );
 }
 

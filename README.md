@@ -13,6 +13,7 @@
 ## ✨ Features
 
 ### 🎓 Student Portal
+- **Institutional Sign-in** — Google Identity Services with authoritative server verification of TAR UMT Workspace identity and first-time Student ID completion
 - **Journey Search** — Guided `From → To → Date → Departure → Seat` flow over directional routes
 - **Segment-Aware Reserved Seating** — A specific seat is guaranteed only over the passenger's planned boarding-to-drop-off journey and may be reused on non-overlapping segments
 - **Reserved Pass** — Short-lived signed QR backed by a guaranteed Booking
@@ -26,6 +27,7 @@
 - **Notifications** — In-app alerts for booking confirmations, trip delays, cancellations, promotions, and penalties
 
 ### 🚗 Driver Portal
+- **Staff Password Recovery** — One-time, expiring reset links delivered through the server-only transactional email boundary
 - **Active Trip Dashboard** — View assigned trips and current trip status
 - **Boarding Operations** — Validate Reserved and Walk-in passes, with authorized manual fallback
 - **Alighting Confirmation** — Exit QR where practical, driver manual fallback, and optional automatic completion after the planned stop is passed
@@ -102,7 +104,8 @@ describes the existing runtime at a high level, not the completed Architecture v
 | Language | TypeScript 5 |
 | Styling | Tailwind CSS 4 |
 | Database | PostgreSQL via [Prisma ORM](https://prisma.io) 6 |
-| Auth | JWT (`jsonwebtoken`) stored in HTTP-only cookies |
+| Auth | Google Identity Services for Students; bcrypt credentials for staff; application JWT in an HttpOnly cookie |
+| Transactional email | Resend (server-only production adapter; local preview adapter) |
 | Realtime | Socket.io 4 (standalone Node.js service) |
 | Cron | `node-cron` (inside realtime service) |
 | Charts | Recharts 3 |
@@ -138,6 +141,9 @@ Copy the documented template and populate the privately supplied team environmen
 ```bash
 cp .env.example .env
 ```
+
+Google Identity Services, Resend, and local demo-auth operator steps are in
+[`docs/AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md).
 
 The template documents placeholders for:
 

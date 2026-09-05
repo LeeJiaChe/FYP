@@ -41,5 +41,9 @@ class RateLimiter {
 export const loginRateLimiter = new RateLimiter(60 * 1000, 100); // 100 attempts per minute for tests
 export const registerRateLimiter = new RateLimiter(60 * 1000, 100); // 100 registrations per minute for tests
 export const resendVerificationRateLimiter = new RateLimiter(10 * 60 * 1000, 5);
+export const googleStudentLoginRateLimiter = new RateLimiter(10 * 60 * 1000, 20);
+export const googleStudentOnboardingRateLimiter = new RateLimiter(10 * 60 * 1000, 10);
+export const passwordResetRequestRateLimiter = new RateLimiter(15 * 60 * 1000, 5);
+export const passwordResetCompletionRateLimiter = new RateLimiter(15 * 60 * 1000, 10);
 export const askIntelligenceRateLimiter = new RateLimiter(60 * 1000, 10);
 export const interpretIntelligenceRateLimiter = new RateLimiter(60 * 1000, 10);

@@ -272,7 +272,6 @@ The following are explicitly out of scope unless later approved:
 - PWA installation;
 - service worker;
 - offline application mode;
-- real TAR UMT SSO;
 - physical seat pressure sensors;
 - seat sensor health;
 - DeviceStatusLog / DeviceSignal;
@@ -287,7 +286,7 @@ The following are explicitly out of scope unless later approved:
 - self-service account deletion;
 - self-service personal-data export;
 - fake 2FA settings;
-- email/SMS/push-notification infrastructure;
+- operational email/SMS/push notifications beyond identity transactions;
 - Redis;
 - Kafka;
 - distributed locks;
@@ -423,8 +422,8 @@ Short-lived signed QR used as optional operational evidence that a boarded passe
 
 May:
 
-- register with TAR UMT student email;
-- login/logout;
+- register/login with a verified TAR UMT Google Workspace account;
+- logout;
 - search From/To journeys;
 - choose date;
 - choose departure;
@@ -503,7 +502,19 @@ Must not receive or expose password hashes/session secrets.
 
 # 10. IDENTITY RULES
 
-## 10.1 Student registration
+## 10.1 Student registration and authentication
+
+Production Students authenticate through Google Identity Services using their
+TAR UMT Google Workspace account. The backend verifies the Google ID token and
+requires the configured institutional email domain and hosted-domain (`hd`)
+claim. Google `sub` is linked through `ExternalAuthIdentity`; email is not the
+permanent external identity key. First-time Students complete their Student ID
+through short-lived server-controlled onboarding state. They do not create an
+application password.
+
+Seeded `LEGACY_PROTOTYPE` Students retain password credentials only behind the
+explicit non-production demo gate. Driver and Admin accounts continue to use
+email and password.
 
 Student email:
 
@@ -524,6 +535,8 @@ Student ID:
 - Store only bcrypt hash.
 - Never return `passwordHash`.
 - Password requirements should be visible in UI if enforced.
+- `passwordHash` is nullable for Google-only Students, but Driver/Admin
+  authentication must fail safely when a staff credential is absent.
 
 ## 10.3 Session
 
@@ -1730,7 +1743,7 @@ Driver does not need:
 
 # 56. NOTIFICATIONS
 
-Core channel:
+Core operational channel:
 
 **in-app notifications only**
 
@@ -1749,7 +1762,9 @@ Retry-sensitive notifications use deduplication key where necessary.
 
 Realtime notification events are best-effort after durable notification commit.
 
-No email/SMS/push infrastructure.
+Identity verification compatibility and Driver/Admin password recovery use the
+server-only transactional email adapter. Booking/waitlist/Trip email delivery
+remains outside this phase.
 
 ---
 
@@ -1759,6 +1774,9 @@ Current Architecture v2 core Prisma models:
 
 ## Identity
 - User
+- ExternalAuthIdentity
+- EmailVerificationToken
+- PasswordResetToken
 
 ## Fleet/topology
 - Bus
@@ -2525,7 +2543,7 @@ Student demo emails must satisfy `@student.tarc.edu.my`.
 
 Driver/admin demo domains are prototype credentials and must not be presented as official TAR UMT identity standards unless verified.
 
-Passwords are demo-only and never production recommendations.
+Passwords are demo-only for Students and never production recommendations.
 
 ---
 
@@ -3039,7 +3057,10 @@ Other campus workflows have not been validated.
 
 ## Real institutional identity
 
-TAR UMT SSO integration is not part of prototype.
+Google Workspace Student identity is implemented, but production readiness
+depends on operator-configured Google Cloud origins/client ID and controlled
+verification of the real Workspace `hd` claim. This is not a claim of formal
+institutional deployment approval.
 
 ---
 

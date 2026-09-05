@@ -596,6 +596,21 @@ until their phases.
 
 ## 10. Authentication and security
 
+- Production Student authentication uses Google Identity Services only as the
+  external identity proof. The server verifies the ID token with
+  `google-auth-library`, requires the configured audience and Workspace email/
+  `hd` domain, persists Google `sub` through `ExternalAuthIdentity`, then issues
+  the existing application JWT/session cookie.
+- First-time Google Students complete Student ID through a short-lived,
+  purpose-specific HttpOnly onboarding cookie. Linking and completion use
+  serializable transactions plus unique provider-subject, user-provider, email,
+  and Student-ID constraints.
+- Driver/Admin password reset uses hashed, expiring, one-time token records and
+  the shared server-only transactional mail port. Successful reset rotates
+  remaining tokens and increments `sessionVersion`.
+- Student password registration/login is a non-production compatibility path
+  behind an explicit server gate. Quick Login visibility has a separate public
+  demo gate; neither defaults on.
 - Proxy performs only optimistic page redirects. Every page data query, Route
   Handler, and use case performs secure authorization again.
 - The session payload contains only stable identifiers and minimum authorization
@@ -779,8 +794,9 @@ claiming an unknown road duration. Bulk timetable confirmation creates ordinary
 Trips in one transaction after the same resource and block validations used by
 single scheduling.
 
-Student registration stores hashed, expiring email-verification tokens and
-issues no session until verification. Development may return a one-time preview
-token; production has no auto-verification fallback and must supply a real mail
-delivery adapter before public registration is enabled. Password-reset storage
-is reserved behind that same future verified-email delivery boundary.
+Legacy Student password registration stores hashed, expiring email-verification
+tokens and issues no session until verification. It is available only under the
+non-production demo gate. Development may return a one-time preview link;
+production Student entry uses Google Workspace. The shared transactional mail
+port uses Resend in production and supports both legacy verification and
+Driver/Admin password reset without exposing raw production tokens.

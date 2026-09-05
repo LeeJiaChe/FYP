@@ -17,6 +17,11 @@ enum StudentIdentityAssurance {
   LEGACY_PROTOTYPE
   EMAIL_UNVERIFIED
   EMAIL_VERIFIED
+  GOOGLE_WORKSPACE_VERIFIED
+}
+
+enum ExternalAuthProvider {
+  GOOGLE
 }
 
 enum BusStatus {
@@ -114,7 +119,7 @@ model User {
   studentId                String?                   @unique
   name                     String
   email                    String                    @unique
-  passwordHash             String
+  passwordHash             String?
   role                     UserRole
   creditScore              Int                       @default(100)
   sessionVersion           Int                       @default(1)
@@ -135,6 +140,22 @@ model User {
   tripStatusChanges       TripStatusHistory[]      @relation("TripStatusActor")
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
+  externalAuthIdentities  ExternalAuthIdentity[]
+}
+
+model ExternalAuthIdentity {
+  id              String               @id @default(uuid())
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        ExternalAuthProvider
+  providerSubject String
+  emailAtLink     String
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([provider, providerSubject])
+  @@unique([userId, provider])
+  @@index([userId])
 }
 
 model EmailVerificationToken {
@@ -149,8 +170,6 @@ model EmailVerificationToken {
   @@index([userId, expiresAt])
 }
 
-// Reserved for the same verified-email delivery boundary. No reset endpoint
-// is exposed until a production mail adapter is configured.
 model PasswordResetToken {
   id         String    @id @default(uuid())
   userId     String

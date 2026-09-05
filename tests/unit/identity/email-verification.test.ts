@@ -6,7 +6,6 @@ import {
   hashEmailVerificationToken,
   isEmailVerificationTokenUsable,
   shouldRotateVerificationToken,
-  verificationDeliveryMode,
 } from "@/features/identity/domain/email-verification";
 
 describe("verified student identity", () => {
@@ -22,16 +21,19 @@ describe("verified student identity", () => {
     assert.equal(isEmailVerificationTokenUsable({ expiresAt: new Date("2026-09-04T00:01:00Z"), consumedAt: now }, now), false);
   });
 
-  it("never exposes a preview delivery in production", () => {
-    assert.equal(verificationDeliveryMode("development"), "DEVELOPMENT_PREVIEW");
-    assert.equal(verificationDeliveryMode("production"), "UNCONFIGURED");
-  });
-
-  it("keeps explicitly labelled legacy prototype Students usable", () => {
+  it("allows Google Students normally and legacy Students only in demo mode", () => {
     assert.equal(
       canStudentIdentityAuthenticate({
         assurance: "LEGACY_PROTOTYPE",
         emailVerifiedAt: null,
+      }),
+      false,
+    );
+    assert.equal(
+      canStudentIdentityAuthenticate({
+        assurance: "LEGACY_PROTOTYPE",
+        emailVerifiedAt: null,
+        demoPasswordLoginEnabled: true,
       }),
       true,
     );
@@ -45,6 +47,13 @@ describe("verified student identity", () => {
     assert.equal(
       canStudentIdentityAuthenticate({
         assurance: "EMAIL_VERIFIED",
+        emailVerifiedAt: new Date("2026-09-04T00:00:00Z"),
+      }),
+      false,
+    );
+    assert.equal(
+      canStudentIdentityAuthenticate({
+        assurance: "GOOGLE_WORKSPACE_VERIFIED",
         emailVerifiedAt: new Date("2026-09-04T00:00:00Z"),
       }),
       true,

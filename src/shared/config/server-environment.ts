@@ -24,6 +24,32 @@ const httpUrlSchema = z
     return protocol === "http:" || protocol === "https:";
   }, "must be an HTTP(S) URL");
 
+const hostedDomainSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(1)
+  .regex(/^[a-z0-9.-]+$/, "must be a valid hosted domain");
+
+const googleClientIdSchema = z
+  .string()
+  .trim()
+  .default("")
+  .refine(
+    (value) => !value || value.endsWith(".apps.googleusercontent.com"),
+    "must be a Google OAuth Web Client ID",
+  );
+
+const emailFromSchema = z
+  .string()
+  .trim()
+  .default("")
+  .refine((value) => {
+    if (!value) return true;
+    const bracketed = value.match(/<([^<>]+)>$/)?.[1];
+    return z.email().safeParse(bracketed ?? value).success;
+  }, "must contain a valid sender email address");
+
 const secretSchema = z.string().min(SECRET_MINIMUM_LENGTH);
 
 function databaseIdentity(url: URL): string {
@@ -53,6 +79,21 @@ const rawServerEnvironmentSchema = z
       .transform((value) => value === "true"),
     GEMINI_API_KEY: z.string().default(""),
     GEMINI_MODEL: z.string().trim().min(1).default("gemini-3.8-flash"),
+    NEXT_PUBLIC_GOOGLE_CLIENT_ID: googleClientIdSchema,
+    GOOGLE_STUDENT_HOSTED_DOMAIN: hostedDomainSchema.default(
+      "student.tarc.edu.my",
+    ),
+    DEMO_STUDENT_PASSWORD_LOGIN_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+    RESEND_API_KEY: z
+      .string()
+      .trim()
+      .default("")
+      .refine((value) => !value || value.length >= 10, "must be a valid API key"),
+    EMAIL_FROM: emailFromSchema,
+    APP_BASE_URL: httpUrlSchema.default("http://localhost:3000"),
   })
   .superRefine((environment, context) => {
     const secrets = [
@@ -116,6 +157,31 @@ const rawServerEnvironmentSchema = z
         });
       }
     }
+
+
+    const mailFields = [environment.RESEND_API_KEY, environment.EMAIL_FROM];
+    if (mailFields.some(Boolean) && !mailFields.every(Boolean)) {
+      context.addIssue({
+        code: "custom",
+        path: [environment.RESEND_API_KEY ? "EMAIL_FROM" : "RESEND_API_KEY"],
+        message: "must be configured together with the other email setting",
+      });
+    }
+    if (
+      environment.NODE_ENV === "production" &&
+      mailFields.every(Boolean) &&
+      (new URL(environment.APP_BASE_URL).protocol !== "https:" ||
+        ["localhost", "127.0.0.1", "::1"].includes(
+          new URL(environment.APP_BASE_URL).hostname,
+        ))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["APP_BASE_URL"],
+        message:
+          "must be a non-local HTTPS origin when production email is configured",
+      });
+    }
   });
 
 export interface ServerEnvironment {
@@ -145,6 +211,20 @@ export interface ServerEnvironment {
     readonly enabled: boolean;
     readonly apiKey: string;
     readonly model: string;
+  };
+  readonly googleStudent: {
+    readonly clientId: string;
+    readonly hostedDomain: string;
+    readonly configured: boolean;
+  };
+  readonly demoAuth: {
+    readonly studentPasswordLoginEnabled: boolean;
+  };
+  readonly transactionalEmail: {
+    readonly resendApiKey: string;
+    readonly from: string;
+    readonly appBaseUrl: string;
+    readonly configured: boolean;
   };
 }
 
@@ -191,6 +271,23 @@ export function parseServerEnvironment(
       enabled: environment.GEMINI_OPERATIONS_ASSISTANT_ENABLED,
       apiKey: environment.GEMINI_API_KEY,
       model: environment.GEMINI_MODEL,
+    }),
+    googleStudent: Object.freeze({
+      clientId: environment.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+      hostedDomain: environment.GOOGLE_STUDENT_HOSTED_DOMAIN,
+      configured: environment.NEXT_PUBLIC_GOOGLE_CLIENT_ID.length > 0,
+    }),
+    demoAuth: Object.freeze({
+      studentPasswordLoginEnabled:
+        environment.NODE_ENV !== "production" &&
+        environment.DEMO_STUDENT_PASSWORD_LOGIN_ENABLED,
+    }),
+    transactionalEmail: Object.freeze({
+      resendApiKey: environment.RESEND_API_KEY,
+      from: environment.EMAIL_FROM,
+      appBaseUrl: environment.APP_BASE_URL.replace(/\/$/, ""),
+      configured:
+        environment.RESEND_API_KEY.length > 0 && environment.EMAIL_FROM.length > 0,
     }),
   });
 }

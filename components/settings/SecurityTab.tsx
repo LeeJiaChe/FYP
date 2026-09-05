@@ -5,6 +5,7 @@ import { useSettings } from "./SettingsContext";
 
 export function SecurityTab() {
   const {
+    user,
     secForm,
     setSecForm,
     secAlert,
@@ -14,6 +15,11 @@ export function SecurityTab() {
   } = useSettings();
 
   const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
+  const demoMode =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const studentUsesGoogle =
+    user.role === "STUDENT" && !demoMode;
 
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault();
@@ -63,6 +69,23 @@ export function SecurityTab() {
 
   const pwStrength = getPasswordStrength(secForm.newPassword);
   const pwStrengthLabel = ["", "Weak", "Fair", "Good", "Strong", "Very Strong"][pwStrength] || "";
+  if (studentUsesGoogle) {
+    return (
+      <SettingCard
+        title="Account Security"
+        description="Your Student access is protected by your institutional Google account"
+        icon={<Shield className="w-5 h-5 text-white" />}
+      >
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-4">
+          <p className="text-sm font-semibold">TAR UMT Google Workspace</p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            Students do not use a separate shuttle password. Manage sign-in
+            security through your institutional Google account.
+          </p>
+        </div>
+      </SettingCard>
+    );
+  }
   return (
     <SettingCard
       title="Security Settings"

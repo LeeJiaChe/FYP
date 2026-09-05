@@ -278,6 +278,12 @@ export async function inspectArchitectureV2Source(
     "app/api/realtime/subscription/route.ts",
     "app/api/analytics/utilization/route.ts",
     "app/api/analytics/no-show-rate/route.ts",
+    "app/api/auth/login/route.ts",
+    "app/api/auth/register/route.ts",
+    "app/api/auth/google/student/route.ts",
+    "app/api/auth/google/student/complete/route.ts",
+    "app/api/auth/forgot-password/route.ts",
+    "app/api/auth/reset-password/route.ts",
   ].map((file) => path.join(workspaceRoot, file));
   const results = await Promise.all(
     [...files, ...migratedRoutes].map(async (file) =>

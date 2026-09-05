@@ -37,6 +37,12 @@ describe("server environment validation", () => {
     assert.equal(environment.geminiOperations.enabled, false);
     assert.equal(environment.geminiOperations.apiKey, "");
     assert.equal(environment.geminiOperations.model, "gemini-3.8-flash");
+    assert.equal(environment.googleStudent.clientId, "");
+    assert.equal(environment.googleStudent.hostedDomain, "student.tarc.edu.my");
+    assert.equal(environment.googleStudent.configured, false);
+    assert.equal(environment.demoAuth.studentPasswordLoginEnabled, false);
+    assert.equal(environment.transactionalEmail.configured, false);
+    assert.equal(environment.transactionalEmail.appBaseUrl, "http://localhost:3000");
   });
 
   it("keeps Gemini server-only, opt-in, and explicitly modelled", () => {
@@ -60,6 +66,56 @@ describe("server environment validation", () => {
 
     assert.equal(environment.googleTrafficEta.enabled, true);
     assert.equal(environment.googleTrafficEta.apiKey, "secret-routes-key");
+  });
+
+  it("parses Google Student, demo, and transactional-email configuration", () => {
+    const environment = parseServerEnvironment({
+      ...validEnvironment,
+      NODE_ENV: "development",
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: "web-client.apps.googleusercontent.com",
+      GOOGLE_STUDENT_HOSTED_DOMAIN: "Student.Tarc.Edu.My",
+      DEMO_STUDENT_PASSWORD_LOGIN_ENABLED: "true",
+      RESEND_API_KEY: "server-only-resend-key",
+      EMAIL_FROM: "Shuttle <notifications@owned.example>",
+      APP_BASE_URL: "https://shuttle.example/",
+    });
+    assert.equal(environment.googleStudent.configured, true);
+    assert.equal(environment.googleStudent.hostedDomain, "student.tarc.edu.my");
+    assert.equal(environment.demoAuth.studentPasswordLoginEnabled, true);
+    assert.equal(environment.transactionalEmail.configured, true);
+    assert.equal(environment.transactionalEmail.appBaseUrl, "https://shuttle.example");
+    assert.equal(environment.transactionalEmail.resendApiKey, "server-only-resend-key");
+  });
+
+  it("never enables demo Student password login in production", () => {
+    const environment = parseServerEnvironment({
+      ...validEnvironment,
+      DEMO_STUDENT_PASSWORD_LOGIN_ENABLED: "true",
+    });
+    assert.equal(environment.demoAuth.studentPasswordLoginEnabled, false);
+  });
+
+  it("requires complete transactional-email configuration", () => {
+    assert.throws(
+      () => parseServerEnvironment({ ...validEnvironment, RESEND_API_KEY: "key-only" }),
+      /EMAIL_FROM/,
+    );
+  });
+
+  it("requires an external HTTPS base URL for configured production email", () => {
+    assert.throws(
+      () =>
+        parseServerEnvironment({
+          ...validEnvironment,
+          NODE_ENV: "production",
+          RESEND_API_KEY: "re_production_key",
+          EMAIL_FROM: "Shuttle <notifications@owned.example>",
+          APP_BASE_URL: "http://localhost:3000",
+        }),
+      (error) =>
+        error instanceof ServerEnvironmentValidationError &&
+        error.message.includes("APP_BASE_URL"),
+    );
   });
 
   it("fails clearly without leaking secret values", () => {

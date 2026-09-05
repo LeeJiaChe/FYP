@@ -13,5 +13,7 @@
   "trafficEtaMaxLocationAgeMs": 60000,
   "minimumServiceBlockTurnaroundMs": 600000,
   "importantDelayNotificationMinutes": 10,
-  "emailVerificationTtlMs": 86400000
+  "emailVerificationTtlMs": 86400000,
+  "googleOnboardingTtlMs": 600000,
+  "passwordResetTtlMs": 1800000
 }

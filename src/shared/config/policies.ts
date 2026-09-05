@@ -16,6 +16,8 @@ export interface ProductPolicy {
   readonly minimumServiceBlockTurnaroundMs: number;
   readonly importantDelayNotificationMinutes: number;
   readonly emailVerificationTtlMs: number;
+  readonly googleOnboardingTtlMs: number;
+  readonly passwordResetTtlMs: number;
 }
 
 const defaultValues: ProductPolicy = approvedDefaults;
@@ -56,6 +58,12 @@ export function createProductPolicy(
   }
   if (policy.emailVerificationTtlMs === 0) {
     throw new RangeError("emailVerificationTtlMs must be greater than zero");
+  }
+  if (policy.googleOnboardingTtlMs === 0) {
+    throw new RangeError("googleOnboardingTtlMs must be greater than zero");
+  }
+  if (policy.passwordResetTtlMs === 0) {
+    throw new RangeError("passwordResetTtlMs must be greater than zero");
   }
 
   return Object.freeze(policy);

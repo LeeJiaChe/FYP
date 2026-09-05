@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
 import { COOKIE_NAME, getUserFromToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { assertSameOriginMutation } from "@/shared/http/origin-check";
 
-export async function POST() {
+export async function POST(request: Request) {
+  try {
+    assertSameOriginMutation(request);
+  } catch {
+    return NextResponse.json(
+      { error: "Cross-origin mutation rejected" },
+      { status: 403 },
+    );
+  }
+
   const user = await getUserFromToken();
   if (user) {
     try {
@@ -18,6 +28,8 @@ export async function POST() {
   const res = NextResponse.json({ success: true });
   res.cookies.set(COOKIE_NAME, "", {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     path: "/",
     expires: new Date(0),
   });

@@ -5,7 +5,7 @@ import {
   hashEmailVerificationToken,
   shouldRotateVerificationToken,
 } from "../domain/email-verification";
-import { getEmailVerificationDelivery } from "../infrastructure/email-verification-delivery.server";
+import { getTransactionalEmailDelivery } from "../infrastructure/transactional-email-composition.server";
 import {
   consumeEmailVerificationTokenRecord,
   createUnverifiedStudentRecord,
@@ -16,7 +16,11 @@ import {
 
 export class StudentRegistrationError extends Error {
   constructor(
-    readonly code: "IDENTITY_EXISTS" | "DELIVERY_UNAVAILABLE" | "TOKEN_INVALID",
+    readonly code:
+      | "IDENTITY_EXISTS"
+      | "DELIVERY_UNAVAILABLE"
+      | "TOKEN_INVALID"
+      | "REGISTRATION_DISABLED",
     message: string,
   ) {
     super(message);
@@ -29,7 +33,7 @@ export async function registerStudent(input: {
   studentId: string;
   password: string;
 }) {
-  const delivery = getEmailVerificationDelivery();
+  const delivery = getTransactionalEmailDelivery();
   if (!delivery.available) {
     throw new StudentRegistrationError(
       "DELIVERY_UNAVAILABLE",
@@ -58,7 +62,7 @@ export async function registerStudent(input: {
     expiresAt: token.expiresAt,
     initialCredit: productPolicy.initialCredit,
   });
-  const deliveryResult = await delivery.deliver({
+  const deliveryResult = await delivery.deliverStudentVerification({
     email: input.email,
     rawToken: token.rawToken,
   });
@@ -66,7 +70,7 @@ export async function registerStudent(input: {
 }
 
 export async function resendStudentVerification(email: string) {
-  const delivery = getEmailVerificationDelivery();
+  const delivery = getTransactionalEmailDelivery();
   if (!delivery.available) {
     throw new StudentRegistrationError(
       "DELIVERY_UNAVAILABLE",
@@ -90,7 +94,7 @@ export async function resendStudentVerification(email: string) {
     expiresAt: token.expiresAt,
     now,
   });
-  const result = await delivery.deliver({
+  const result = await delivery.deliverStudentVerification({
     email: identity.email,
     rawToken: token.rawToken,
   });
