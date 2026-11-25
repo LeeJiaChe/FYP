@@ -64,7 +64,8 @@ test("student mobile chrome is invariant and tab changes reset the internal scro
   await expect.poll(() => scrollViewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   expect(await chromeGeometry()).toEqual(initialChrome);
 
-  await page.getByRole("button", { name: /^Journeys(?:\s|$)/ }).click();
+  await page.getByRole("navigation", { name: "Student mobile navigation" })
+    .getByRole("button", { name: /Journeys/ }).click();
   await expect.poll(() => scrollViewport.evaluate((element) => element.scrollTop)).toBe(0);
   await scrollViewport.evaluate((element) => element.scrollTo({ top: element.scrollHeight, behavior: "auto" }));
   await page.getByRole("button", { name: "Track", exact: true }).click();

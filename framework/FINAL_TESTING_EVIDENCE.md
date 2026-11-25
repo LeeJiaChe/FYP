@@ -57,7 +57,7 @@ integration execution remains conditional on the guarded isolated
 ## November 2026 recovery
 
 The counts above describe earlier baselines. The current review branch
-verification uses pinned Node 24 and Playwright 1.55.0, and provisioner-owned
+verification uses pinned Node 24 and Playwright 1.55.1, and provisioner-owned
 PostgreSQL fixture clusters. See the [fixture commands](../tests/integration/README.md),
 [database rehearsal](RECOVERY_DATABASE_REHEARSAL.md), and [lock evidence](FINAL_CONCURRENCY_EVIDENCE.md).
 The historical master job reached Chromium download and was cancelled near its

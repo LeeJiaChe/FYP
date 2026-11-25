@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src tests/specification tests/unit tests/integration tests/architecture tests/e2e scripts/*.ts --no-error-on-unmatched-pattern --max-warnings=0",
-    "lint:recovery": "eslint app/api/auth/resend-verification/route.ts app/reset-password/page.tsx app/verify-email/page.tsx lib/prisma.ts prisma/seed.ts playwright.config.ts --max-warnings=0",
+    "lint:recovery": "eslint app/api/auth/resend-verification/route.ts app/reset-password/page.tsx app/verify-email/page.tsx lib/prisma.ts next.config.ts prisma/seed.ts playwright.config.ts --max-warnings=0",
     "lint:legacy": "eslint .",
     "typecheck": "next typegen && tsc --noEmit --pretty false",
     "test": "npm run test:unit",
@@ -33,7 +33,7 @@
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.25.0",
     "motion": "https://registry.npmjs.org/motion/-/motion-13.1.1.tgz",
-    "next": "^16.3.2",
+    "next": "^16.4.6",
     "node-cron": "^4.6.0",
     "prisma": "^6.12.0",
     "qr-scanner": "1.4.2",
@@ -46,10 +46,10 @@
     "server-only": "0.0.1",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@playwright/test": "1.55.0",
+    "@playwright/test": "1.55.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",

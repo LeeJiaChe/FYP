@@ -15,6 +15,7 @@ const securityHeaders = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  ...(process.env.FYP_FIXTURE_APP_PORT ? { devIndicators: false as const } : {}),
   async headers() {
     return [
       {
