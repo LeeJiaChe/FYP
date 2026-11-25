@@ -33,15 +33,13 @@ export async function registerStudent(input: {
   studentId: string;
   password: string;
 }) {
-  const delivery = getTransactionalEmailDelivery();
+  const delivery = await getTransactionalEmailDelivery();
   if (!delivery.available) {
-    throw new StudentRegistrationError(
-      "DELIVERY_UNAVAILABLE",
-      "Student email verification delivery is not configured",
-    );
+    return { requiresEmailVerification: true };
   }
   const existing = await findStudentIdentityRecord(input.email, input.studentId);
   if (existing) {
+    if (!delivery.preview) return { requiresEmailVerification: true };
     throw new StudentRegistrationError(
       "IDENTITY_EXISTS",
       "User with this email or Student ID already exists",
@@ -53,30 +51,30 @@ export async function registerStudent(input: {
     now,
     productPolicy.emailVerificationTtlMs,
   );
-  await createUnverifiedStudentRecord({
-    name: input.name,
-    email: input.email,
-    studentId: input.studentId,
-    passwordHash: await hashPassword(input.password),
-    tokenHash: token.tokenHash,
-    expiresAt: token.expiresAt,
-    initialCredit: productPolicy.initialCredit,
-  });
-  const deliveryResult = await delivery.deliverStudentVerification({
-    email: input.email,
-    rawToken: token.rawToken,
-  });
-  return { requiresEmailVerification: true, ...deliveryResult };
+  try {
+    await createUnverifiedStudentRecord({
+      name: input.name,
+      email: input.email,
+      studentId: input.studentId,
+      passwordHash: await hashPassword(input.password),
+      tokenHash: token.tokenHash,
+      expiresAt: token.expiresAt,
+      initialCredit: productPolicy.initialCredit,
+    });
+    const deliveryResult = await delivery.deliverStudentVerification({
+      email: input.email,
+      rawToken: token.rawToken,
+    });
+    return { requiresEmailVerification: true, ...deliveryResult };
+  } catch (error) {
+    if (delivery.preview) throw error;
+    return { requiresEmailVerification: true };
+  }
 }
 
 export async function resendStudentVerification(email: string) {
-  const delivery = getTransactionalEmailDelivery();
-  if (!delivery.available) {
-    throw new StudentRegistrationError(
-      "DELIVERY_UNAVAILABLE",
-      "Student email verification delivery is not configured",
-    );
-  }
+  const delivery = await getTransactionalEmailDelivery();
+  if (!delivery.available) return { accepted: true };
   const identity = await findIdentityForVerificationRecord(email);
   if (!shouldRotateVerificationToken(identity)) {
     return { accepted: true };

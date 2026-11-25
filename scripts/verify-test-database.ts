@@ -1,83 +1,31 @@
-export const TEST_DATABASE_CONFIRMATION = "FYP_BUS_INTEGRATION";
-const TEST_DATABASE_SUFFIX = /(?:^|_)test$/;
+import { pathToFileURL } from "node:url";
+import { PrismaClient } from "@prisma/client";
 
-export interface VerifiedTestDatabase {
-  readonly url: string;
-  readonly databaseName: string;
-}
+import {
+  assertFixtureIdentity,
+  fixtureTarget,
+  type FixtureDatabase,
+} from "../src/shared/db/disposable-fixture";
 
-type Environment = Readonly<Record<string, string | undefined>>;
-
-function databaseIdentity(url: URL): string {
-  return `${url.protocol}//${url.hostname}:${url.port}/${decodeURIComponent(
-    url.pathname.replace(/^\//, ""),
-  )}`;
-}
-
-export function verifyTestDatabaseEnvironment(
-  environment: Environment,
-): VerifiedTestDatabase {
-  const rawTestUrl = environment.TEST_DATABASE_URL?.trim();
-  if (!rawTestUrl) {
-    throw new Error(
-      "TEST_DATABASE_URL is required; integration tests never fall back to DATABASE_URL",
-    );
-  }
-
-  let testUrl: URL;
+export async function verifyTestDatabaseEnvironment(
+  environment: NodeJS.ProcessEnv,
+  database?: FixtureDatabase,
+) {
+  const target = fixtureTarget(environment, database);
+  const client = new PrismaClient({ datasourceUrl: target.url });
   try {
-    testUrl = new URL(rawTestUrl);
-  } catch {
-    throw new Error("TEST_DATABASE_URL must be a valid PostgreSQL URL");
+    await assertFixtureIdentity(client, target);
+    return { url: target.url, databaseName: target.databaseName };
+  } finally {
+    await client.$disconnect();
   }
-
-  if (testUrl.protocol !== "postgresql:" && testUrl.protocol !== "postgres:") {
-    throw new Error("TEST_DATABASE_URL must use PostgreSQL, never SQLite");
-  }
-
-  const databaseName = decodeURIComponent(testUrl.pathname.replace(/^\//, ""));
-  if (!TEST_DATABASE_SUFFIX.test(databaseName)) {
-    throw new Error(
-      `Integration database name must end in _test; received ${databaseName || "<empty>"}`,
-    );
-  }
-
-  const rawDevelopmentUrl = environment.DATABASE_URL?.trim();
-  if (rawDevelopmentUrl) {
-    let developmentUrl: URL;
-    try {
-      developmentUrl = new URL(rawDevelopmentUrl);
-    } catch {
-      throw new Error("DATABASE_URL is invalid; refusing an ambiguous test run");
-    }
-
-    if (
-      databaseIdentity(developmentUrl) === databaseIdentity(testUrl)
-    ) {
-      throw new Error(
-        "TEST_DATABASE_URL must not equal the normal development DATABASE_URL",
-      );
-    }
-  }
-
-  if (environment.TEST_DATABASE_CONFIRM !== TEST_DATABASE_CONFIRMATION) {
-    throw new Error(
-      `Set TEST_DATABASE_CONFIRM=${TEST_DATABASE_CONFIRMATION} to acknowledge the isolated test target`,
-    );
-  }
-
-  return { url: testUrl.toString(), databaseName };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  try {
-    const verified = verifyTestDatabaseEnvironment(process.env);
-    process.stdout.write(
-      `Verified isolated PostgreSQL integration database: ${verified.databaseName}\n`,
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`Integration database safety check failed: ${message}\n`);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  verifyTestDatabaseEnvironment(process.env).then(({ databaseName }) => {
+    console.log(`Verified disposable PostgreSQL server and database: ${databaseName}`);
+  }).catch((error: Error) => {
+    console.error(error.message);
     process.exitCode = 1;
-  }
+  });
 }

@@ -37,9 +37,10 @@ describe("transactional email delivery", () => {
     assert.match(sent[1]?.text ?? "", /^Verify your shuttle account: https:\/\/shuttle\.example\/verify-email\?token=/);
   });
 
-  it("fails closed when production email configuration is missing", async () => {
+  it("fails closed when production email configuration is missing, even with preview requested", async () => {
     const delivery = createTransactionalEmailDelivery({
       runtime: "production",
+      isolatedPreviewAuthorized: true,
       apiKey: "",
       from: "",
       appBaseUrl: "https://shuttle.example",
@@ -52,9 +53,10 @@ describe("transactional email delivery", () => {
     );
   });
 
-  it("keeps preview links in non-production only and derives them from APP_BASE_URL", async () => {
+  it("derives preview links only for an explicitly authorized isolated fixture", async () => {
     const delivery = createTransactionalEmailDelivery({
       runtime: "development",
+      isolatedPreviewAuthorized: true,
       apiKey: "",
       from: "",
       appBaseUrl: "http://localhost:3000",
@@ -68,5 +70,26 @@ describe("transactional email delivery", () => {
       result.previewUrl,
       "http://localhost:3000/reset-password?token=preview-token",
     );
+  });
+
+  it("does not preview by default in development", async () => {
+    const delivery = createTransactionalEmailDelivery({
+      runtime: "development", apiKey: "", from: "", appBaseUrl: "http://localhost:3000",
+    });
+    assert.equal(delivery.preview, false);
+    assert.equal(delivery.available, false);
+  });
+
+  it("allows configured legitimate development delivery without returning a token", async () => {
+    let sent = 0;
+    const delivery = createTransactionalEmailDelivery({
+      runtime: "development", apiKey: "synthetic-configured-key", from: "sender@example.test",
+      appBaseUrl: "https://staging.example.test",
+    }, { async send() { sent++; } });
+    const result = await delivery.deliverStaffPasswordReset({
+      email: "staff@example.test", rawToken: "synthetic-token",
+    });
+    assert.equal(sent, 1);
+    assert.deepEqual(result, {});
   });
 });

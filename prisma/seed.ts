@@ -1,14 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
+import { assertFixtureIdentity, fixtureTarget } from "../src/shared/db/disposable-fixture";
 import bcrypt from "bcryptjs";
 
 import { buildTripSnapshot } from "../src/features/trips/domain/build-trip-snapshot";
 import { productPolicy } from "../src/shared/config/policies";
 
-const prisma = new PrismaClient();
-
-async function resetDemoData() {
+async function resetDemoData(prisma: Prisma.TransactionClient) {
   await prisma.tripLocationSample.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.penaltyAppeal.deleteMany();
@@ -33,7 +32,7 @@ async function resetDemoData() {
   await prisma.user.deleteMany();
 }
 
-async function createDemoTrip(input: {
+async function createDemoTrip(transaction: Prisma.TransactionClient, input: {
   routeId: string;
   busId: string;
   driverId: string;
@@ -41,88 +40,86 @@ async function createDemoTrip(input: {
   blockId?: string;
   blockSequence?: number;
 }) {
-  return prisma.$transaction(async (transaction) => {
-    const route = await transaction.route.findUniqueOrThrow({
-      where: { id: input.routeId },
-      include: {
-        routeStops: {
-          orderBy: { position: "asc" },
-          include: { stop: true },
-        },
+  const route = await transaction.route.findUniqueOrThrow({
+    where: { id: input.routeId },
+    include: {
+      routeStops: {
+        orderBy: { position: "asc" },
+        include: { stop: true },
       },
-    });
-    const bus = await transaction.bus.findUniqueOrThrow({
-      where: { id: input.busId },
-    });
-    const snapshot = buildTripSnapshot({
-      originDeparture: input.departureTime,
-      boardingCloseGraceMs: productPolicy.normalBoardingCloseGraceMs,
-      seatedCapacity: bus.seatedCapacity,
-      standingCapacity: bus.standingCapacity,
-      routeStops: route.routeStops.map((routeStop) => ({
-        stopId: routeStop.stopId,
-        position: routeStop.position,
-        stopCode: routeStop.stop.code,
-        stopName: routeStop.stop.name,
-        latitude: routeStop.stop.latitude.toNumber(),
-        longitude: routeStop.stop.longitude.toNumber(),
-        travelDurationToNextMinutes:
-          routeStop.travelDurationToNextMinutes,
-      })),
-    });
-
-    const trip = await transaction.trip.create({
-      data: {
-        routeId: input.routeId,
-        busId: input.busId,
-        driverId: input.driverId,
-        blockId: input.blockId,
-        blockSequence: input.blockSequence,
-        departureTime: input.departureTime,
-        estimatedArrivalTime: snapshot.estimatedArrivalTime,
-        boardingDeadline: snapshot.stops[0]!.boardingDeadline,
-        seatedCapacity: snapshot.seatedCapacity,
-        standingCapacity: snapshot.standingCapacity,
-      },
-    });
-
-    const tripStops = snapshot.stops.map((stop) => ({
-      id: randomUUID(),
-      tripId: trip.id,
-      stopId: stop.stopId,
-      position: stop.position,
-      stopCode: stop.stopCode,
-      stopName: stop.stopName,
-      latitude: stop.latitude,
-      longitude: stop.longitude,
-      plannedArrival: stop.plannedArrival,
-      plannedDeparture: stop.plannedDeparture,
-      boardingDeadline: stop.boardingDeadline,
-    }));
-    await transaction.tripStop.createMany({ data: tripStops });
-    await transaction.tripSegment.createMany({
-      data: snapshot.segmentPositions.map((position) => ({
-        id: randomUUID(),
-        tripId: trip.id,
-        position,
-        fromTripStopId: tripStops[position]!.id,
-        toTripStopId: tripStops[position + 1]!.id,
-      })),
-    });
-
-    const tripSeats = snapshot.seatNumbers.map((seatNumber) => ({
-      id: randomUUID(),
-      tripId: trip.id,
-      seatNumber,
-    }));
-    await transaction.tripSeat.createMany({ data: tripSeats });
-    return trip;
+    },
   });
+  const bus = await transaction.bus.findUniqueOrThrow({
+    where: { id: input.busId },
+  });
+  const snapshot = buildTripSnapshot({
+    originDeparture: input.departureTime,
+    boardingCloseGraceMs: productPolicy.normalBoardingCloseGraceMs,
+    seatedCapacity: bus.seatedCapacity,
+    standingCapacity: bus.standingCapacity,
+    routeStops: route.routeStops.map((routeStop) => ({
+      stopId: routeStop.stopId,
+      position: routeStop.position,
+      stopCode: routeStop.stop.code,
+      stopName: routeStop.stop.name,
+      latitude: routeStop.stop.latitude.toNumber(),
+      longitude: routeStop.stop.longitude.toNumber(),
+      travelDurationToNextMinutes:
+        routeStop.travelDurationToNextMinutes,
+    })),
+  });
+
+  const trip = await transaction.trip.create({
+    data: {
+      routeId: input.routeId,
+      busId: input.busId,
+      driverId: input.driverId,
+      blockId: input.blockId,
+      blockSequence: input.blockSequence,
+      departureTime: input.departureTime,
+      estimatedArrivalTime: snapshot.estimatedArrivalTime,
+      boardingDeadline: snapshot.stops[0]!.boardingDeadline,
+      seatedCapacity: snapshot.seatedCapacity,
+      standingCapacity: snapshot.standingCapacity,
+    },
+  });
+
+  const tripStops = snapshot.stops.map((stop) => ({
+    id: randomUUID(),
+    tripId: trip.id,
+    stopId: stop.stopId,
+    position: stop.position,
+    stopCode: stop.stopCode,
+    stopName: stop.stopName,
+    latitude: stop.latitude,
+    longitude: stop.longitude,
+    plannedArrival: stop.plannedArrival,
+    plannedDeparture: stop.plannedDeparture,
+    boardingDeadline: stop.boardingDeadline,
+  }));
+  await transaction.tripStop.createMany({ data: tripStops });
+  await transaction.tripSegment.createMany({
+    data: snapshot.segmentPositions.map((position) => ({
+      id: randomUUID(),
+      tripId: trip.id,
+      position,
+      fromTripStopId: tripStops[position]!.id,
+      toTripStopId: tripStops[position + 1]!.id,
+    })),
+  });
+
+  const tripSeats = snapshot.seatNumbers.map((seatNumber) => ({
+    id: randomUUID(),
+    tripId: trip.id,
+    seatNumber,
+  }));
+  await transaction.tripSeat.createMany({ data: tripSeats });
+  return trip;
 }
 
-async function main() {
+async function seedFixtures(prisma: Prisma.TransactionClient) {
   console.log("Resetting final prototype demo data...");
-  await resetDemoData();
+  await resetDemoData(prisma);
 
   const adminPasswordHash = await bcrypt.hash("admin1", 10);
   const defaultPasswordHash = await bcrypt.hash("password123", 10);
@@ -610,7 +607,7 @@ async function main() {
   ] as const;
   const demoTrips = [];
   for (const [index, [routeId, busId, driverId, hoursFromNow]] of tripInputs.entries()) {
-    demoTrips.push(await createDemoTrip({
+    demoTrips.push(await createDemoTrip(prisma, {
       routeId,
       busId,
       driverId,
@@ -672,27 +669,25 @@ async function main() {
     dropOffTripStopId: string;
     tripSegmentIds: string[];
   }) {
-    return prisma.$transaction(async (transaction) => {
-      const booking = await transaction.booking.create({
-        data: {
-          studentId: input.studentId,
-          tripId: demonstrationTrip.id,
-          tripSeatId: input.tripSeatId,
-          boardingTripStopId: input.boardingTripStopId,
-          dropOffTripStopId: input.dropOffTripStopId,
-        },
-      });
-      await transaction.reservedSeatSegment.createMany({
-        data: input.tripSegmentIds.map((tripSegmentId) => ({
-          id: randomUUID(),
-          bookingId: booking.id,
-          tripId: demonstrationTrip.id,
-          tripSeatId: input.tripSeatId,
-          tripSegmentId,
-        })),
-      });
-      return booking;
+    const booking = await prisma.booking.create({
+      data: {
+        studentId: input.studentId,
+        tripId: demonstrationTrip.id,
+        tripSeatId: input.tripSeatId,
+        boardingTripStopId: input.boardingTripStopId,
+        dropOffTripStopId: input.dropOffTripStopId,
+      },
     });
+    await prisma.reservedSeatSegment.createMany({
+      data: input.tripSegmentIds.map((tripSegmentId) => ({
+        id: randomUUID(),
+        bookingId: booking.id,
+        tripId: demonstrationTrip.id,
+        tripSeatId: input.tripSeatId,
+        tripSegmentId,
+      })),
+    });
+    return booking;
   }
 
   await createReservedDemoJourney({
@@ -892,19 +887,21 @@ async function main() {
     },
   });
 
-  console.log(
-    "Seeded 5 prototype ServiceLines, 17 source-based Stops, 10 directional canonical Routes, 3 Buses, 1 ServiceBlock, and 13 prototype Trip snapshots.",
-  );
-  console.log(
-    "Route families and stop names are source-based; coordinates, travel durations, Trip times, assignments, and passenger records are prototype data.",
-  );
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+async function main() {
+  const target = fixtureTarget(process.env);
+  const client = new PrismaClient({ datasourceUrl: target.url });
+  try {
+    await assertFixtureIdentity(client, target);
+    await client.$transaction(seedFixtures, { timeout: 60_000 });
+    console.log("Seeded deterministic prototype Shuttle fixtures in disposable PostgreSQL.");
+  } finally {
+    await client.$disconnect();
+  }
+}
+
+void main().catch(() => {
+  console.error("Demo seed refused or failed. No partial fixture transaction was committed.");
+  process.exitCode = 1;
+});

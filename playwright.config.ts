@@ -1,8 +1,12 @@
-const { defineConfig, devices } = require("@playwright/test");
+import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3000";
+const port = process.env.FYP_FIXTURE_APP_PORT;
+if (!process.env.FYP_FIXTURE_ROOT || !port || !/^\d{4,5}$/.test(port) || Number(port) > 65535) {
+  throw new Error("Launch browser tests through the disposable fixture runner");
+}
+const baseURL = `http://127.0.0.1:${port}`;
 
-module.exports = defineConfig({
+export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
   workers: 1,
@@ -32,9 +36,9 @@ module.exports = defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev -- -H 127.0.0.1",
+    command: "node --import tsx scripts/start-fixture-app.ts",
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

@@ -8,24 +8,11 @@ const globalForPrisma = globalThis as typeof globalThis & {
   architectureV2Prisma?: PrismaClient;
 };
 
-function createPrismaClient(): PrismaClient {
-  const datasourceUrl =
-    serverEnvironment.runtime === "test" &&
-    serverEnvironment.integrationTest.confirmed
-      ? serverEnvironment.integrationTest.databaseUrl
-      : serverEnvironment.database.url;
-
-  return new PrismaClient({
-    datasourceUrl,
-    log:
-      serverEnvironment.runtime === "production"
-        ? ["error"]
-        : ["error", "warn"],
-  });
-}
-
 export const prisma =
-  globalForPrisma.architectureV2Prisma ?? createPrismaClient();
+  globalForPrisma.architectureV2Prisma ?? new PrismaClient({
+    datasourceUrl: serverEnvironment.database.url,
+    log: serverEnvironment.runtime === "production" ? ["error"] : ["error", "warn"],
+  });
 
 if (serverEnvironment.runtime !== "production") {
   globalForPrisma.architectureV2Prisma = prisma;

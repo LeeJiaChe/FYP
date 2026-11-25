@@ -68,6 +68,7 @@ const rawServerEnvironmentSchema = z
     REALTIME_SERVICE_SECRET: secretSchema,
     TEST_DATABASE_URL: postgresUrlSchema.optional(),
     TEST_DATABASE_CONFIRM: z.string().optional(),
+    FYP_FIXTURE_ROOT: z.string().optional(),
     GOOGLE_TRAFFIC_ETA_ENABLED: z
       .enum(["true", "false"])
       .default("false")
@@ -147,6 +148,7 @@ const rawServerEnvironmentSchema = z
       }
 
       if (
+        !environment.FYP_FIXTURE_ROOT &&
         databaseIdentity(testDatabase) ===
         databaseIdentity(new URL(environment.DATABASE_URL))
       ) {

@@ -139,7 +139,7 @@ export async function requestStaffPasswordReset(email: string) {
   return requestStaffPasswordResetUseCase({
     email,
     store: staffPasswordResetStore,
-    delivery: getTransactionalEmailDelivery(),
+    delivery: await getTransactionalEmailDelivery(),
   });
 }
 

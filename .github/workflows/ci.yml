@@ -5,7 +5,12 @@ on:
   push:
     branches:
       - master
+      - develop
       - architecture-v2
+      - fix/recovery-r1-r3-core-stabilization
+
+permissions:
+  contents: read
 
 concurrency:
   group: verification-${{ github.ref }}
@@ -13,84 +18,66 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: fyp_bus_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d fyp_bus_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fyp_bus_dev?schema=public
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fyp_bus_test?schema=public
-      TEST_DATABASE_CONFIRM: FYP_BUS_INTEGRATION
-      JWT_SECRET: ci-session-secret-at-least-32-characters
-      QR_SECRET: ci-qr-secret-distinct-at-least-32-characters
-      REALTIME_SERVICE_SECRET: ci-realtime-secret-at-least-32-characters
-      REALTIME_URL: http://localhost:4000
+      # Build-time fixture values. Database-writing commands provision their own private target.
+      DATABASE_URL: postgresql://unused@127.0.0.1:1/fyp_build
+      JWT_SECRET: build-only-session-value-at-least-32-characters
+      QR_SECRET: build-only-qr-value-distinct-at-least-32-characters
+      REALTIME_SERVICE_SECRET: build-only-realtime-value-at-least-32-characters
+      REALTIME_URL: http://127.0.0.1:1
+      RUN_SCHEDULED_JOBS: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 26
+          node-version-file: .nvmrc
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate Prisma client
-        run: npx prisma generate
-
-      - name: Lint Architecture v2 scope
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit specifications
-        run: npm run test:unit
-
-      - name: Architecture dependency tests
-        run: npm run test:architecture
-
-      - name: PostgreSQL integration tests
-        run: npm run test:integration
-
-      - name: Production build
-        run: npm run build
-
-      - name: Install Chromium browser test runner
+      - name: Install locked dependencies and PostgreSQL tooling
         run: |
-          npm install --no-save --no-package-lock @playwright/test@1.55.0
-          npx playwright install --with-deps chromium
+          npm ci
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
 
-      - name: Prepare isolated browser-test database
+      - name: Generate and validate Prisma
         run: |
-          node --import tsx scripts/verify-test-database.ts
-          DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate reset --force --skip-seed
-          DATABASE_URL="$TEST_DATABASE_URL" npm run db:seed
+          npx --no-install prisma generate
+          npx --no-install prisma validate
 
-      - name: Browser end-to-end tests
+      - run: npm run lint
+      - run: npm run lint:recovery
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:architecture
+      - run: npm run test:integration
         env:
-          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
-        run: env -u TEST_DATABASE_URL -u TEST_DATABASE_CONFIRM npm run test:e2e
+          TEST_DATABASE_CONFIRM: FYP_BUS_INTEGRATION
+      - run: npm run test:rehearsal
+        env:
+          TEST_DATABASE_CONFIRM: FYP_BUS_INTEGRATION
+      - run: npm run build
 
-      - name: Upload browser failure evidence
+      - name: Install pinned Chromium with bounded retries
+        timeout-minutes: 9
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "30000"
+        run: |
+          timeout 120s npx --no-install playwright install-deps chromium
+          for attempt in 1 2 3; do
+            if timeout 110s npx --no-install playwright install chromium; then exit 0; fi
+            if [ "$attempt" -lt 3 ]; then sleep "$((attempt * 5))"; fi
+          done
+          exit 1
+
+      - run: npm run test:e2e
+        env:
+          TEST_DATABASE_CONFIRM: FYP_BUS_INTEGRATION
+
+      - name: Upload failed browser reports from synthetic fixtures
         if: failure()
         uses: actions/upload-artifact@v4
         with:

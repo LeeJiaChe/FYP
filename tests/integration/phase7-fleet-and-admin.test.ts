@@ -18,6 +18,7 @@ import {
   updateScheduledTrip,
 } from "../../src/features/trips/application/schedule-trip";
 import { toServiceDateKey } from "../../src/features/trips/domain/scheduling-policy";
+import { mytLocalDateTimeToIso } from "../../src/shared/time/operational-time";
 import { ApplicationError } from "../../src/shared/application/application-error";
 import { listDrivers } from "../../src/features/identity/application/manage-drivers";
 import { prisma } from "../../src/shared/db/prisma.server";
@@ -93,7 +94,8 @@ async function scenario(options: { busStatus?: "ACTIVE" | "MAINTENANCE" | "RETIR
     },
   );
   created.busIds.push(bus.id);
-  const departure = new Date(Date.now() + 24 * 60 * 60 * 1_000);
+  const serviceDay = toServiceDateKey(new Date(Date.now() + 24 * 60 * 60 * 1_000));
+  const departure = new Date(mytLocalDateTimeToIso(`${serviceDay}T08:00`));
   return { admin, bus, line, route, stops, departure, driverId: options.driverId };
 }
 

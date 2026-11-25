@@ -31,6 +31,7 @@ export interface EmailTransport {
 
 export interface TransactionalEmailConfiguration {
   readonly runtime: "development" | "test" | "production";
+  readonly isolatedPreviewAuthorized?: boolean;
   readonly apiKey: string;
   readonly from: string;
   readonly appBaseUrl: string;
@@ -80,11 +81,11 @@ class UnavailableTransactionalEmail implements TransactionalEmailDelivery {
   readonly preview = false;
 
   async deliverStudentVerification(): Promise<never> {
-    throw new Error("Production transactional email is not configured");
+    throw new Error("Transactional email is not configured");
   }
 
   async deliverStaffPasswordReset(): Promise<never> {
-    throw new Error("Production transactional email is not configured");
+    throw new Error("Transactional email is not configured");
   }
 }
 
@@ -150,7 +151,7 @@ export function createTransactionalEmailDelivery(
   configuration: TransactionalEmailConfiguration,
   transport?: EmailTransport,
 ): TransactionalEmailDelivery {
-  if (configuration.runtime !== "production") {
+  if (configuration.runtime !== "production" && configuration.isolatedPreviewAuthorized) {
     return new PreviewTransactionalEmail(configuration.appBaseUrl);
   }
   if (!configuration.apiKey || !configuration.from) {
