@@ -41,6 +41,9 @@ export async function createWalkInIntentRecord(
   policy: ProductPolicy,
 ) {
   return prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`
+      SELECT "id" FROM "Trip" WHERE "id" = ${input.tripId} FOR UPDATE
+    `;
     const student = await transaction.user.findFirst({
       where: { id: studentId, role: "STUDENT" },
       select: { id: true },

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { after, describe, it } from "node:test";
 
 import {
@@ -14,12 +15,16 @@ import {
 import {
   cancelTrip,
   createServiceBlock,
+  confirmBulkSchedule,
   scheduleTrip,
   updateScheduledTrip,
 } from "../../src/features/trips/application/schedule-trip";
 import { toServiceDateKey } from "../../src/features/trips/domain/scheduling-policy";
 import { mytLocalDateTimeToIso } from "../../src/shared/time/operational-time";
 import { ApplicationError } from "../../src/shared/application/application-error";
+import { cancelJourneyWaitlistEntry, cancelReservedBooking, createReservedBooking, joinJourneyWaitlist } from "../../src/features/bookings/application/reservations";
+import { createWalkInIntent } from "../../src/features/walk-ins/application/walk-ins";
+import { progressTrip } from "../../src/features/boarding/application/boarding";
 import { listDrivers } from "../../src/features/identity/application/manage-drivers";
 import { prisma } from "../../src/shared/db/prisma.server";
 
@@ -113,6 +118,27 @@ async function schedule(value: Awaited<ReturnType<typeof scenario>>, overrides: 
   );
   created.tripIds.push(trip.id);
   return trip;
+}
+
+async function waitForBlockedQuery(blocker: number, event: string) {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const [row] = await prisma.$queryRaw<Array<{ pid: number }>>`
+      SELECT pid FROM pg_stat_activity
+      WHERE wait_event = ${event} AND ${blocker}::integer = ANY(pg_blocking_pids(pid)) LIMIT 1
+    `;
+    if (row) return row.pid;
+    await delay(10);
+  }
+  assert.fail(`Expected a PostgreSQL lock waiter on ${event}`);
+}
+
+async function withScheduleBarrier(key: string, work: (pid: number) => Promise<void>) {
+  return prisma.$transaction(async (transaction) => {
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    const [row] = await transaction.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+    await work(row!.pid);
+  }, { timeout: 8_000 });
 }
 
 after(async () => {
@@ -649,4 +675,148 @@ describe("Phase 7 PostgreSQL fleet and scheduling", () => {
     assert.equal(reseq10.blockSequence, 1);
     assert.equal(reseq08.blockSequence, 2);
   });
+});
+
+describe("schedule and passenger concurrency on PostgreSQL", () => {
+  for (const mutation of ["reservation", "walk-in", "driver progress"] as const) {
+    it(`rechecks the Trip after the Bus lock when ${mutation} commits first`, { timeout: 10_000 }, async () => {
+      const student = await user("STUDENT", "Race Passenger");
+      const driver = await user("DRIVER", "Race Driver");
+      const value = await scenario({ driverId: driver.id });
+      const scheduled = await schedule(value);
+      const inventory = await prisma.trip.findUniqueOrThrow({ where: { id: scheduled.id }, include: {
+        tripStops: { orderBy: { position: "asc" } }, tripSeats: true,
+      } });
+      const journey = { tripId: scheduled.id, boardingTripStopId: inventory.tripStops[0]!.id,
+        dropOffTripStopId: inventory.tripStops.at(-1)!.id };
+      const clock = fixed(new Date(value.departure.getTime() - 60_000));
+      const actor = { userId: value.admin.id, role: "ADMIN" } as const;
+      let edit: PromiseSettledResult<unknown> | undefined;
+      let editing: Promise<void> | undefined;
+      await withScheduleBarrier(`bus:${value.bus.id}`, async (pid) => {
+        editing = updateScheduledTrip(actor, scheduled.id, {
+          departureTime: new Date(value.departure.getTime() + 30 * 60_000).toISOString(),
+        }, clock).then(
+          (result) => { edit = { status: "fulfilled", value: result }; },
+          (reason: unknown) => { edit = { status: "rejected", reason }; },
+        );
+        await waitForBlockedQuery(pid, "advisory");
+        const passenger = { userId: student.id, role: "STUDENT" } as const;
+        if (mutation === "reservation") {
+          await createReservedBooking(passenger, { ...journey, tripSeatId: inventory.tripSeats[0]!.id }, clock);
+        } else if (mutation === "walk-in") {
+          await createWalkInIntent(passenger, journey, clock);
+        } else {
+          await progressTrip({ userId: driver.id, role: "DRIVER" }, scheduled.id, { action: "START_BOARDING" }, clock);
+        }
+      });
+      await editing;
+      assert.ok(edit?.status === "rejected" && edit.reason instanceof ApplicationError && edit.reason.code === "CONFLICT",
+        `An edit must reject after committed ${mutation}`);
+      const afterEdit = await prisma.trip.findUniqueOrThrow({ where: { id: scheduled.id } });
+      assert.equal(afterEdit.departureTime.toISOString(), value.departure.toISOString());
+    });
+  }
+});
+
+it("a reservation waiting behind an edit validates the replacement departure", { timeout: 10_000 }, async () => {
+  const student = await user("STUDENT", "Edit Winner Passenger");
+  const value = await scenario();
+  const trip = await schedule(value);
+  const inventory = await prisma.trip.findUniqueOrThrow({ where: { id: trip.id }, include: {
+    tripStops: { orderBy: { position: "asc" } }, tripSeats: true,
+  } });
+  const actor = { userId: value.admin.id, role: "ADMIN" } as const;
+  const clock = fixed(new Date(value.departure.getTime() - 60_000));
+  const shifted = new Date(value.departure.getTime() + 8 * 86_400_000).toISOString();
+  let editing: Promise<unknown> | undefined;
+  let booking: Promise<unknown> | undefined;
+  await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "TripStop" WHERE id = ${inventory.tripStops[0]!.id}::uuid FOR UPDATE`;
+    const [blocker] = await transaction.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+    editing = updateScheduledTrip(actor, trip.id, { departureTime: shifted }, clock);
+    const editorPid = await waitForBlockedQuery(blocker!.pid, "transactionid");
+    booking = assert.rejects(createReservedBooking({ userId: student.id, role: "STUDENT" }, {
+      tripId: trip.id, tripSeatId: inventory.tripSeats[0]!.id,
+      boardingTripStopId: inventory.tripStops[0]!.id, dropOffTripStopId: inventory.tripStops.at(-1)!.id,
+    }, clock), (error: unknown) => error instanceof ApplicationError && /opened yet/i.test(error.message));
+    await waitForBlockedQuery(editorPid, "transactionid");
+  }, { timeout: 8_000 });
+  await editing;
+  await booking;
+  assert.equal((await prisma.trip.findUniqueOrThrow({ where: { id: trip.id } })).departureTime.toISOString(), shifted);
+  assert.equal(await prisma.booking.count({ where: { tripId: trip.id } }), 0);
+});
+
+for (const kind of ["single", "bulk"] as const) {
+  it(`serializes schedule edit and ${kind} creation in one ServiceBlock`, { timeout: 10_000 }, async () => {
+    const driver = await user("DRIVER", "Block Race Driver");
+    const value = await scenario({ driverId: driver.id });
+    const actor = { userId: value.admin.id, role: "ADMIN" } as const;
+    const dateKey = toServiceDateKey(value.departure);
+    const clock = fixed(new Date(value.departure.getTime() - 60_000));
+    const block = await createServiceBlock(actor, {
+      code: `RACE-${randomUUID().slice(0, 8)}`, serviceDate: dateKey, busId: value.bus.id,
+    });
+    created.blockIds.push(block.id);
+    const first = await scheduleTrip(actor, {
+      routeId: value.route.id, busId: value.bus.id, blockId: block.id, driverId: driver.id,
+      departureTime: value.departure.toISOString(),
+    }, clock);
+    created.tripIds.push(first.id);
+    let operations: Promise<PromiseSettledResult<unknown>[]> | undefined;
+    await withScheduleBarrier(`block:${block.id}`, async (holder) => {
+      const edit = updateScheduledTrip(actor, first.id, {
+        departureTime: mytLocalDateTimeToIso(`${dateKey}T08:30`),
+      }, clock);
+      const editPid = await waitForBlockedQuery(holder, "advisory");
+      const create = kind === "single" ? scheduleTrip(actor, {
+        routeId: value.route.id, busId: value.bus.id, blockId: block.id, driverId: driver.id,
+        departureTime: mytLocalDateTimeToIso(`${dateKey}T10:00`),
+      }, clock).then(({ id }) => { created.tripIds.push(id); }) : confirmBulkSchedule(actor, {
+        routeId: value.route.id, blockId: block.id, busIds: [value.bus.id], driverIds: [driver.id],
+        serviceDateFrom: dateKey, serviceDateTo: dateKey, weekdays: [], startTime: "10:00",
+        endTime: "10:30", headwayMinutes: 30,
+      }, clock).then(({ tripIds }) => { created.tripIds.push(...tripIds); });
+      operations = Promise.allSettled([edit, create]);
+      await waitForBlockedQuery(editPid, "advisory");
+    });
+    const outcomes = await operations;
+    assert.deepEqual(outcomes?.map(({ status }) => status), ["fulfilled", "fulfilled"]);
+    const trips = await prisma.trip.findMany({ where: { blockId: block.id }, orderBy: { departureTime: "asc" } });
+    assert.equal(trips.length, kind === "single" ? 2 : 3);
+    assert.deepEqual(trips.map(({ blockSequence }) => blockSequence), trips.map((_, index) => index + 1));
+  });
+}
+
+it("waitlist cancellation ahead of released capacity cannot be overwritten by promotion", { timeout: 10_000 }, async () => {
+  const value = await scenario();
+  const trip = await schedule(value);
+  const inventory = await prisma.trip.findUniqueOrThrow({ where: { id: trip.id }, include: {
+    tripStops: { orderBy: { position: "asc" } }, tripSeats: true,
+  } });
+  const [first, second, waiting] = await Promise.all([
+    user("STUDENT", "Waitlist Booked One"), user("STUDENT", "Waitlist Booked Two"), user("STUDENT", "Waitlist Cancels"),
+  ]);
+  const actor = (userId: string) => ({ userId, role: "STUDENT" } as const);
+  const clock = fixed(new Date(value.departure.getTime() - 60_000));
+  const journey = { tripId: trip.id, boardingTripStopId: inventory.tripStops[0]!.id,
+    dropOffTripStopId: inventory.tripStops.at(-1)!.id };
+  const booking = await createReservedBooking(actor(first.id), { ...journey, tripSeatId: inventory.tripSeats[0]!.id }, clock);
+  await createReservedBooking(actor(second.id), { ...journey, tripSeatId: inventory.tripSeats[1]!.id }, clock);
+  const entry = await joinJourneyWaitlist(actor(waiting.id), journey, clock);
+  let results: Promise<unknown> | undefined;
+  await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "Trip" WHERE id = ${trip.id} FOR UPDATE`;
+    const [holder] = await transaction.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+    const cancelEntry = cancelJourneyWaitlistEntry(actor(waiting.id), entry.id);
+    const canceller = await waitForBlockedQuery(holder!.pid, "transactionid");
+    const cancelBooking = cancelReservedBooking(actor(first.id), booking.id, clock);
+    results = Promise.all([cancelEntry, cancelBooking]);
+    await waitForBlockedQuery(canceller, "tuple");
+  }, { timeout: 8_000 });
+  await results;
+  const stored = await prisma.waitlistEntry.findUniqueOrThrow({ where: { id: entry.id } });
+  assert.equal(stored.status, "CANCELLED");
+  assert.equal(stored.promotedBookingId, null);
 });

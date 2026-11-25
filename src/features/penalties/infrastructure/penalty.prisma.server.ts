@@ -76,7 +76,8 @@ export async function processNoShowsAtTripStopInTransaction(
       status: "CONFIRMED",
       checkedInAt: null,
     },
-    orderBy: { id: "asc" },
+    // Concurrent no-shows on different Trips can lock the same student rows.
+    orderBy: [{ studentId: "asc" }, { id: "asc" }],
     select: { id: true },
   });
   const processed: Array<{

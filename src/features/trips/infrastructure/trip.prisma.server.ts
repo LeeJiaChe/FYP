@@ -46,6 +46,20 @@ async function lockScheduleKey(
   `;
 }
 
+async function lockCreationResources(
+  transaction: Prisma.TransactionClient,
+  inputs: readonly ScheduleTripInput[],
+) {
+  // Every creation path acquires the complete batch in Route → Bus → Block → Driver order.
+  const sortedKeys = [
+    inputs.map(({ routeId }) => `route:${routeId}`).sort(),
+    inputs.map(({ busId }) => `bus:${busId}`).sort(),
+    inputs.flatMap(({ blockId }) => blockId ? [`block:${blockId}`] : []).sort(),
+    inputs.flatMap(({ driverId }) => driverId ? [`driver:${driverId}`] : []).sort(),
+  ].flat();
+  for (const key of new Set(sortedKeys)) await lockScheduleKey(transaction, key);
+}
+
 export interface CancelTripTransactionInput {
   readonly tripId: string;
   readonly actorId: string;
@@ -182,7 +196,25 @@ export async function updateScheduledTripRecord(
   now: Date,
 ) {
   return prisma.$transaction(async (transaction) => {
-    await lockScheduleKey(transaction, `trip:${tripId}`);
+    // Bus and block membership are immutable through schedule edits. Use them
+    // only to locate the advisory locks before reading live eligibility.
+    const resources = await transaction.trip.findUnique({
+      where: { id: tripId },
+      select: { busId: true, blockId: true },
+    });
+    if (!resources) throw new TripPersistenceError("TRIP_NOT_FOUND");
+    await lockScheduleKey(transaction, `bus:${resources.busId}`);
+    if (resources.blockId) await lockScheduleKey(transaction, `block:${resources.blockId}`);
+    const currentAssignment = await transaction.trip.findUnique({
+      where: { id: tripId },
+      select: { driverId: true },
+    });
+    const driverId = input.driverId === undefined ? currentAssignment?.driverId ?? null : input.driverId;
+    if (driverId) await lockScheduleKey(transaction, `driver:${driverId}`);
+
+    // Passenger and progress writers hold this same row lock. Count passengers
+    // and read operational state only after all competing writers finish.
+    await transaction.$queryRaw`SELECT "id" FROM "Trip" WHERE "id" = ${tripId} FOR UPDATE`;
     const trip = await transaction.trip.findUnique({
       where: { id: tripId },
       include: {
@@ -203,10 +235,6 @@ export async function updateScheduledTripRecord(
       throw new TripPersistenceError("TRIP_NOT_EDITABLE");
     }
 
-    if (trip.blockId) {
-      await lockScheduleKey(transaction, `block:${trip.blockId}`);
-    }
-
     const departureTime = input.departureTime
       ? new Date(input.departureTime)
       : trip.departureTime;
@@ -221,10 +249,7 @@ export async function updateScheduledTripRecord(
       throw new TripPersistenceError("SERVICE_BLOCK_DATE_MISMATCH");
     }
 
-    const driverId = input.driverId === undefined ? trip.driverId : input.driverId;
-    await lockScheduleKey(transaction, `bus:${trip.busId}`);
     if (driverId) {
-      await lockScheduleKey(transaction, `driver:${driverId}`);
       const driver = await transaction.user.findUnique({
         where: { id: driverId },
         select: { role: true },
@@ -280,15 +305,6 @@ async function createScheduledTripInTransaction(
   input: ScheduleTripInput,
   boardingCloseGraceMs: number,
 ) {
-    await lockScheduleKey(transaction, `route:${input.routeId}`);
-    await lockScheduleKey(transaction, `bus:${input.busId}`);
-    if (input.blockId) {
-      await lockScheduleKey(transaction, `block:${input.blockId}`);
-    }
-    if (input.driverId) {
-      await lockScheduleKey(transaction, `driver:${input.driverId}`);
-    }
-
     const route = await transaction.route.findFirst({
       where: { id: input.routeId, deletedAt: null },
       include: {
@@ -453,9 +469,10 @@ export async function createScheduledTripRecord(
   input: ScheduleTripInput,
   boardingCloseGraceMs: number,
 ) {
-  return prisma.$transaction((transaction) =>
-    createScheduledTripInTransaction(transaction, input, boardingCloseGraceMs),
-  );
+  return prisma.$transaction(async (transaction) => {
+    await lockCreationResources(transaction, [input]);
+    return createScheduledTripInTransaction(transaction, input, boardingCloseGraceMs);
+  });
 }
 
 export async function createBulkScheduledTripRecords(
@@ -463,6 +480,7 @@ export async function createBulkScheduledTripRecords(
   boardingCloseGraceMs: number,
 ) {
   return prisma.$transaction(async (transaction) => {
+    await lockCreationResources(transaction, inputs);
     const trips = [];
     for (const input of inputs) {
       trips.push(

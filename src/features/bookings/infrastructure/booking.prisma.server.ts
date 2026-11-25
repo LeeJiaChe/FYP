@@ -511,11 +511,19 @@ export async function cancelWaitlistEntryRecord(
   studentId: string,
   entryId: string,
 ) {
-  const updated = await prisma.waitlistEntry.updateMany({
-    where: { id: entryId, studentId, status: "WAITING" },
-    data: { status: "CANCELLED" },
+  return prisma.$transaction(async (transaction) => {
+    const entry = await transaction.waitlistEntry.findFirst({
+      where: { id: entryId, studentId },
+      select: { tripId: true },
+    });
+    if (!entry) throw new BookingPersistenceError("BOOKING_NOT_FOUND");
+    await lockTrip(transaction, entry.tripId);
+    const updated = await transaction.waitlistEntry.updateMany({
+      where: { id: entryId, studentId, status: "WAITING" },
+      data: { status: "CANCELLED" },
+    });
+    if (updated.count !== 1) throw new BookingPersistenceError("BOOKING_NOT_FOUND");
   });
-  if (updated.count !== 1) throw new BookingPersistenceError("BOOKING_NOT_FOUND");
 }
 
 export async function listStudentReservationRecords(studentId: string) {
