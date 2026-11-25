@@ -37,3 +37,21 @@ This register describes implemented controls, not certification.
   development/demo token fallback remains available.
 - The prototype has no claim of zero-trust architecture or completed external
   security assessment.
+
+## November 2026 recovery
+
+Transactional email previews now require an explicit fixture switch, a
+matching loopback origin, and proof on the application's PostgreSQL connection
+that its target is the provisioner-owned fixture database. Production never
+authorizes previews. Legitimate delivery uses the configured transport in
+both runtime modes. Credentials in new verification and reset links live in
+the fragment and are sent to the application only in POST bodies. Recovery
+responses outside isolated preview mode remain generic.
+
+Real PostgreSQL tests exercise eligible and unknown synthetic staff requests,
+fixture identity checks, expired and reused credentials, and two concurrent
+reset calls. Exactly one reset consumes the token and invalidates previous
+sessions. Browser CI omits traces and screenshots that could capture fixture
+credentials. The pinned Playwright patch, Next.js and Zod updates address the
+direct advisories found during recovery. Separate review remains necessary for
+the transitive audit findings and for the shared PostgreSQL runtime privileges.

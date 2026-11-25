@@ -9,14 +9,17 @@ const baseURL = `http://127.0.0.1:${port}`;
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
+  forbidOnly: Boolean(process.env.CI),
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? [["line"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL,
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
+    // CI reports retain assertions and call logs. Browser traces and
+    // screenshots can contain fixture sessions or encoded boarding passes.
+    trace: process.env.CI ? "off" : "retain-on-failure",
+    screenshot: process.env.CI ? "off" : "only-on-failure",
   },
   projects: [
     {

@@ -32,3 +32,7 @@ development settings refuses before the first write. Browser tests select a
 fresh loopback port, verify the database before starting Next.js, and reject
 server reuse. Demo Student login and QR controls are enabled only in the browser
 child environment. Schedulers, external providers, and email preview are off.
+
+GitHub CI publishes diagnostic HTML on browser failure. CI traces and
+screenshots are disabled because they can retain session cookies or encoded
+boarding passes. Local traces remain available with disposable fixtures.
