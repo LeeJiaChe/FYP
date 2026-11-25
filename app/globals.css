@@ -3096,6 +3096,7 @@ button.context-item:hover .context-action-cue {
 .appeal-resolved.is-rejected { border-left-color: var(--danger); background: var(--danger-subtle); color: var(--danger); }
 
 @media (max-width: 767px) {
+  html:has(.student-shell) { overflow: hidden; }
   .student-shell {
     height: 100dvh;
     min-height: 100dvh;

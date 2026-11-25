@@ -7,10 +7,9 @@ test("student core flow fits 320 px and keeps seat selection keyboard operable",
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("navigation", { name: "Student mobile navigation" })).toBeVisible();
-  const hasPageOverflow = await page.evaluate(
+  await expect.poll(() => page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  );
-  expect(hasPageOverflow).toBe(false);
+  )).toBe(false);
   await page.getByRole("button", { name: "Book", exact: true }).click();
   const response = await page.request.get("/api/routes");
   const { routes } = await response.json();
@@ -68,9 +67,11 @@ test("student mobile chrome is invariant and tab changes reset the internal scro
     .getByRole("button", { name: /Journeys/ }).click();
   await expect.poll(() => scrollViewport.evaluate((element) => element.scrollTop)).toBe(0);
   await scrollViewport.evaluate((element) => element.scrollTo({ top: element.scrollHeight, behavior: "auto" }));
-  await page.getByRole("button", { name: "Track", exact: true }).click();
+  await page.getByRole("navigation", { name: "Student mobile navigation" })
+    .getByRole("button", { name: "Track", exact: true }).click();
   await expect.poll(() => scrollViewport.evaluate((element) => element.scrollTop)).toBe(0);
-  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await page.getByRole("navigation", { name: "Student mobile navigation" })
+    .getByRole("button", { name: "Account", exact: true }).click();
   await expect.poll(() => scrollViewport.evaluate((element) => element.scrollTop)).toBe(0);
   const accountRange = await scrollViewport.evaluate((element) => element.scrollHeight - element.clientHeight);
   expect(accountRange).toBe(0);
