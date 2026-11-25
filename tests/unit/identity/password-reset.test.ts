@@ -24,7 +24,7 @@ function delivery(options: { preview?: boolean; available?: boolean } = {}) {
     async deliverStaffPasswordReset(input) {
       sent.push(input);
       return this.preview
-        ? { previewUrl: `http://localhost:3000/reset-password?token=${input.rawToken}` }
+        ? { previewUrl: `http://localhost:3000/reset-password#token=${input.rawToken}` }
         : {};
     },
   };
@@ -86,7 +86,7 @@ describe("staff password reset", () => {
         if (target) {
           assert.equal(mail.sent[0]?.email, target.email);
           if (preview) {
-            assert.match(result.previewUrl ?? "", /^http:\/\/localhost:3000\/reset-password\?token=/);
+            assert.match(result.previewUrl ?? "", /^http:\/\/localhost:3000\/reset-password#token=/);
           }
         } else {
           assert.equal(result.previewUrl, undefined);

@@ -69,11 +69,20 @@ domain unless its owner has explicitly authorized the sender and completed the
 required Resend/DNS verification. Never rename `RESEND_API_KEY` to a
 `NEXT_PUBLIC_*` variable.
 
-Production mail delivery is unavailable when `RESEND_API_KEY` or `EMAIL_FROM`
-is missing. Public forgot-password requests retain a generic response and no
-reset credential is created when delivery is unavailable. Development and test
-use a one-time browser preview link instead of sending real mail; production
-responses never contain the raw token or preview URL.
+A configured sender and key enable legitimate delivery in development or
+production. Without delivery, public recovery requests return a generic result.
+Development alone never enables a preview. A preview requires
+`FIXTURE_EMAIL_PREVIEW_ENABLED=true`, an explicit disposable operation
+acknowledgement, verified local PostgreSQL fixture identity using the real
+Prisma client, and a matching dedicated loopback application origin. Production
+never returns preview credentials. Ordinary browser verification runs with
+preview disabled.
+
+Verification and reset links carry the credential in the URL fragment. The
+credential is absent from the initial HTTP request URL and is submitted by the
+client in the verification or reset POST body. Keep body logging off for these
+endpoints and verify provider click tracking is disabled before live delivery.
+Issue a fresh link for local fixtures generated with the earlier URL format.
 
 ## Local demo configuration
 

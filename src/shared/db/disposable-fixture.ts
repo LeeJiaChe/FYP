@@ -31,7 +31,7 @@ export function fixtureTarget(environment: Environment, database: FixtureDatabas
   try {
     for (const entry of [root, path.join(root, "socket"), path.join(root, "proof")]) {
       const metadata = lstatSync(entry);
-      if (realpathSync(entry) !== entry || metadata.uid !== process.getuid?.() || (metadata.mode & 0o077) !== 0) {
+      if ((entry.endsWith("/proof") ? !metadata.isFile() : !metadata.isDirectory()) || realpathSync(entry) !== entry || metadata.uid !== process.getuid?.() || (metadata.mode & 0o077) !== 0) {
         throw new Error("Fixture paths must be private and owned by the invoking user");
       }
     }

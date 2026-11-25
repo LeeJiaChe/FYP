@@ -96,6 +96,20 @@ async function rehearse() {
     assert.equal(sql('SELECT count(*) FROM "Trip"'), "13");
     assert.equal(sql(protection), "3");
     assert.equal(sql(history), "9");
+    const fixtureState = `SELECT md5(jsonb_build_array(
+      (SELECT jsonb_agg(t ORDER BY id) FROM "Trip" t),
+      (SELECT jsonb_agg(b ORDER BY id) FROM "Booking" b),
+      (SELECT jsonb_agg(u ORDER BY id) FROM "User" u))::text)`;
+    const seeded = sql(fixtureState);
+    sql(`ALTER TABLE "Bus" ADD CONSTRAINT fixture_reject_seed
+      CHECK ("plateNumber" <> 'TAR-1002') NOT VALID`);
+    const seedFailure = spawnSync(process.execPath, ["--import", "tsx", "prisma/seed.ts"],
+      { env: clean, encoding: "utf8" });
+    assert.equal(seedFailure.status, 1);
+    assert.match(seedFailure.stderr, /No partial fixture transaction/);
+    assert.equal(sql(fixtureState), seeded);
+    sql('ALTER TABLE "Bus" DROP CONSTRAINT fixture_reject_seed');
+    console.log("Forced fixture insert failure rolled back the seed transaction and preserved committed fixture rows.");
     console.log("Clean installation: 9 migrations, documented schema representation differences, 10 Routes, 13 Trips, 3 identity tables with RLS.");
 
     const upgrade = environment(UPGRADE_DATABASE);

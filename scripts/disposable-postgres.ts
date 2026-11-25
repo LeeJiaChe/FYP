@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -12,11 +12,11 @@ import {
   type FixtureDatabase,
 } from "../src/shared/db/disposable-fixture";
 
-const inherited = Object.fromEntries(
+const inherited: NodeJS.ProcessEnv = { NODE_ENV: "test", ...Object.fromEntries(
   ["PATH", "HOME", "LANG", "LC_ALL", "CI", "PLAYWRIGHT_BROWSERS_PATH"].flatMap((key) =>
     process.env[key] ? [[key, process.env[key]]] : [],
   ),
-);
+) };
 
 export function runFixtureCommand(
   command: string,
@@ -31,24 +31,24 @@ export function runFixtureCommand(
     stdio: [options.input ? "pipe" : "ignore", options.quiet ? "pipe" : "inherit", options.quiet ? "pipe" : "inherit"],
   });
   if (result.status !== 0 || result.error) {
+    const sqlDiagnostic = path.basename(command) === "psql" ? result.stderr?.match(/ERROR:\s+([0-9A-Z]{5})\b/)?.[1] : undefined;
+    if (sqlDiagnostic) console.error(`PostgreSQL fixture command failed with SQLSTATE ${sqlDiagnostic}`);
     throw new Error(`${path.basename(command)} ${args[0] ?? ""} failed (exit ${result.status ?? "unavailable"})`);
   }
   return result.stdout;
 }
 
-export function withDisposablePostgres<T>(work: (fixture: {
+export async function withDisposablePostgres<T>(work: (fixture: {
   environment: (database?: FixtureDatabase) => NodeJS.ProcessEnv;
   sql: (statement: string, database?: FixtureDatabase) => string;
   version: string;
 }) => Promise<T>): Promise<T> {
-  return provision(work);
-}
-
-async function provision<T>(work: (fixture: {
-  environment: (database?: FixtureDatabase) => NodeJS.ProcessEnv;
-  sql: (statement: string, database?: FixtureDatabase) => string;
-  version: string;
-}) => Promise<T>) {
+  const dotenvFiles = [".env", ".env.local", "prisma/.env",
+    ...["development", "test", "production"].flatMap((mode) => [`.env.${mode}`, `.env.${mode}.local`]),
+  ];
+  if (dotenvFiles.some((file) => existsSync(file))) {
+    throw new Error("Run disposable tests from a checkout without local dotenv credential files");
+  }
   if (process.env.TEST_DATABASE_CONFIRM !== FIXTURE_CONFIRMATION) {
     throw new Error("Set TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION to acknowledge disposable operations");
   }
@@ -63,7 +63,7 @@ async function provision<T>(work: (fixture: {
     runFixtureCommand(path.join(binaryDir, binary), args, env, options);
 
   function psql(statement: string, database: string) {
-    return pg("psql", ["-X", "-w", "-v", "ON_ERROR_STOP=1", "-At"], { quiet: true, input: statement }, {
+    return pg("psql", ["-X", "-w", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate", "-At"], { quiet: true, input: statement }, {
       ...inherited, PGHOST: socket, PGPORT: "5432", PGUSER: FIXTURE_ROLE,
       PGPASSWORD: password, PGDATABASE: database, PGCONNECT_TIMEOUT: "3",
     }).trim();

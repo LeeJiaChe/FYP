@@ -82,7 +82,7 @@
   --shadow-color: rgb(45 59 82 / .11);
 }
 
-:root,
+:root:not([data-theme]),
 [data-theme="dark"] {
   color-scheme: dark;
   --app-canvas: #0b0e13;
@@ -3101,6 +3101,7 @@ button.context-item:hover .context-action-cue {
     min-height: 100dvh;
     max-height: 100dvh;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 4rem minmax(0, 1fr) calc(var(--student-mobile-nav-base-height) + env(safe-area-inset-bottom));
     overflow: hidden;
     padding-bottom: 0;

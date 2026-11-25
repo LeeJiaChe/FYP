@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 
-export function VerifyEmailAction({ token }: { token: string }) {
+import { useEmailLinkToken } from "./useEmailLinkToken";
+
+export function VerifyEmailAction() {
+  const token = useEmailLinkToken();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function verify() {
+    if (!token) return;
     setBusy(true);
     setError(null);
     try {
@@ -28,6 +32,9 @@ export function VerifyEmailAction({ token }: { token: string }) {
       setBusy(false);
     }
   }
+
+  if (token === undefined) return <p role="status">Reading verification link…</p>;
+  if (!token) return <p className="text-sm text-red-400">This verification link is missing its token.</p>;
 
   return (
     <div className="space-y-4">

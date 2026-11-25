@@ -49,3 +49,31 @@ from assigning one Bus or Driver to overlapping non-cancelled Trips.
 Evidence: `src/features/trips/infrastructure/trip.prisma.server.ts`,
 `src/features/fleet/infrastructure/fleet.prisma.server.ts`, and
 `tests/integration/phase7-fleet-and-admin.test.ts`.
+
+## Round 1 concurrency stabilization
+
+Schedule writers acquire transaction-scoped advisory locks in Route, Bus,
+ServiceBlock, and Driver order, with stable ID order within each group. Single
+and bulk creation acquire the complete set before validation and writes.
+Schedule edits use immutable Bus and ServiceBlock keys and resolve the current
+assignment while holding the Bus lock. They then acquire the Trip row lock,
+re-read operational and passenger state, validate, and mutate. Fleet updates
+acquire the Bus key before affected Trip rows. Resequencing holds the Bus and
+ServiceBlock keys. Passenger operations do not take scheduling advisory locks.
+
+Reservations and cancellation, waitlist entry creation and cancellation,
+walk-in issuance and admission, operator progress and alighting, and no-show
+handling serialize on the Trip row. A cancellation rechecks WAITING under
+that lock. Walk-in admission takes segment claims in stop order. No-show
+deductions lock Student credit in stable Student order across Trips. Appeal
+resolution serializes on the Appeal row and then the affected credit row.
+
+A dedicated PostgreSQL transaction held the Bus advisory lock, and the tests
+observed the waiting editor through `pg_blocking_pids`. Before the change,
+reservation, walk-in issuance, and driver progress each committed while the
+editor was waiting, and all three edits still succeeded on a stale read.
+After the change each edit rejects. The opposite interleaving holds a TripStop
+row to suspend an editor already holding the Trip row, then observes a waiting
+reservation. The reservation evaluates the changed departure. Other tests
+exercise single and bulk creation on one ServiceBlock alongside editing and
+waitlist cancellation ahead of capacity release.

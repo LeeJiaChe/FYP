@@ -3,12 +3,7 @@ import Link from "next/link";
 
 import { ResetPasswordForm } from "@/features/identity/ui";
 
-export default async function ResetPasswordPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ token?: string }>;
-}) {
-  const { token } = await searchParams;
+export default function ResetPasswordPage() {
   return (
     <main id="main-content" className="auth-shell">
       <div className="w-full max-w-md space-y-6">
@@ -18,7 +13,7 @@ export default async function ResetPasswordPage({
           <p className="text-xs text-[var(--text-secondary)]">Choose a new password for your Driver or Admin account.</p>
         </div>
         <div className="auth-panel">
-          {token ? <ResetPasswordForm token={token} /> : <div className="space-y-4"><p className="text-sm text-red-400">This reset link is missing its one-time token.</p><Link href="/forgot-password" className="btn-primary w-full">Request another link</Link></div>}
+          <ResetPasswordForm />
         </div>
       </div>
     </main>

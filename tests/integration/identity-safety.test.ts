@@ -54,7 +54,9 @@ it("serializes reset consumption, rejects expired and reused credentials, and re
   }, {
     async send(input) {
       const link = input.text.split(" ").at(-1);
-      raw = new URL(link!).searchParams.get("token")!;
+      const url = new URL(link!);
+      assert.equal(url.search, "");
+      raw = new URLSearchParams(url.hash.slice(1)).get("token")!;
     },
   });
   const issue = (now: Date) => requestStaffPasswordReset({ email: account.email, delivery, store: staffPasswordResetStore, now });

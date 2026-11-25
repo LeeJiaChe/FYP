@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src tests/specification tests/unit tests/integration tests/architecture tests/e2e scripts/*.ts --no-error-on-unmatched-pattern --max-warnings=0",
-    "lint:recovery": "eslint app/api/auth/resend-verification/route.ts lib/prisma.ts prisma/seed.ts playwright.config.ts --max-warnings=0",
+    "lint:recovery": "eslint app/api/auth/resend-verification/route.ts app/reset-password/page.tsx app/verify-email/page.tsx lib/prisma.ts prisma/seed.ts playwright.config.ts --max-warnings=0",
     "lint:legacy": "eslint .",
     "typecheck": "next typegen && tsc --noEmit --pretty false",
     "test": "npm run test:unit",

@@ -2,9 +2,9 @@ import { test, expect } from "@playwright/test";
 
 async function login(page, identity, password = "password123") {
   await page.goto("/login");
-  await page.getByLabel("Email or Student ID").fill(identity);
+  await page.getByLabel("Email", { exact: true }).fill(identity);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign In" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/(?:student|driver|admin)$/);
 }
 
@@ -15,7 +15,7 @@ async function openJourney(page, routeName) {
   const route = routes.find((item) => item.name === routeName);
   const stops = route.stops ?? route.routeStops.map((item) => item.stop.name);
   await page.getByLabel("From").selectOption({ label: stops[0] });
-  await page.getByLabel("To").selectOption({ label: stops.at(-1) });
+  await page.getByRole("combobox", { name: /Where are you going/ }).selectOption({ label: stops.at(-1) });
   await page.getByLabel("Date").selectOption({ index: 1 });
   const departure = page.getByRole("article").filter({ hasText: routeName }).first();
   await departure.getByRole("button", { name: "Check seats" }).click();
@@ -76,7 +76,7 @@ test("student creates a reserved journey and opens its Reserved Pass", async ({ 
   const page = await browser.newPage();
   await login(page, "student6@student.tarc.edu.my");
   await openJourney(page, "TAR UMT → Wangsa Maju Section 2");
-  await page.getByRole("button", { name: /Seat \d+, available/ }).first().click();
+  await page.getByRole("button", { name: /Seat \d+, available/i }).first().click();
   await expect(page.getByText("Seat selected. Your seat is guaranteed after booking confirmation.")).toBeVisible();
   await page.getByRole("button", { name: "Confirm Reserved Seat" }).click();
 
@@ -86,11 +86,10 @@ test("student creates a reserved journey and opens its Reserved Pass", async ({ 
 
   const driver = await browser.newPage();
   await login(driver, "driver1@tarumt.edu.my");
-  const tripSelect = driver.getByLabel("Assigned Trip");
-  const option = tripSelect.locator("option").filter({ hasText: "TAR UMT → Wangsa Maju Section 2" });
-  await tripSelect.selectOption(await option.getAttribute("value"));
+  await expect(driver.getByText("Current assignment", { exact: true })).toBeVisible();
+  await expect(driver.getByText("TAR UMT → Wangsa Maju Section 2", { exact: true }).first()).toBeVisible();
   await driver.getByRole("button", { name: "Start boarding" }).click();
-  await expect(driver.getByText(/Current stop: TAR UMT Gate 7 \/ East Campus/)).toBeVisible();
+  await expect(driver.getByRole("heading", { name: /Current stop: TAR UMT Gate 7 \/ East Campus/ })).toBeVisible();
   await driver.close();
 
   await page.getByRole("button", { name: /Reserved Pass/ }).click();
@@ -122,21 +121,21 @@ test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ pa
 
 test("assigned driver starts boarding and performs a real manual boarding mutation", async ({ page }) => {
   await login(page, "driver1@tarumt.edu.my");
-  const tripSelect = page.getByLabel("Assigned Trip");
-  const option = tripSelect.locator("option").filter({ hasText: "TAR UMT → Wangsa Maju Section 2" });
-  await tripSelect.selectOption(await option.getAttribute("value"));
+  await expect(page.getByText("Current assignment", { exact: true })).toBeVisible();
+  await expect(page.getByText("TAR UMT → Wangsa Maju Section 2", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: /Manifest/ }).click();
-  await expect(page.getByText("E2E Boarding Student")).toBeVisible();
-  await page.getByRole("button", { name: /Trip/ }).click();
+  await page.getByText("All passengers", { exact: true }).click();
+  await expect(page.getByRole("group").getByText("E2E Boarding Student", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Trip", exact: true }).click();
   const startBoarding = page.getByRole("button", { name: "Start boarding" });
   if (await startBoarding.isVisible()) await startBoarding.click();
-  await expect(page.getByText(/Current stop: TAR UMT Gate 7 \/ East Campus/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Current stop: TAR UMT Gate 7 \/ East Campus/ })).toBeVisible();
   await page.getByRole("button", { name: /Manifest/ }).click();
   const passenger = page.getByRole("article").filter({ hasText: "E2E Boarding Student" }).first();
   await passenger.getByRole("button", { name: "Manual board" }).click();
-  await expect(page.getByText("On board")).toBeVisible();
+  await expect(page.getByRole("article").filter({ hasText: "E2E Boarding Student" }).filter({ visible: true }).getByText("On board", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: /Trip/ }).click();
+  await page.getByRole("button", { name: "Trip", exact: true }).click();
   await page.getByRole("button", { name: /Scan boarding pass/ }).click();
   await expect(page.locator("video")).toBeVisible();
   await expect(page.getByText("Development / Demo fallback")).toBeVisible();
@@ -146,7 +145,7 @@ test("student appeal submission and admin approval complete through visible work
   const student = await browser.newPage();
   await login(student, "student9@student.tarc.edu.my");
   await student.getByRole("button", { name: /Credit & Appeals/ }).click();
-  await expect(student.getByText("85", { exact: true })).toBeVisible();
+  await expect(student.getByText(/^85\s*\/100$/)).toBeVisible();
   await student.getByRole("main").getByRole("button", { name: "Submit Appeal" }).click();
   const appealDialog = student.getByRole("dialog", { name: "Appeal penalty" });
   await appealDialog.getByLabel("Explanation / Medical Reason *").fill(
@@ -158,7 +157,7 @@ test("student appeal submission and admin approval complete through visible work
 
   const admin = await browser.newPage();
   await login(admin, "admin1@admin.tarc.edu.my", "admin1");
-  await admin.getByRole("button", { name: "Appeals" }).click();
+  await admin.getByRole("button", { name: /^Appeals\b/ }).click();
   await admin.getByRole("button", { name: /E2E Appeal Student/ }).click();
   await admin.getByLabel("Review comment").fill("Approved in deterministic E2E.");
   await admin.getByRole("button", { name: /Approve and restore credit/ }).click();
@@ -170,7 +169,7 @@ test("student appeal submission and admin approval complete through visible work
   const result = await browser.newPage();
   await login(result, "student9@student.tarc.edu.my");
   await result.getByRole("button", { name: /Credit & Appeals/ }).click();
-  await expect(result.getByText("100", { exact: true })).toBeVisible();
+  await expect(result.getByText(/^100\s*\/100$/)).toBeVisible();
   await expect(result.getByText("OVERTURNED", { exact: true })).toBeVisible();
   await expect(result.getByText("Approved in deterministic E2E.")).toBeVisible();
   await result.close();
@@ -180,15 +179,16 @@ test("admin schedules a valid Trip and sees its generated snapshot projection", 
   await login(page, "admin1@admin.tarc.edu.my", "admin1");
   await page.getByRole("button", { name: "Timetable" }).click();
   await page.getByRole("button", { name: "Schedule Trip" }).click();
-  await page.getByLabel("Route").selectOption({ label: "PV10/PV12/PV13 corridor → TAR UMT" });
-  await selectOptionContaining(page.getByLabel("Bus"), "TAR-1002");
-  await selectOptionContaining(page.getByLabel("Driver"), "Tan Boon Driver");
+  const form = page.getByRole("dialog", { name: "Schedule new Trip" });
+  await selectOptionContaining(form.getByLabel("Service Line"), "PV_CORRIDOR");
+  await selectOptionContaining(form.getByLabel("Direction / Route"), "PV10/PV12/PV13 corridor → TAR UMT");
+  await selectOptionContaining(form.getByLabel("Bus", { exact: true }), "TAR-1002");
+  await selectOptionContaining(form.getByLabel("Driver", { exact: true }), "Tan Boon Driver");
   const departure = new Date(Date.now() + 72 * 60 * 60 * 1_000);
-  const local = new Date(departure.getTime() - departure.getTimezoneOffset() * 60_000)
-    .toISOString()
-    .slice(0, 16);
-  await page.getByLabel("Departure Time").fill(local);
-  await page.getByRole("button", { name: "Schedule Trip" }).click();
+  const malaysiaTimestamp = new Date(departure.getTime() + 8 * 60 * 60_000);
+  const local = malaysiaTimestamp.toISOString().slice(0, 16);
+  await form.getByLabel("Departure Time").fill(local);
+  await form.getByRole("button", { name: "Schedule Trip" }).click();
 
   const scheduled = page.getByRole("article").filter({ hasText: "PV10/PV12/PV13 corridor → TAR UMT" }).last();
   await expect(scheduled.getByText(/TAR-1002 · Tan Boon Driver/)).toBeVisible();
@@ -197,10 +197,10 @@ test("admin schedules a valid Trip and sees its generated snapshot projection", 
 
 test("persisted GPS remains explicitly simulated and never timetable-derived", async ({ page }) => {
   await login(page, "student1@student.tarc.edu.my");
-  await page.getByRole("button", { name: "Track" }).click();
-  await page.getByLabel("Select Trip to Track:").selectOption({ index: 1 });
-  await expect(page.getByText(/Simulated GPS \/ Prototype/)).toBeVisible();
-  await expect(page.getByText(/Latest sample|No live telemetry received yet/)).toBeVisible();
+  await page.getByRole("button", { name: "Track", exact: true }).click();
+  await selectOptionContaining(page.getByLabel("Select Trip to Track"), /Wangsa Maju Section 2 → TAR UMT.*· Live/);
+  await expect(page.getByText("Simulated GPS / Prototype", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Latest sample", { exact: true })).toBeVisible();
 });
 
 test("only persistent Light and Dark appearance modes remain readable", async ({ page }) => {
@@ -225,4 +225,18 @@ test("only persistent Light and Dark appearance modes remain readable", async ({
   await page.getByRole("button", { name: "Switch to Dark Mode" }).click();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});
+
+test("public email recovery yields the same response for known and unknown fixture accounts with mail disabled", async ({ request, baseURL }) => {
+  const requestReset = (email) => request.post("/api/auth/forgot-password", {
+    headers: { origin: baseURL },
+    data: { email },
+  });
+  const known = await requestReset("driver1@tarumt.edu.my");
+  const unknown = await requestReset("missing-staff@example.test");
+  expect(known.status()).toBe(200);
+  expect(unknown.status()).toBe(200);
+  const publicBody = await known.json();
+  expect(Object.keys(publicBody)).toEqual(["message"]);
+  expect(await unknown.json()).toEqual(publicBody);
 });

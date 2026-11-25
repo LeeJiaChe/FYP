@@ -1,9 +1,13 @@
 "use client";
 
 import { AlertCircle, Lock } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
-export function ResetPasswordForm({ token }: { token: string }) {
+import { useEmailLinkToken } from "./useEmailLinkToken";
+
+export function ResetPasswordForm() {
+  const token = useEmailLinkToken();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -11,6 +15,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!token) return;
     setBusy(true);
     setError(null);
     try {
@@ -31,6 +36,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
       setBusy(false);
     }
   }
+
+  if (token === undefined) return <p role="status">Reading reset link…</p>;
+  if (!token) return (
+    <div className="space-y-4">
+      <p className="text-sm text-red-400">This reset link is missing its one-time token.</p>
+      <Link href="/forgot-password" className="btn-primary w-full">Request another link</Link>
+    </div>
+  );
 
   return (
     <form onSubmit={submit} className="space-y-4">

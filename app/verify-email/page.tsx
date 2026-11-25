@@ -3,12 +3,7 @@ import Link from "next/link";
 
 import { VerifyEmailAction } from "@/features/identity/ui";
 
-export default async function VerifyEmailPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ token?: string }>;
-}) {
-  const { token } = await searchParams;
+export default function VerifyEmailPage() {
   return (
     <main id="main-content" className="auth-shell">
       <div className="w-full max-w-md space-y-6">
@@ -17,7 +12,7 @@ export default async function VerifyEmailPage({
           <h1 className="text-2xl font-extrabold tracking-tight">Verify student email</h1>
         </div>
         <div className="auth-panel">
-          {token ? <VerifyEmailAction token={token} /> : <p className="text-sm text-red-400">This verification link is missing its token.</p>}
+          <VerifyEmailAction />
         </div>
       </div>
     </main>

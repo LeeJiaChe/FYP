@@ -39,7 +39,7 @@ export interface TransactionalEmailConfiguration {
 
 function link(baseUrl: string, path: string, rawToken: string): string {
   const url = new URL(path, `${baseUrl.replace(/\/$/, "")}/`);
-  url.searchParams.set("token", rawToken);
+  url.hash = new URLSearchParams({ token: rawToken }).toString();
   return url.toString();
 }
 

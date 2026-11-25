@@ -53,3 +53,14 @@ server-only Google/Resend dependencies, raw-token persistence exclusions, thin
 auth transports, gated Quick Login UI, and preserved seed fixtures. PostgreSQL
 integration execution remains conditional on the guarded isolated
 `TEST_DATABASE_URL`; no shared Supabase database may be used for this phase.
+
+## November 2026 recovery
+
+The counts above describe earlier baselines. The current review branch
+verification uses pinned Node 24 and Playwright 1.55.0, and provisioner-owned
+PostgreSQL fixture clusters. See the [fixture commands](../tests/integration/README.md),
+[database rehearsal](RECOVERY_DATABASE_REHEARSAL.md), and [lock evidence](FINAL_CONCURRENCY_EVIDENCE.md).
+The historical master job reached Chromium download and was cancelled near its
+20-minute job limit. A download stall was observed, but its underlying cause
+was unverified. The revised workflow uses bounded retries and a separate
+Chromium installation timeout.

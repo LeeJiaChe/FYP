@@ -32,9 +32,9 @@ describe("transactional email delivery", () => {
     assert.deepEqual(verificationResult, {});
     assert.equal(sent[0]?.to, "driver@tarumt.edu.my");
     assert.equal(sent[0]?.from, "Shuttle Operator <notifications@owned.example>");
-    assert.match(sent[0]?.text ?? "", /^Reset your shuttle staff password: https:\/\/shuttle\.example\/reset-password\?token=/);
+    assert.match(sent[0]?.text ?? "", /^Reset your shuttle staff password: https:\/\/shuttle\.example\/reset-password#token=/);
     assert.equal(sent[1]?.to, "student@student.tarc.edu.my");
-    assert.match(sent[1]?.text ?? "", /^Verify your shuttle account: https:\/\/shuttle\.example\/verify-email\?token=/);
+    assert.match(sent[1]?.text ?? "", /^Verify your shuttle account: https:\/\/shuttle\.example\/verify-email#token=/);
   });
 
   it("fails closed when production email configuration is missing, even with preview requested", async () => {
@@ -68,7 +68,7 @@ describe("transactional email delivery", () => {
     assert.equal(delivery.preview, true);
     assert.equal(
       result.previewUrl,
-      "http://localhost:3000/reset-password?token=preview-token",
+      "http://localhost:3000/reset-password#token=preview-token",
     );
   });
 

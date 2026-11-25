@@ -8,7 +8,7 @@ import {
 } from "../src/shared/db/disposable-fixture";
 
 export async function verifyTestDatabaseEnvironment(
-  environment: NodeJS.ProcessEnv,
+  environment: Readonly<Record<string, string | undefined>>,
   database?: FixtureDatabase,
 ) {
   const target = fixtureTarget(environment, database);

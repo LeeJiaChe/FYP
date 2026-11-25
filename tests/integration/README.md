@@ -1,25 +1,34 @@
-# PostgreSQL integration-test boundary
+# Disposable PostgreSQL verification
 
-Integration tests use a dedicated PostgreSQL database and fail closed. They never
-fall back to `DATABASE_URL` and never use SQLite.
+Use a clean, credential-free Linux or WSL checkout with the Node version in
+`.nvmrc`, PostgreSQL 16 server binaries, `psql`, and `pg_config`. The fixture
+commands reject checkout dotenv files and run children with an allowlisted
+environment. They never use an operator-provided database URL.
 
-To run them locally, create a disposable database whose name ends in `_test`, then
-set both safeguards explicitly:
-
-```bash
-TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fyp_bus_test" \
-TEST_DATABASE_CONFIRM="FYP_BUS_INTEGRATION" \
-npm run test:integration
+```sh
+npm ci
+npx --no-install prisma generate
+npx --no-install playwright install chromium
+TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION npm run test:integration
+TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION npm run test:rehearsal
+TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION npm run test:e2e
 ```
 
-If `DATABASE_URL` is set, it must point somewhere different. The runner refuses
-an unconfirmed/non-`_test` URL, resets only the verified database, applies every
-Prisma migration, reports migration status, and then executes the integration
-suite. Fixtures must reuse `verifyTestDatabaseEnvironment` and must never run
-destructive setup from an unverified `DATABASE_URL`.
+Each command creates a new mode-0700 directory and PostgreSQL cluster with
+TCP disabled. Only a private Unix socket is used. PostgreSQL requires a unique
+SCRAM password for the fixture owner. A separate nonce marker is installed in
+each fixture database. Before deployment, seeding, or application startup, the
+runner verifies the exact intended Prisma URL, private path ownership and
+permissions, and PostgreSQL's current database, role, data directory, transport,
+and nonce. The acknowledgement alone confers no access. The post-run cleanup
+stops the cluster and removes the directory. If an OS-level kill interrupts
+cleanup, inspect the exact private fixture path before removing it. Do not
+operate on another PostgreSQL cluster.
 
-Phase 3 introduced real schema coverage; Phase 4 adds reserved-allocation races,
-and Phase 5 adds locked standing-admission, pass, boarding, alighting, and Trip
-progress scenarios. PostgreSQL 16 CI is the authoritative fallback when a local
-execution environment does not permit PostgreSQL sockets; SQLite is not
-supported.
+Integration uses `prisma migrate deploy` on a fresh database. The browser
+runner deploys and atomically seeds a separate fresh database. `npm run db:seed`
+requires proof from an active provisioned fixture. Running it with normal
+development settings refuses before the first write. Browser tests select a
+fresh loopback port, verify the database before starting Next.js, and reject
+server reuse. Demo Student login and QR controls are enabled only in the browser
+child environment. Schedulers, external providers, and email preview are off.

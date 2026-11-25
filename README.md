@@ -118,7 +118,7 @@ describes the existing runtime at a high level, not the completed Architecture v
 
 ## 📦 Prerequisites
 
-- **Node.js** ≥ 20.9 (required by Next.js 16)
+- **Node.js** 24.22.3 for reproducible local and CI verification (`.nvmrc`)
 - **npm** ≥ 9
 - Access to the dedicated shared **Supabase PostgreSQL** instance
 
@@ -171,7 +171,9 @@ RUN_SCHEDULED_JOBS="false"
 > Normal teammate development `.env` MUST keep `RUN_SCHEDULED_JOBS="false"`. This ensures the Socket.IO service and invalidation `/emit` bridge start normally while disabling duplicate background cron jobs (no-show reconciliation, location retention) and duplicate GPS simulator writes against the shared Supabase database.
 > Only **ONE** designated machine (the demo or central operator) should set `RUN_SCHEDULED_JOBS="true"`.
 
-`TEST_DATABASE_URL` and `TEST_DATABASE_CONFIRM` are deliberately absent from normal development setup; they are opt-in fail-closed integration test settings described in `.env.example`.
+Run destructive verification in a separate checkout without local dotenv
+credential files. The runners provision their own private PostgreSQL cluster
+and require explicit acknowledgement. See the [disposable test setup](./tests/integration/README.md).
 
 ### 3. Verify Database Connection
 
@@ -185,7 +187,7 @@ npm run db:check
 
 > [!CAUTION]
 > **IMPORTANT FOR TEAMMATES:**
-> - Do **NOT** run `npm run db:seed` against the shared Supabase database. The shared database is already initialized and seeded.
+> - The demo seed requires a verified disposable cluster. Shared schema changes require the separately approved rollout in [the database rehearsal](./framework/RECOVERY_DATABASE_REHEARSAL.md).
 > - Do **NOT** run `npx prisma migrate reset`.
 > - Do **NOT** run `npx prisma db push`.
 
@@ -280,14 +282,15 @@ enabling it.
 | `npm run start` | Start production server |
 | `npm run realtime` | Start standalone Socket.io service on port `4000` |
 | `npm run db:check` | Run non-destructive database check (`prisma generate`, `prisma validate`, `prisma migrate status`) |
-| `npm run db:seed` | Seed the database with demo data (initial setup only — do not run on shared DB) |
+| `npm run db:seed` | Atomically reset and seed a verified provisioner-owned fixture database |
 | `npm run lint` | Zero-warning Architecture v2/new-code ESLint gate |
 | `npm run lint:legacy` | Report the inherited full-repository lint baseline |
 | `npm run typecheck` | Run the strict TypeScript check |
 | `npm test` / `npm run test:unit` | Run pure unit/specification tests |
 | `npm run test:architecture` | Enforce Architecture v2 dependency boundaries |
-| `npm run test:integration` | Run guarded tests against dedicated PostgreSQL (`*_test`) |
-| `npm run test:e2e` | Run Playwright browser tests against a prepared isolated environment |
+| `npm run test:integration` | Provision, migrate, and run the guarded PostgreSQL integration suite |
+| `npm run test:rehearsal` | Verify clean and seven-to-nine migration paths on separate private fixture databases |
+| `npm run test:e2e` | Provision, migrate, seed, and test a dedicated loopback app with pinned Playwright |
 | `npm run verify` | Run the fast non-database Architecture v2 gate |
 
 ---
