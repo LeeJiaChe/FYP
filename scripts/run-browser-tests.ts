@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 
 import { runFixtureCommand, withDisposablePostgres } from "./disposable-postgres";
@@ -24,7 +25,7 @@ void withDisposablePostgres(async ({ environment }) => {
   const port = await selectLoopbackPort();
   let realtimePort = await selectLoopbackPort();
   if (realtimePort === port) realtimePort = await selectLoopbackPort();
-  runFixtureCommand(process.execPath, ["node_modules/@playwright/test/cli.js", "test"], {
+  const environmentForApp = {
     ...env,
     NODE_ENV: "development",
     FYP_FIXTURE_APP_PORT: String(port),
@@ -37,6 +38,38 @@ void withDisposablePostgres(async ({ environment }) => {
     NEXTJS_INTERNAL_URL: `http://127.0.0.1:${port}`,
     NEXT_PUBLIC_DEMO_MODE: "true",
     DEMO_STUDENT_PASSWORD_LOGIN_ENABLED: "true",
+  };
+  if (!process.argv.includes("--demo")) {
+    runFixtureCommand(process.execPath, ["node_modules/@playwright/test/cli.js", "test"], environmentForApp);
+    return;
+  }
+
+  console.log(`Isolated demo: http://127.0.0.1:${port} (Ctrl+C to stop)`);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(process.execPath, ["--import", "tsx", "scripts/start-fixture-app.ts"], {
+      env: { ...environmentForApp, RUN_SCHEDULED_JOBS: "true" },
+      stdio: "inherit",
+    });
+    let shuttingDown = false;
+    const stop = () => {
+      shuttingDown = true;
+      child.kill("SIGTERM");
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    const cleanUpSignals = () => {
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+    };
+    child.once("error", (error) => {
+      cleanUpSignals();
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      cleanUpSignals();
+      if (shuttingDown || code === 0) resolve();
+      else reject(new Error("The isolated demo exited unexpectedly"));
+    });
   });
 }).catch((error: Error) => {
   console.error(error.message);

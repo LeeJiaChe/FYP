@@ -15,6 +15,7 @@
     "test:integration": "node --import tsx scripts/run-integration-tests.ts",
     "test:rehearsal": "node --conditions=react-server --import tsx scripts/rehearse-migrations.ts",
     "test:architecture": "node --import tsx --test tests/architecture/*.test.ts",
+    "demo:fixture": "node --import tsx scripts/run-browser-tests.ts --demo",
     "test:e2e": "node --import tsx scripts/run-browser-tests.ts",
     "verify": "npm run lint && npm run typecheck && npm run test:unit && npm run test:architecture",
     "db:check": "prisma generate && prisma validate && prisma migrate status",
