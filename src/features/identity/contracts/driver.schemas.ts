@@ -14,7 +14,8 @@ export const createDriverSchema = z.object({
     .max(128)
     .regex(/[A-Z]/, "Password must contain an uppercase letter")
     .regex(/[a-z]/, "Password must contain a lowercase letter")
-    .regex(/[0-9]/, "Password must contain a number"),
+    .regex(/[0-9]/, "Password must contain a number")
+    .refine((value) => new TextEncoder().encode(value).length <= 72, "Password must be at most 72 UTF-8 bytes"),
 });
 
 export const updateDriverSchema = z

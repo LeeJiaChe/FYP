@@ -2,6 +2,7 @@ import { isFixtureDemoAuthEnabled } from "@/features/identity/infrastructure/dem
 import { NextResponse } from "next/server";
 import { getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isKnownFixturePassword } from "@/shared/validation/staff-password";
 import { assertSameOriginMutation } from "@/shared/http/origin-check";
 
 export async function POST(req: Request) {
@@ -25,12 +26,16 @@ export async function POST(req: Request) {
   try {
     const { currentPassword, newPassword } = await req.json();
 
-    if (!currentPassword || !newPassword) {
+    if (typeof currentPassword !== "string" || !currentPassword || typeof newPassword !== "string" || !newPassword) {
       return NextResponse.json({ error: "All fields are required." }, { status: 400 });
     }
 
     if (newPassword.length < 8) {
       return NextResponse.json({ error: "New password must be at least 8 characters." }, { status: 400 });
+    }
+
+    if (Buffer.byteLength(newPassword, "utf8") > 72 || isKnownFixturePassword(newPassword)) {
+      return NextResponse.json({ error: "Use a different password of at most 72 UTF-8 bytes." }, { status: 400 });
     }
 
     // Verify the current password

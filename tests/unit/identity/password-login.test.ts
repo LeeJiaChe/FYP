@@ -96,3 +96,14 @@ describe("role-specific password login", () => {
     );
   });
 });
+
+it("allows a public seed password for staff only in the proven demo context", async () => {
+  const input = {
+    identifier: "staff@example.test",
+    password: "password123",
+    store: store(user({ role: "ADMIN" })),
+    verifyPassword: matches,
+  };
+  await assert.rejects(authenticateWithPassword({ ...input, demoStudentPasswordLoginEnabled: false }), /Invalid credentials/);
+  assert.equal((await authenticateWithPassword({ ...input, demoStudentPasswordLoginEnabled: true })).role, "ADMIN");
+});
