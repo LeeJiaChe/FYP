@@ -37,7 +37,7 @@ export function rateLimitClientKey(headers: Headers, trustProxy = process.env.TR
   return address && isIP(address) ? address : "unknown";
 }
 
-export const loginRateLimiter = new RateLimiter(60_000, 20);
+export const loginRateLimiter = new RateLimiter(60_000, 25);
 export const loginIdentifierRateLimiter = new RateLimiter(5 * 60_000, 10);
 export const registerRateLimiter = new RateLimiter(60_000, 5);
 export const resendVerificationRateLimiter = new RateLimiter(10 * 60_000, 5);
