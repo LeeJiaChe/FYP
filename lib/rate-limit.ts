@@ -1,49 +1,49 @@
-class RateLimiter {
-  private windowMs: number;
-  private maxRequests: number;
-  private store: Map<string, { count: number; expiresAt: number }>;
+import { isIP } from "node:net";
 
-  constructor(windowMs: number = 60 * 1000, maxRequests: number = 5) {
-    this.windowMs = windowMs;
-    this.maxRequests = maxRequests;
-    this.store = new Map();
-  }
+export class RateLimiter {
+  private readonly store = new Map<string, { count: number; expiresAt: number }>();
+  private nextSweep = 0;
 
-  /**
-   * Checks if a key has exceeded the rate limit.
-   * @returns true if allowed, false if rate limited
-   */
-  public check(key: string): boolean {
-    const now = Date.now();
+  constructor(
+    private readonly windowMs: number,
+    private readonly maxRequests: number,
+    private readonly capacity = 10_000,
+  ) {}
+
+  check(key: string, now = Date.now()): boolean {
+    if (now >= this.nextSweep) {
+      for (const [entry, record] of this.store) {
+        if (now >= record.expiresAt) this.store.delete(entry);
+      }
+      this.nextSweep = now + Math.min(this.windowMs, 60_000);
+    }
+
     const record = this.store.get(key);
-
-    if (!record) {
+    if (!record || now >= record.expiresAt) {
+      if (!record && this.store.size >= this.capacity) return false;
       this.store.set(key, { count: 1, expiresAt: now + this.windowMs });
       return true;
     }
 
-    if (now > record.expiresAt) {
-      // Reset window
-      this.store.set(key, { count: 1, expiresAt: now + this.windowMs });
-      return true;
-    }
-
-    if (record.count >= this.maxRequests) {
-      return false; // Rate limited
-    }
-
+    if (record.count >= this.maxRequests) return false;
     record.count++;
     return true;
   }
 }
 
-// Global instances so they persist across requests in development/edge (where possible)
-export const loginRateLimiter = new RateLimiter(60 * 1000, 100); // 100 attempts per minute for tests
-export const registerRateLimiter = new RateLimiter(60 * 1000, 100); // 100 registrations per minute for tests
-export const resendVerificationRateLimiter = new RateLimiter(10 * 60 * 1000, 5);
-export const googleStudentLoginRateLimiter = new RateLimiter(10 * 60 * 1000, 20);
-export const googleStudentOnboardingRateLimiter = new RateLimiter(10 * 60 * 1000, 10);
-export const passwordResetRequestRateLimiter = new RateLimiter(15 * 60 * 1000, 5);
-export const passwordResetCompletionRateLimiter = new RateLimiter(15 * 60 * 1000, 10);
-export const askIntelligenceRateLimiter = new RateLimiter(60 * 1000, 10);
-export const interpretIntelligenceRateLimiter = new RateLimiter(60 * 1000, 10);
+/** The ingress must overwrite this header and prevent access around the proxy. */
+export function rateLimitClientKey(headers: Headers, trustProxy = process.env.TRUST_FYP_CLIENT_IP === "true"): string {
+  const address = trustProxy ? headers.get("x-fyp-client-ip")?.trim() : undefined;
+  return address && isIP(address) ? address : "unknown";
+}
+
+export const loginRateLimiter = new RateLimiter(60_000, 20);
+export const loginIdentifierRateLimiter = new RateLimiter(5 * 60_000, 10);
+export const registerRateLimiter = new RateLimiter(60_000, 5);
+export const resendVerificationRateLimiter = new RateLimiter(10 * 60_000, 5);
+export const googleStudentLoginRateLimiter = new RateLimiter(10 * 60_000, 20);
+export const googleStudentOnboardingRateLimiter = new RateLimiter(10 * 60_000, 10);
+export const passwordResetRequestRateLimiter = new RateLimiter(15 * 60_000, 5);
+export const passwordResetCompletionRateLimiter = new RateLimiter(15 * 60_000, 10);
+export const askIntelligenceRateLimiter = new RateLimiter(60_000, 10);
+export const interpretIntelligenceRateLimiter = new RateLimiter(60_000, 10);

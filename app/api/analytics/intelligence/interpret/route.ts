@@ -1,5 +1,5 @@
 import { getUserFromToken } from "@/lib/auth";
-import { interpretIntelligenceRateLimiter } from "@/lib/rate-limit";
+import { interpretIntelligenceRateLimiter, rateLimitClientKey } from "@/lib/rate-limit";
 import {
   interpretIntelligenceInputSchema,
   interpretOperationsIntelligence,
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   return handleRoute(request, async () => {
     const actor = await getUserFromToken();
     if (!actor) throw unauthenticated();
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const ip = rateLimitClientKey(request.headers);
     if (!interpretIntelligenceRateLimiter.check(`${actor.userId}:${ip}`)) {
       throw validationError("Operations interpretation rate limit reached");
     }

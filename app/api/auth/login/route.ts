@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import { createApplicationSession } from "@/lib/auth";
-import { loginRateLimiter } from "@/lib/rate-limit";
+import { loginIdentifierRateLimiter, loginRateLimiter, rateLimitClientKey } from "@/lib/rate-limit";
 import { loginSchema } from "@/lib/validations";
 import {
   loginWithPassword,
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Cross-origin mutation rejected" }, { status: 403 });
   }
   try {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ip = rateLimitClientKey(request.headers);
     if (!loginRateLimiter.check(ip)) {
       return NextResponse.json(
         { error: "Too many login attempts, please try again later" },
@@ -30,6 +30,12 @@ export async function POST(request: Request) {
     }
 
     const validated = await parseJsonBody(request, loginSchema, 4_096);
+    if (!loginIdentifierRateLimiter.check(`${ip}:${validated.emailOrStudentId.trim().toLowerCase()}`)) {
+      return NextResponse.json(
+        { error: "Too many login attempts, please try again later" },
+        { status: 429 },
+      );
+    }
     const user = await loginWithPassword({
       identifier: validated.emailOrStudentId,
       password: validated.password,
@@ -52,8 +58,8 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     if (error instanceof PasswordLoginError) {
       return NextResponse.json(
-        { error: error.message, code: error.code },
-        { status: error.code === "USE_GOOGLE" ? 403 : 401 },
+        { error: "Invalid credentials", code: "INVALID_CREDENTIALS" },
+        { status: 401 },
       );
     }
     if (error instanceof ZodError || error instanceof ApplicationError) {

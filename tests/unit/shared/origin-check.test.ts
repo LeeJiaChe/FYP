@@ -63,3 +63,17 @@ describe("same-origin mutation protection", () => {
     }
   });
 });
+
+it("uses the configured application origin in production regardless of forwarded headers", () => {
+  const previous = process.env;
+  try {
+    process.env = { ...previous, NODE_ENV: "production", APP_BASE_URL: "https://shuttle.example.test" };
+    const forwarded = { "x-forwarded-host": "untrusted.example.test", "x-forwarded-proto": "https" };
+    assert.doesNotThrow(() => assertSameOriginMutation(request("POST", { ...forwarded, origin: "https://shuttle.example.test" })));
+    assert.throws(() => assertSameOriginMutation(request("POST", { ...forwarded, origin: "https://untrusted.example.test" })), /Cross-origin/);
+    delete process.env.APP_BASE_URL;
+    assert.throws(() => assertSameOriginMutation(request("POST", { ...forwarded, origin: "https://shuttle.example.test" })), /unavailable/);
+  } finally {
+    process.env = previous;
+  }
+});

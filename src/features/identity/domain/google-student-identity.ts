@@ -1,3 +1,5 @@
+import { studentEmailSchema } from "@/shared/validation/student-identity";
+
 export interface GoogleIdTokenClaims {
   readonly sub?: string;
   readonly email?: string;
@@ -61,7 +63,7 @@ export function validateGoogleStudentClaims(input: {
   if (!claims.iss || !GOOGLE_ISSUERS.has(claims.iss)) {
     throw new GoogleIdentityClaimsError("ISSUER_INVALID");
   }
-  if (!claims.exp || claims.exp * 1_000 <= input.now.getTime()) {
+  if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp * 1_000 <= input.now.getTime()) {
     throw new GoogleIdentityClaimsError("TOKEN_EXPIRED");
   }
   if (!claims.email) throw new GoogleIdentityClaimsError("MISSING_EMAIL");
@@ -69,11 +71,11 @@ export function validateGoogleStudentClaims(input: {
     throw new GoogleIdentityClaimsError("EMAIL_UNVERIFIED");
   }
 
-  const email = claims.email.trim().toLowerCase();
-  const separator = email.lastIndexOf("@");
-  if (separator <= 0 || email.slice(separator + 1) !== hostedDomain) {
+  const studentEmail = studentEmailSchema.safeParse(claims.email);
+  if (!studentEmail.success) {
     throw new GoogleIdentityClaimsError("EMAIL_DOMAIN_NOT_ALLOWED");
   }
+  const email = studentEmail.data;
   if (!claims.hd) throw new GoogleIdentityClaimsError("HOSTED_DOMAIN_MISSING");
   if (claims.hd.trim().toLowerCase() !== hostedDomain) {
     throw new GoogleIdentityClaimsError("HOSTED_DOMAIN_NOT_ALLOWED");
@@ -83,7 +85,7 @@ export function validateGoogleStudentClaims(input: {
     provider: "GOOGLE" as const,
     providerSubject: claims.sub,
     email,
-    name: claims.name?.trim() || email.slice(0, separator),
+    name: claims.name?.trim() || email.slice(0, email.indexOf("@")),
     hostedDomain,
   });
 }

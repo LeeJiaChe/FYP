@@ -235,3 +235,17 @@ describe("Google Workspace Student identity", () => {
     });
   }
 });
+
+it("validates the canonical student email independently of the configured Workspace domain", () => {
+  const workspace = "workspace.example.test";
+  const input = { clientId, hostedDomain: workspace, now };
+  assert.equal(validateGoogleStudentClaims({ ...input, claims: claims({ hd: workspace }) }).hostedDomain, workspace);
+  assert.throws(
+    () => validateGoogleStudentClaims({ ...input, claims: claims({ hd: workspace, email: `student@${workspace}` }) }),
+    /EMAIL_DOMAIN_NOT_ALLOWED/,
+  );
+  assert.throws(
+    () => validateGoogleStudentClaims({ ...input, claims: validClaims }),
+    /HOSTED_DOMAIN_NOT_ALLOWED/,
+  );
+});

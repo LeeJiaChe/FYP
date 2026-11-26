@@ -58,3 +58,12 @@ describe("Google Student onboarding state", () => {
     assert.equal(payload.userId, undefined);
   });
 });
+
+it("retains the canonical email requirement through signed onboarding state", () => {
+  const workspace = { ...configuration, hostedDomain: "workspace.example.test" };
+  const when = new Date("2026-09-05T08:00:00Z");
+  const valid = { ...identity, hostedDomain: workspace.hostedDomain };
+  assert.deepEqual(verifyGoogleOnboardingState(createGoogleOnboardingState(valid, workspace, when), workspace, when), valid);
+  const invalid = { ...valid, email: "student@workspace.example.test" };
+  assert.equal(verifyGoogleOnboardingState(createGoogleOnboardingState(invalid, workspace, when), workspace, when), null);
+});

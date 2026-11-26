@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import { createApplicationSession } from "@/lib/auth";
-import { googleStudentLoginRateLimiter } from "@/lib/rate-limit";
+import { googleStudentLoginRateLimiter, rateLimitClientKey } from "@/lib/rate-limit";
 import {
   createStudentOnboardingState,
   googleOnboardingCookieOptions,
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Cross-origin mutation rejected" }, { status: 403 });
   }
   try {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ip = rateLimitClientKey(request.headers);
     if (!googleStudentLoginRateLimiter.check(ip)) {
       return NextResponse.json(
         { error: "Too many Google sign-in attempts. Try again later." },

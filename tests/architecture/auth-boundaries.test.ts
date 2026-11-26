@@ -28,9 +28,11 @@ describe("institutional authentication architecture", () => {
   });
 
   it("gates all three Quick Login buttons behind the public demo flag", async () => {
-    const login = await source("app/login/page.tsx");
-    assert.match(login, /NEXT_PUBLIC_DEMO_MODE/);
-    assert.match(login, /NODE_ENV !== "production"/);
+    const page = await source("app/login/page.tsx");
+    const login = await source("app/login/LoginForm.tsx");
+    assert.match(page, /NEXT_PUBLIC_DEMO_MODE/);
+    assert.match(page, /await isFixtureDemoAuthEnabled/);
+    assert.match(page, /NODE_ENV !== "production"/);
     assert.match(login, /demoMode &&/);
     for (const label of ["Student 1", "Driver 1", "Admin Staff"]) {
       assert.match(login, new RegExp(label));

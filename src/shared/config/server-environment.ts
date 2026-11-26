@@ -81,8 +81,9 @@ const rawServerEnvironmentSchema = z
     GEMINI_API_KEY: z.string().default(""),
     GEMINI_MODEL: z.string().trim().min(1).default("gemini-3.8-flash"),
     NEXT_PUBLIC_GOOGLE_CLIENT_ID: googleClientIdSchema,
-    GOOGLE_STUDENT_HOSTED_DOMAIN: hostedDomainSchema.default(
-      "student.tarc.edu.my",
+    GOOGLE_STUDENT_HOSTED_DOMAIN: z.preprocess(
+      (value) => typeof value === "string" && !value.trim() ? undefined : value,
+      hostedDomainSchema.optional(),
     ),
     DEMO_STUDENT_PASSWORD_LOGIN_ENABLED: z
       .enum(["true", "false"])
@@ -94,7 +95,10 @@ const rawServerEnvironmentSchema = z
       .default("")
       .refine((value) => !value || value.length >= 10, "must be a valid API key"),
     EMAIL_FROM: emailFromSchema,
-    APP_BASE_URL: httpUrlSchema.default("http://localhost:3000"),
+    APP_BASE_URL: httpUrlSchema.refine((value) => {
+      const url = new URL(value);
+      return url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+    }, "must be an origin without credentials, path, query, or fragment").default("http://localhost:3000"),
   })
   .superRefine((environment, context) => {
     const secrets = [
@@ -276,8 +280,8 @@ export function parseServerEnvironment(
     }),
     googleStudent: Object.freeze({
       clientId: environment.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
-      hostedDomain: environment.GOOGLE_STUDENT_HOSTED_DOMAIN,
-      configured: environment.NEXT_PUBLIC_GOOGLE_CLIENT_ID.length > 0,
+      hostedDomain: environment.GOOGLE_STUDENT_HOSTED_DOMAIN ?? "",
+      configured: Boolean(environment.NEXT_PUBLIC_GOOGLE_CLIENT_ID && environment.GOOGLE_STUDENT_HOSTED_DOMAIN),
     }),
     demoAuth: Object.freeze({
       studentPasswordLoginEnabled:

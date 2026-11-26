@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
-import { passwordResetCompletionRateLimiter } from "@/lib/rate-limit";
+import { passwordResetCompletionRateLimiter, rateLimitClientKey } from "@/lib/rate-limit";
 import {
   resetPasswordSchema,
   resetStaffPassword,
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Cross-origin mutation rejected" }, { status: 403 });
   }
   try {
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ip = rateLimitClientKey(request.headers);
     if (!passwordResetCompletionRateLimiter.check(ip)) {
       return NextResponse.json(
         { error: "Too many password reset attempts. Try again later." },

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isFixtureDemoAuthEnabled } from "@/features/identity/infrastructure/demo-auth.server";
+
 import { verifyPassword } from "@/lib/auth";
 import { serverEnvironment } from "@/shared/config/env.server";
 import { productPolicy } from "@/shared/config/policies";
@@ -63,7 +65,7 @@ export async function registerStudent(input: {
   studentId: string;
   password: string;
 }) {
-  if (!serverEnvironment.demoAuth.studentPasswordLoginEnabled) {
+  if (!(await isFixtureDemoAuthEnabled())) {
     throw new StudentRegistrationError(
       "REGISTRATION_DISABLED",
       "Student password registration is disabled. Continue with TAR UMT Google.",
@@ -87,7 +89,7 @@ export async function loginWithPassword(input: {
   return authenticateWithPassword({
     ...input,
     demoStudentPasswordLoginEnabled:
-      serverEnvironment.demoAuth.studentPasswordLoginEnabled,
+      (await isFixtureDemoAuthEnabled()),
     store: passwordLoginStore,
     verifyPassword,
   });
@@ -114,7 +116,9 @@ export async function completeStudentOnboarding(input: {
   name: string;
   studentId: string;
 }) {
-  const identity = verifyGoogleOnboardingState(input.onboardingState);
+  const identity = serverEnvironment.googleStudent.configured
+    ? verifyGoogleOnboardingState(input.onboardingState)
+    : null;
   if (!identity) {
     throw new GoogleStudentAuthError(
       "ONBOARDING_STATE_INVALID",
@@ -131,7 +135,9 @@ export async function completeStudentOnboarding(input: {
 }
 
 export function readStudentOnboardingProfile(onboardingState: string | undefined) {
-  const identity = verifyGoogleOnboardingState(onboardingState);
+  const identity = serverEnvironment.googleStudent.configured
+    ? verifyGoogleOnboardingState(onboardingState)
+    : null;
   return identity ? { email: identity.email, name: identity.name } : null;
 }
 

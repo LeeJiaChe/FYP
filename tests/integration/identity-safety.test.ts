@@ -75,3 +75,36 @@ it("serializes reset consumption, rejects expired and reused credentials, and re
   assert.equal(tokens.length, 2);
   assert.ok(tokens.every((token) => /^[a-f0-9]{64}$/.test(token.tokenHash) && token.tokenHash !== raw));
 });
+
+it("allows one concurrent onboarding or legacy claimant while preserving subject and role boundaries", async () => {
+  const { googleStudentIdentityStore: store } = await import("../../src/features/identity/infrastructure/google-identity.prisma.server");
+  const now = new Date();
+  const key = randomUUID();
+  const identity = {
+    provider: "GOOGLE" as const, providerSubject: key, email: `${key}@student.tarc.edu.my`,
+    name: "Synthetic Student", hostedDomain: "workspace.example.test",
+  };
+  const input = { identity, now, name: identity.name, studentId: key, initialCredit: 100 };
+  assert.equal((await store.resolveOrLink(identity, now)).kind, "ONBOARDING_REQUIRED");
+  const onboarding = await Promise.all([store.completeOnboarding(input), store.completeOnboarding(input)]);
+  assert.equal(onboarding.filter(({ kind }) => kind === "CREATED").length, 1);
+  const returning = await store.resolveOrLink(identity, now);
+  assert.equal(returning.kind, "AUTHENTICATED");
+  assert.equal((await store.resolveOrLink({ ...identity, providerSubject: randomUUID() }, now)).kind, "IDENTITY_CONFLICT");
+
+  const legacy = await prisma.user.create({
+    data: { email: `legacy-${identity.email}`, name: "Synthetic Legacy", role: "STUDENT", studentIdentityAssurance: "LEGACY_PROTOTYPE" },
+  });
+  const candidates = [randomUUID(), randomUUID()].map((providerSubject) => ({ ...identity, providerSubject, email: legacy.email }));
+  const linked = await Promise.all(candidates.map((claim) => store.resolveOrLink(claim, now)));
+  assert.equal(linked.filter(({ kind }) => kind === "AUTHENTICATED").length, 1);
+  assert.equal(await prisma.externalAuthIdentity.count({ where: { userId: legacy.id } }), 1);
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: legacy.id } })).studentIdentityAssurance, "GOOGLE_WORKSPACE_VERIFIED");
+  assert.equal((await store.resolveOrLink({ ...identity, email: legacy.email }, now)).kind, "EMAIL_CONFLICT");
+
+  for (const role of ["DRIVER", "ADMIN"] as const) {
+    const staff = await prisma.user.create({ data: { email: `${role.toLowerCase()}-${identity.email}`, name: role, role } });
+    assert.equal((await store.resolveOrLink({ ...identity, email: staff.email, providerSubject: randomUUID() }, now)).kind, "PRIVILEGED_ACCOUNT_CONFLICT");
+    assert.equal(await prisma.externalAuthIdentity.count({ where: { userId: staff.id } }), 0);
+  }
+});

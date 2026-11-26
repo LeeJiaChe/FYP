@@ -82,7 +82,7 @@ export async function verifyGoogleStudentCredential(input: {
   verifier: GoogleCredentialVerifier;
   now?: Date;
 }): Promise<VerifiedGoogleStudentIdentity> {
-  if (!input.clientId) {
+  if (!input.clientId || !input.hostedDomain.trim()) {
     throw new GoogleStudentAuthError(
       "UNAVAILABLE",
       "Google Student sign-in is not configured",

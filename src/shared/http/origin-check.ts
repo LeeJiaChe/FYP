@@ -13,6 +13,12 @@ function firstForwardedValue(value: string | null): string | undefined {
 }
 
 export function requestPublicOrigin(request: OriginRequest): string {
+  if (process.env.NODE_ENV === "production") {
+    const configured = process.env.APP_BASE_URL;
+    if (!configured) throw forbidden("Application origin is unavailable");
+    return new URL(configured).origin;
+  }
+
   const requestUrl = new URL(request.url);
   const forwardedHost = firstForwardedValue(
     request.headers.get("x-forwarded-host"),

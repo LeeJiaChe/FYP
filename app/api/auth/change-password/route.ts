@@ -1,7 +1,7 @@
+import { isFixtureDemoAuthEnabled } from "@/features/identity/infrastructure/demo-auth.server";
 import { NextResponse } from "next/server";
 import { getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { serverEnvironment } from "@/shared/config/env.server";
 import { assertSameOriginMutation } from "@/shared/http/origin-check";
 
 export async function POST(req: Request) {
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (
     user.role === "STUDENT" &&
-    !serverEnvironment.demoAuth.studentPasswordLoginEnabled
+    !(await isFixtureDemoAuthEnabled())
   ) {
     return NextResponse.json(
       { error: "Students manage sign-in through their TAR UMT Google account." },

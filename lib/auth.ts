@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isFixtureDemoAuthEnabled } from "@/features/identity/infrastructure/demo-auth.server";
+
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
@@ -69,7 +71,7 @@ export function createApplicationSession(user: {
 
 function verifyToken(token: string): JWTPayload | null {
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
     if (
       typeof payload === "string" ||
       typeof payload.userId !== "string" ||
@@ -78,6 +80,7 @@ function verifyToken(token: string): JWTPayload | null {
         payload.role !== "ADMIN") ||
       typeof payload.email !== "string" ||
       typeof payload.name !== "string" ||
+      typeof payload.exp !== "number" ||
       !Number.isInteger(payload.sessionVersion)
     ) {
       return null;
@@ -121,7 +124,7 @@ export async function getUserFromToken(): Promise<JWTPayload | null> {
         assurance: user.studentIdentityAssurance,
         emailVerifiedAt: user.emailVerifiedAt,
         demoPasswordLoginEnabled:
-          serverEnvironment.demoAuth.studentPasswordLoginEnabled,
+          (await isFixtureDemoAuthEnabled()),
       }))
   ) {
     return null;
@@ -156,7 +159,7 @@ export async function getCurrentUser() {
       assurance: user.studentIdentityAssurance,
       emailVerifiedAt: user.emailVerifiedAt,
       demoPasswordLoginEnabled:
-        serverEnvironment.demoAuth.studentPasswordLoginEnabled,
+        (await isFixtureDemoAuthEnabled()),
     })
   ) return null;
   

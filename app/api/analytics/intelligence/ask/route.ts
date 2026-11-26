@@ -3,7 +3,7 @@ import {
   askIntelligenceInputSchema,
   askOperationsIntelligence,
 } from "@/features/analytics/server";
-import { askIntelligenceRateLimiter } from "@/lib/rate-limit";
+import { askIntelligenceRateLimiter, rateLimitClientKey } from "@/lib/rate-limit";
 import {
   unauthenticated,
   validationError,
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   return handleRoute(request, async () => {
     const actor = await getUserFromToken();
     if (!actor) throw unauthenticated();
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const ip = rateLimitClientKey(request.headers);
     if (!askIntelligenceRateLimiter.check(`${actor.userId}:${ip}`)) {
       throw validationError("Ask Operations Intelligence rate limit reached");
     }

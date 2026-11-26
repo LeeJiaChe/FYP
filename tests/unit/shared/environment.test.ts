@@ -38,7 +38,7 @@ describe("server environment validation", () => {
     assert.equal(environment.geminiOperations.apiKey, "");
     assert.equal(environment.geminiOperations.model, "gemini-3.8-flash");
     assert.equal(environment.googleStudent.clientId, "");
-    assert.equal(environment.googleStudent.hostedDomain, "student.tarc.edu.my");
+    assert.equal(environment.googleStudent.hostedDomain, "");
     assert.equal(environment.googleStudent.configured, false);
     assert.equal(environment.demoAuth.studentPasswordLoginEnabled, false);
     assert.equal(environment.transactionalEmail.configured, false);

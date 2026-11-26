@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { registerSchema } from "@/lib/validations";
-import { registerRateLimiter } from "@/lib/rate-limit";
+import { registerRateLimiter, rateLimitClientKey } from "@/lib/rate-limit";
 import {
   registerStudent,
   StudentRegistrationError,
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Cross-origin mutation rejected" }, { status: 403 });
   }
   try {
-    const ip = req.headers.get("x-forwarded-for") || "unknown";
+    const ip = rateLimitClientKey(req.headers);
     if (!registerRateLimiter.check(ip)) {
       return NextResponse.json({ error: "Too many registration attempts, please try again later" }, { status: 429 });
     }

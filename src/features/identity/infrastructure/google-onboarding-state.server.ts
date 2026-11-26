@@ -3,6 +3,7 @@ import "server-only";
 import { createHmac, randomUUID } from "node:crypto";
 import jwt from "jsonwebtoken";
 
+import { studentEmailSchema } from "@/shared/validation/student-identity";
 import type { VerifiedGoogleStudentIdentity } from "../domain/google-student-identity";
 
 export const GOOGLE_ONBOARDING_COOKIE = "fyp_google_student_onboarding";
@@ -76,6 +77,7 @@ export function verifyGoogleOnboardingState(
   if (!token) return null;
   try {
     const payload = jwt.verify(token, onboardingSigningKey(configuration), {
+      algorithms: ["HS256"],
       audience: ONBOARDING_AUDIENCE,
       issuer: ONBOARDING_ISSUER,
       clockTimestamp: Math.floor(now.getTime() / 1_000),
@@ -90,17 +92,18 @@ export function verifyGoogleOnboardingState(
       return null;
     }
     const configuredDomain = configuration.hostedDomain;
-    const emailDomain = payload.email.toLowerCase().split("@").at(-1);
+    const studentEmail = studentEmailSchema.safeParse(payload.email);
     if (
+      !configuredDomain ||
       payload.hostedDomain.toLowerCase() !== configuredDomain ||
-      emailDomain !== configuredDomain
+      !studentEmail.success
     ) {
       return null;
     }
     return {
       provider: "GOOGLE",
       providerSubject: payload.providerSubject,
-      email: payload.email.toLowerCase(),
+      email: studentEmail.data,
       name: payload.name,
       hostedDomain: configuredDomain,
     };

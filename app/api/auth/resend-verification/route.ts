@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   resendStudentVerification,
 } from "@/features/identity/server";
-import { resendVerificationRateLimiter } from "@/lib/rate-limit";
+import { resendVerificationRateLimiter, rateLimitClientKey } from "@/lib/rate-limit";
 import { studentEmailSchema } from "@/shared/validation/student-identity";
 import { assertSameOriginMutation } from "@/shared/http/origin-check";
 import { parseJsonBody } from "@/shared/http/handle-route.server";
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Cross-origin mutation rejected" }, { status: 403 });
   }
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = rateLimitClientKey(request.headers);
   if (!resendVerificationRateLimiter.check(ip)) {
     return NextResponse.json(
       { error: "Too many verification requests. Try again later." },
