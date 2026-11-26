@@ -25,7 +25,7 @@ void withDisposablePostgres(async ({ environment }) => {
   const port = await selectLoopbackPort();
   let realtimePort = await selectLoopbackPort();
   if (realtimePort === port) realtimePort = await selectLoopbackPort();
-  const environmentForApp = {
+  const environmentForApp: NodeJS.ProcessEnv = {
     ...env,
     NODE_ENV: "development",
     FYP_FIXTURE_APP_PORT: String(port),
