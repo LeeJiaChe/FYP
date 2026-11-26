@@ -86,8 +86,8 @@ export default function TripsTab({
                         <>
                           <small>
                             {trip.blockCode} · Seq {trip.blockSequence}
-                            {trip.continuityFromPrevious?.status !== "CONTINUOUS_OK"
-                              ? ` · ${trip.continuityFromPrevious?.status.replaceAll("_", " ")}`
+                            {trip.continuityFromPrevious?.status && trip.continuityFromPrevious.status !== "CONTINUOUS_OK"
+                              ? ` · ${trip.continuityFromPrevious.status.replaceAll("_", " ")}`
                               : ""}
                           </small>
                           {trip.continuityFromPrevious?.status !== "CONTINUOUS_OK" && trip.continuityFromPrevious?.message && <small className="text-amber-400">{trip.continuityFromPrevious.message}</small>}

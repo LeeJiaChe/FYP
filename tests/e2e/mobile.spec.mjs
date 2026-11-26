@@ -123,6 +123,14 @@ for (const role of ["admin", "driver"]) {
         await page.keyboard.press("Enter");
         await expect(timetable).toHaveAttribute("aria-current", "page");
       }
+      if (role === "driver") await expect(page.getByRole("heading", { name: "Timetable", exact: true })).toBeVisible();
+      await expect.poll(() => page.evaluate(() => {
+        const root = document.documentElement;
+        if (root.scrollWidth <= root.clientWidth) return [];
+        return [...document.querySelectorAll("main *")]
+          .filter((node) => node.getBoundingClientRect().right > root.clientWidth + 1)
+          .slice(0, 8).map((node) => node.getAttribute("class") ?? node.tagName);
+      }), { message: `Elements overflowing at ${width}px` }).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${width}px`).toBe(true);
     }
   });

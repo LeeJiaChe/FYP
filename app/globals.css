@@ -754,6 +754,10 @@
 .driver-view-nav svg { width: 1.05rem; }
 .driver-view-nav button.active { border-bottom-color: var(--brand); color: var(--brand); }
 .driver-view-nav button span { display: grid; min-width: 1.3rem; height: 1.3rem; place-items: center; border-radius: 999px; background: var(--surface); font-size: .65rem; }
+@media (max-width: 389px) {
+  .driver-view-nav { flex-wrap: wrap; }
+  .driver-view-nav button { gap: .35rem; padding-inline: .45rem; }
+}
 .driver-empty { min-height: 12rem; display: grid; place-items: center; border: 1px dashed var(--border-strong); border-radius: 14px; background: var(--surface); color: var(--text-muted); text-align: center; }
 .driver-trip-workspace { display: grid; gap: 1rem; }
 .active-trip-panel { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); padding: 1.25rem; box-shadow: var(--shadow-focal); }
