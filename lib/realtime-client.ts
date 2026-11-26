@@ -39,10 +39,11 @@ export async function notifyRealtime(
         Authorization: `Bearer ${secret}`,
       },
       body: JSON.stringify({ room, event, data }),
+      signal: AbortSignal.timeout(2_000),
     });
     if (!response.ok) throw new Error(`Realtime service returned ${response.status}`);
   } catch (error) {
     // Fire-and-forget — realtime failure must never block the primary API response
-    console.error("[Realtime Emit Error]", error);
+    console.warn("[Realtime] Could not publish invalidation", error instanceof Error ? error.name : "UnknownError");
   }
 }

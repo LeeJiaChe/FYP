@@ -1,5 +1,7 @@
 "use client";
 
+import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
+
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import Navbar from "@/components/Navbar";
@@ -93,6 +95,24 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [selectedTrip]);
 
+  const subscribedTripId = selectedTrip?.id ??
+    myBookings.find((booking) => booking.status === "CONFIRMED" || booking.status === "CHECKED_IN")?.tripId ??
+    myWaitlist.find((entry) => entry.status === "WAITING")?.tripId ?? null;
+
+  useTripRealtime(subscribedTripId, (event) => {
+    if (event === "location.changed") return;
+    if (event === "connect" && selectedTrip) return;
+    void fetchBookings();
+    if (selectedTrip && selectedJourney) {
+      void openSeatBookingModal(
+        selectedTrip.id,
+        selectedJourney.boardingTripStopId,
+        selectedJourney.dropOffTripStopId,
+        true,
+      );
+    }
+  });
+
   async function fetchRoutes() {
     try {
       const res = await fetch("/api/routes");
@@ -179,13 +199,16 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
     tripId: string,
     boardingTripStopId?: string,
     dropOffTripStopId?: string,
+    refresh = false,
   ) {
     if (!boardingTripStopId || !dropOffTripStopId) {
       toast.error("Select a From and To stop before checking seats");
       return;
     }
-    setBookingError(null);
-    setSelectedSeatId(null);
+    if (!refresh) {
+      setBookingError(null);
+      setSelectedSeatId(null);
+    }
     try {
       const params = new URLSearchParams({
         tripId,
@@ -196,11 +219,15 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
       const data = await res.json();
       if (res.ok) {
         const trip = trips.find((candidate) => candidate.id === tripId);
-        setSelectedTrip(trip);
-        setSelectedJourney(data.availability.journey);
+        if (!refresh) {
+          setSelectedTrip(trip);
+          setSelectedJourney(data.availability.journey);
+        }
+        const seats = data.availability.seats as Array<{ id: string; seatNumber: number }>;
+        if (refresh) setSelectedSeatId((id) => seats.some((seat) => seat.id === id) ? id : null);
         setSelectedEligibility(data.availability.bookingEligibility);
         setTripSeats(
-          data.availability.seats.map((seat: { id: string; seatNumber: number }) => ({
+          seats.map((seat) => ({
             ...seat,
             status: "AVAILABLE" as const,
           })),

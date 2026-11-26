@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import io from "socket.io-client";
+import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
 import { Bus, Clock, MapPin, Navigation, RefreshCw } from "lucide-react";
 import { formatMytDateTime } from "@/shared/time/operational-time";
 import GoogleTelemetryMap from "./GoogleTelemetryMap";
@@ -70,6 +70,8 @@ export default function BusLocationTracker({
       const body = await response.json();
       setLocation(body.location ?? null);
       setNow(Date.now());
+    } catch {
+      // Keep the last sample visible with its age during a connection interruption.
     } finally {
       setLoading(false);
     }
@@ -79,30 +81,15 @@ export default function BusLocationTracker({
     void fetchLatest();
     const refreshTimer = window.setInterval(() => void fetchLatest(), 15_000);
     const ageTimer = window.setInterval(() => setNow(Date.now()), 5_000);
-    let socket: ReturnType<typeof io> | null = null;
-    let disposed = false;
-    void fetch("/api/realtime/subscription", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tripId }),
-    }).then(async (response) => {
-      if (!response.ok || disposed) return;
-      const subscription = await response.json();
-      if (disposed) return;
-      socket = io(process.env.NEXT_PUBLIC_REALTIME_URL || "http://localhost:4000", {
-        auth: { token: subscription.token },
-      });
-      socket.on("connect", fetchLatest);
-      socket.on("location.changed", fetchLatest);
-      socket.on("trip.changed", fetchLatest);
-    });
     return () => {
-      disposed = true;
       window.clearInterval(refreshTimer);
       window.clearInterval(ageTimer);
-      socket?.disconnect();
     };
   }, [fetchLatest, tripId]);
+
+  useTripRealtime(tripId, (event) => {
+    if (event !== "occupancy.changed") void fetchLatest();
+  });
 
   const marker = useMemo(() => {
     if (!location || tripStops.length < 2) return { left: 50, top: 50 };

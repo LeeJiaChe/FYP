@@ -22,11 +22,19 @@ void withDisposablePostgres(async ({ environment }) => {
   runFixtureCommand(process.execPath, ["--import", "tsx", "prisma/seed.ts"], env);
 
   const port = await selectLoopbackPort();
+  let realtimePort = await selectLoopbackPort();
+  if (realtimePort === port) realtimePort = await selectLoopbackPort();
   runFixtureCommand(process.execPath, ["node_modules/@playwright/test/cli.js", "test"], {
     ...env,
     NODE_ENV: "development",
     FYP_FIXTURE_APP_PORT: String(port),
     APP_BASE_URL: `http://127.0.0.1:${port}`,
+    REALTIME_HOST: "127.0.0.1",
+    REALTIME_PORT: String(realtimePort),
+    REALTIME_URL: `http://127.0.0.1:${realtimePort}`,
+    NEXT_PUBLIC_REALTIME_URL: `http://127.0.0.1:${realtimePort}`,
+    CORS_ORIGIN: `http://127.0.0.1:${port}`,
+    NEXTJS_INTERNAL_URL: `http://127.0.0.1:${port}`,
     NEXT_PUBLIC_DEMO_MODE: "true",
     DEMO_STUDENT_PASSWORD_LOGIN_ENABLED: "true",
   });

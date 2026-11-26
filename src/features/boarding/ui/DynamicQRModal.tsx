@@ -73,7 +73,7 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
   }, [fetchQRToken]);
 
   const showDemoToken =
-    process.env.NODE_ENV !== "production" ||
+    process.env.NODE_ENV !== "production" &&
     process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
   async function copyDemoToken() {

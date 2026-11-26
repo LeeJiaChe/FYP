@@ -36,7 +36,7 @@ function verifySubscriptionToken(token, secret) {
       issuer: "fyp-nextjs",
       audience: "fyp-realtime",
     });
-    if (!claims || claims.purpose !== "REALTIME_SUBSCRIPTION") return null;
+    if (!claims || claims.purpose !== "REALTIME_SUBSCRIPTION" || !Number.isInteger(claims.exp)) return null;
     if (typeof claims.tripId !== "string" || typeof claims.userId !== "string") return null;
     if (!["STUDENT", "DRIVER", "ADMIN"].includes(claims.role)) return null;
     const room = `trip:${claims.tripId}`;
@@ -111,6 +111,10 @@ function createRealtimeService({ serviceSecret, corsOrigins }) {
   io = new Server(server, {
     cors: { origin: corsOrigins, methods: ["GET", "POST"] },
     maxHttpBufferSize: MAX_EMIT_BYTES,
+    allowRequest(request, callback) {
+      const origin = request.headers.origin;
+      callback(null, !origin || corsOrigins.includes(origin));
+    },
   });
   io.use((socket, next) => {
     const claims = verifySubscriptionToken(socket.handshake.auth?.token, serviceSecret);
@@ -119,7 +123,11 @@ function createRealtimeService({ serviceSecret, corsOrigins }) {
     return next();
   });
   io.on("connection", (socket) => {
-    socket.join(socket.data.subscription.room);
+    const { room, exp } = socket.data.subscription;
+    socket.join(room);
+    const expiry = setTimeout(() => socket.disconnect(true), Math.max(0, exp * 1_000 - Date.now()));
+    expiry.unref();
+    socket.once("disconnect", () => clearTimeout(expiry));
   });
   return { server, io };
 }
@@ -132,12 +140,13 @@ function postTrusted(nextjsHost, path, secret, headerName, body) {
       [headerName]: secret,
     },
     body: JSON.stringify(body || {}),
+    signal: AbortSignal.timeout(4_000),
   }).then((response) => {
     if (!response.ok && response.status !== 404) {
       console.error(`[Realtime Service] ${path} returned ${response.status}`);
     }
   }).catch((error) => {
-    console.error(`[Realtime Service] ${path} unavailable:`, error.message);
+    console.error(`[Realtime Service] ${path} unavailable (${error.name})`);
   });
 }
 
@@ -198,7 +207,7 @@ if (require.main === module) {
     );
   }
 
-  service.server.listen(port, () => {
+  service.server.listen(port, process.env.REALTIME_HOST || "0.0.0.0", () => {
     console.log(`[Realtime Service] listening on port ${port}`);
   });
 }

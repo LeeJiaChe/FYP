@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
-import io from "socket.io-client";
+import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
 import Navbar from "@/components/Navbar";
 import ConfirmModal from "@/components/ConfirmModal";
 import Modal from "@/components/Modal";
@@ -215,41 +215,21 @@ export default function AdminPortal({
       0,
     );
 
-    let socket: ReturnType<typeof io> | null = null;
-    let disposed = false;
-    void fetch("/api/realtime/subscription", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tripId: activeTripId }),
-    }).then(async (response) => {
-      if (!response.ok || disposed) return;
-      const subscription = await response.json();
-      if (disposed) return;
-      const socketUrl =
-        process.env.NEXT_PUBLIC_REALTIME_URL || "http://localhost:4000";
-      socket = io(socketUrl, { auth: { token: subscription.token } });
-      socket.on("connect", () => fetchTripDetails(activeTripId));
-      socket.on("occupancy.changed", () => fetchTripDetails(activeTripId));
-      socket.on("trip.changed", () => {
-        void Promise.all([
-          fetchTripDetails(activeTripId),
-          fetchTrips(),
-        ]).then(([, refreshedTrips]) => {
-          if (!refreshedTrips || disposed) return;
-          setSelectedTripId((current) =>
-            resolveAdminMonitoredTripId(refreshedTrips, current),
-          );
-        });
-      });
-      socket.on("location.changed", () => fetchTripDetails(activeTripId));
-    });
-
+    const fallback = window.setInterval(() => void fetchTripDetails(activeTripId), 15_000);
     return () => {
-      disposed = true;
       window.clearTimeout(initialFetch);
-      socket?.disconnect();
+      window.clearInterval(fallback);
     };
-  }, [activeTripId, fetchTrips]);
+  }, [activeTripId]);
+
+  useTripRealtime(activeTripId, (event) => {
+    if (!activeTripId) return;
+    if (event === "trip.changed" || event === "connect") {
+      void refreshTripLifecycle(activeTripId);
+    } else {
+      void fetchTripDetails(activeTripId);
+    }
+  });
 
   async function refreshTripLifecycle(tripId: string) {
     const [, refreshedTrips] = await Promise.all([

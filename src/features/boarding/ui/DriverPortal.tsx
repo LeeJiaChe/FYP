@@ -1,5 +1,7 @@
 "use client";
 
+import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
+
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
@@ -182,6 +184,10 @@ export default function DriverPortal({
       window.clearInterval(interval);
     };
   }, [refreshOperation]);
+
+  useTripRealtime(activeTripId, (event) => {
+    if (event !== "location.changed") void refreshOperation().catch(() => undefined);
+  });
 
   async function mutate(path: string, body: unknown) {
     const response = await fetch(path, {

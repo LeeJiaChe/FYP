@@ -98,3 +98,32 @@ describe("realtime contracts", () => {
     assert.ok(service.server);
   });
 });
+
+it("expires a live subscription and rejects reuse of the expired token", async () => {
+  const { once } = await import("node:events");
+  const { io } = await import("socket.io-client");
+  const service = createRealtimeService({ serviceSecret: secret, corsOrigins: [] });
+  const server = service.server as unknown as import("node:http").Server;
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const token = jwt.sign({ purpose: "REALTIME_SUBSCRIPTION", userId, role: "STUDENT", tripId }, secret, {
+    algorithm: "HS256", expiresIn: 2, issuer: "fyp-nextjs", audience: "fyp-realtime",
+  });
+  const client = io(`http://127.0.0.1:${address.port}`, { auth: { token }, autoConnect: false, reconnection: false });
+  const guard = { signal: AbortSignal.timeout(6_000) };
+  try {
+    const connected = once(client, "connect", guard);
+    const disconnected = once(client, "disconnect", guard);
+    client.connect();
+    await connected;
+    assert.equal((await disconnected)[0], "io server disconnect");
+    const rejected = once(client, "connect_error", guard);
+    client.connect();
+    const [error] = await rejected;
+    assert.match(error.message, /Unauthorized realtime subscription/);
+  } finally {
+    client.disconnect();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
