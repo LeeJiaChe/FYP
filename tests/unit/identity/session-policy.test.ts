@@ -13,15 +13,11 @@ describe("application session issuance", () => {
     const passwordSession = createApplicationSession({
       id: "driver-id",
       role: "DRIVER",
-      email: "driver@tarumt.edu.my",
-      name: "Driver",
       sessionVersion: 2,
     });
     const googleSession = createApplicationSession({
       id: "student-id",
       role: "STUDENT",
-      email: "student@student.tarc.edu.my",
-      name: "Student",
       sessionVersion: 1,
     });
     assert.equal(passwordSession.name, COOKIE_NAME);
@@ -36,6 +32,8 @@ describe("application session issuance", () => {
     });
     const payload = jwt.decode(googleSession.value) as jwt.JwtPayload;
     assert.equal(payload.role, "STUDENT");
+    assert.equal(payload.email, undefined);
+    assert.equal(payload.name, undefined);
     assert.equal(payload.userId, "student-id");
     assert.equal(payload.credential, undefined);
     assert.equal(payload.googleToken, undefined);

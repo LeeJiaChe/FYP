@@ -100,7 +100,8 @@ describe("realtime contracts", () => {
 });
 
 it("expires a live subscription and rejects reuse of the expired token", async () => {
-  const { once } = await import("node:events");
+  const { EventEmitter } = await import("node:events");
+  const { once } = EventEmitter;
   const { io } = await import("socket.io-client");
   const service = createRealtimeService({ serviceSecret: secret, corsOrigins: [] });
   const server = service.server as unknown as import("node:http").Server;

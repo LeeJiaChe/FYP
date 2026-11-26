@@ -962,3 +962,25 @@ describe("ETA Application Service - stabilization regressions", () => {
     assert.equal(result.locationAgeMs, 8_000);
   });
 });
+
+it("preserves timetable fallback when the process provider budget is exhausted", async () => {
+  const trip = makeSampleTrip();
+  const provider = new FakeTrafficRouteProvider();
+  const result = await getTripEtaService({
+    tripId: trip.id,
+    findTrip: async () => trip,
+    findLatestLocation: async () => ({
+      tripId: trip.id, latitude: 3.212, longitude: 101.72,
+      recordedAt: new Date("2026-09-04T10:04:55.000Z"),
+      source: "SIMULATED", ageMs: 5_000,
+    }),
+    provider,
+    allowProviderCall: () => false,
+    cache: new EtaMemoryCache(),
+    clock: fixedClock("2026-09-04T10:05:00.000Z"),
+    environment: { enabled: true, apiKey: "fixture-only" },
+  });
+  assert.equal(result.source, "SCHEDULE_ESTIMATE");
+  assert.equal(result.fallbackReason, "API_RATE_LIMITED");
+  assert.equal(provider.callCount, 0);
+});

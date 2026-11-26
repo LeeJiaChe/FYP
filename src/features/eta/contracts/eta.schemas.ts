@@ -11,6 +11,7 @@ export const etaFallbackReasonSchema = z
     "STALE_LOCATION",
     "API_TIMEOUT",
     "API_ERROR",
+    "API_RATE_LIMITED",
     "NO_ROUTE",
     "INVALID_ROUTE_DATA",
   ])

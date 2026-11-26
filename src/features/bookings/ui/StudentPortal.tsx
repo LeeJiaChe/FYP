@@ -1,6 +1,6 @@
 "use client";
 
-import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
+import { useTripRealtime } from "@/features/realtime/ui";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -96,7 +96,7 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
   }, [selectedTrip]);
 
   const subscribedTripId = selectedTrip?.id ??
-    myBookings.find((booking) => booking.status === "CONFIRMED" || booking.status === "CHECKED_IN")?.tripId ??
+    myBookings.find((booking) => booking.status === "CONFIRMED")?.tripId ??
     myWaitlist.find((entry) => entry.status === "WAITING")?.tripId ?? null;
 
   useTripRealtime(subscribedTripId, (event) => {

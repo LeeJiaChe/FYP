@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
+import { useTripRealtime } from "@/features/realtime/ui";
 import { Bus, Clock, MapPin, Navigation, RefreshCw } from "lucide-react";
 import { formatMytDateTime } from "@/shared/time/operational-time";
 import GoogleTelemetryMap from "./GoogleTelemetryMap";
@@ -78,10 +78,11 @@ export default function BusLocationTracker({
   }, [tripId]);
 
   useEffect(() => {
-    void fetchLatest();
+    const initialRefresh = window.setTimeout(() => void fetchLatest(), 0);
     const refreshTimer = window.setInterval(() => void fetchLatest(), 15_000);
     const ageTimer = window.setInterval(() => setNow(Date.now()), 5_000);
     return () => {
+      window.clearTimeout(initialRefresh);
       window.clearInterval(refreshTimer);
       window.clearInterval(ageTimer);
     };

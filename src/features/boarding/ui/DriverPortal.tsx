@@ -1,6 +1,6 @@
 "use client";
 
-import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
+import { useTripRealtime } from "@/features/realtime/ui";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {

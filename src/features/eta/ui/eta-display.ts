@@ -18,6 +18,7 @@ const scheduleFallbackLabels: Record<
   STALE_LOCATION: "Schedule estimate · location outdated",
   NO_ROUTE: "Schedule estimate · traffic route unavailable",
   API_TIMEOUT: "Schedule estimate · traffic service timed out",
+  API_RATE_LIMITED: "Schedule estimate · traffic service busy",
   API_ERROR: "Schedule estimate · traffic service unavailable",
   INVALID_ROUTE_DATA: "Schedule estimate · route data unavailable",
 };

@@ -99,7 +99,7 @@ export async function withDisposablePostgres<T>(work: (fixture: {
       version,
       sql: (statement, database = FIXTURE_DATABASE) => psql(statement, database),
       dumpPublic: (database) =>
-        pg("pg_dump", ["-w", "--schema=public", "--no-owner", "--no-privileges"],
+        pg("pg_dump", ["-w", "--schema=public", "--clean", "--if-exists", "--no-owner", "--no-privileges"],
           { quiet: true }, connection(database)),
       environment(database = FIXTURE_DATABASE) {
         const url = fixtureUrl(root, password, database);

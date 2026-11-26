@@ -1,3 +1,4 @@
+import { RateLimiter } from "@/lib/rate-limit";
 import type {
   EtaFallbackReason,
   StudentBookingEta,
@@ -220,11 +221,14 @@ function buildScheduleFallbackEta({
   };
 }
 
+const routesRequestBudget = new RateLimiter(60_000, 30);
+
 export async function getTripEtaService({
   tripId,
   findTrip = findTripForEta,
   findLatestLocation = latestLocation,
   provider,
+  allowProviderCall = () => Boolean(provider) || routesRequestBudget.check("routes"),
   cache = sharedEtaCache,
   clock = systemClock,
   policy = productPolicy,
@@ -237,6 +241,7 @@ export async function getTripEtaService({
     clock?: Clock,
   ) => Promise<TelemetryLocationSnapshot | null>;
   provider?: TrafficRouteProvider;
+  allowProviderCall?: () => boolean;
   cache?: EtaMemoryCache;
   clock?: Clock;
   policy?: ProductPolicy;
@@ -346,6 +351,12 @@ export async function getTripEtaService({
           fallbackReason: cachedFailure,
           now,
           location,
+        });
+      }
+
+      if (!allowProviderCall()) {
+        return buildScheduleFallbackEta({
+          trip, remainingStops, fallbackReason: "API_RATE_LIMITED", now, location,
         });
       }
 

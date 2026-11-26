@@ -16,8 +16,6 @@ export const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 export interface JWTPayload {
   userId: string;
   role: "STUDENT" | "DRIVER" | "ADMIN";
-  email: string;
-  name: string;
   sessionVersion: number;
 }
 
@@ -52,8 +50,6 @@ export function applicationSessionCookieOptions(
 export function createApplicationSession(user: {
   id: string;
   role: JWTPayload["role"];
-  email: string;
-  name: string;
   sessionVersion: number;
 }) {
   return {
@@ -61,8 +57,6 @@ export function createApplicationSession(user: {
     value: signToken({
       userId: user.id,
       role: user.role,
-      email: user.email,
-      name: user.name,
       sessionVersion: user.sessionVersion,
     }),
     options: applicationSessionCookieOptions(),
@@ -78,8 +72,6 @@ function verifyToken(token: string): JWTPayload | null {
       (payload.role !== "STUDENT" &&
         payload.role !== "DRIVER" &&
         payload.role !== "ADMIN") ||
-      typeof payload.email !== "string" ||
-      typeof payload.name !== "string" ||
       typeof payload.exp !== "number" ||
       !Number.isInteger(payload.sessionVersion)
     ) {
@@ -91,10 +83,7 @@ function verifyToken(token: string): JWTPayload | null {
   }
 }
 
-/**
- * Fast auth check — decodes the JWT without a DB round-trip.
- * Use this for all endpoints that only need userId + role.
- */
+/** Validates the session and rechecks current role, credential eligibility and version. */
 export async function getUserFromToken(): Promise<JWTPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;

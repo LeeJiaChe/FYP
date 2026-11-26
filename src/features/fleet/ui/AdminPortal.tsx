@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
-import { useTripRealtime } from "@/features/realtime/ui/use-trip-realtime";
+import { useTripRealtime } from "@/features/realtime/ui";
 import Navbar from "@/components/Navbar";
 import ConfirmModal from "@/components/ConfirmModal";
 import Modal from "@/components/Modal";
