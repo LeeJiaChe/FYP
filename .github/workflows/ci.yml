@@ -64,6 +64,10 @@ jobs:
 
       - run: npm run lint
       - run: npm run lint:recovery
+      - name: Lint changed App Router entry points
+        run: npx --no-install eslint --max-warnings=0 'app/api/bookings/[id]/cancel/route.ts' app/driver/page.tsx app/login/page.tsx app/register/complete/page.tsx app/student/page.tsx
+      - name: TypeScript before Next.js type generation
+        run: npx --no-install tsc --noEmit --incremental false
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run test:architecture
