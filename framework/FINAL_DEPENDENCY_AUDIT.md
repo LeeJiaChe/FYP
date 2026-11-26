@@ -1,6 +1,8 @@
 # Final Dependency Audit
 
-**Date:** 2026-08-22
+**Historical baseline:** 2026-08-22
+
+The [Round 2 advisory register](ROUND_2_FINAL_ACCEPTANCE.md#r5-dependency-register) records the current November 2026 dependency audit and remediation. The remaining text describes the August baseline.
 
 No major-version upgrade was introduced. The final acceptance pass added two
 small, concrete runtime dependencies; the lockfile remains the reproducible

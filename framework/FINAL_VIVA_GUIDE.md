@@ -77,3 +77,5 @@ Validate requirements with DSA, confirm routes/timetables/capacities and standin
 
 **How should individual contribution be described?**  
 Use the canonical functional documentation scopes. Any coding-contribution claim must be supported separately by truthful evidence rather than inferred from module boundaries.
+
+For the current review, use the [Round 2 handoff](ROUND_2_FINAL_ACCEPTANCE.md) and [Lee passenger evidence](LEE_JIA_CHE_PASSENGER_EVIDENCE.md). Demonstrate fixture identity, signature validation and server-side manual boarding. Record physical scanning and institutional sign-in separately after controlled acceptance.

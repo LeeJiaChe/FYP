@@ -23,9 +23,10 @@ Admin accounts continue to use an application email and password.
 6. Set the Web Client ID as `NEXT_PUBLIC_GOOGLE_CLIENT_ID`. A client ID is a
    public identifier, not a secret. The backend uses the same value as the
    mandatory ID-token audience.
-7. Set `GOOGLE_STUDENT_HOSTED_DOMAIN="student.tarc.edu.my"` unless controlled
-   testing proves TAR UMT's Workspace reports a different primary hosted-domain
-   value.
+7. Leave `GOOGLE_STUDENT_HOSTED_DOMAIN` blank until the institution confirms
+   the Workspace `hd` claim and the owner approves the exact value. Configure
+   that value independently of the fixed Student email suffix
+   `@student.tarc.edu.my`.
 
 The browser passes the hosted domain as an account-chooser hint only. The
 backend verifies the Google signature, audience, issuer, expiry, verified email,
@@ -46,8 +47,8 @@ primary `hd` value with the institution/operator and change
 `GOOGLE_STUDENT_HOSTED_DOMAIN`; do not weaken the backend to an email-suffix-only
 check.
 
-If `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is empty, the login and registration pages
-show that Google Student sign-in is not configured. Staff password login and an
+If either Google setting is empty, Student SSO is unavailable. The backend
+rejects sign-in and previously issued onboarding state in that configuration. Staff password login and an
 explicitly enabled local demo flow remain usable.
 
 ## Resend transactional email
@@ -93,11 +94,12 @@ NEXT_PUBLIC_DEMO_MODE="true"
 DEMO_STUDENT_PASSWORD_LOGIN_ENABLED="true"
 ```
 
-The first displays the three Quick Login buttons in a non-production build. The
-second permits only development/test password authentication for seeded
-`LEGACY_PROTOTYPE` or legacy verified Student fixtures. Production ignores both
-demo gates. Driver and Admin password authentication does not depend on either
-demo setting.
+Start `npm run demo:fixture` through the disposable runner. The three Quick
+Login buttons and Student password compatibility require a verified fixture
+database. The public flag controls visibility. The server flag only works in a
+non-production process with live fixture proof. Ordinary staff credentials keep
+working independently, while public fixture passwords are rejected outside the
+verified environment.
 
 Keep both values `false` in normal production. The seeded Student accounts are
 development fixtures and intentionally have no fake Google external identity.
@@ -109,3 +111,12 @@ The repository migration adding nullable Student passwords,
 deployed through the project's controlled migration process before enabling
 Google Student sign-in against a shared environment. Do not use `prisma db push`,
 reset the shared database, or run the destructive demo seed during deployment.
+
+## Controlled operator acceptance
+
+- Set up an approved HTTPS staging origin, a staging OAuth client with that JavaScript origin, and a separate controlled staging database. Use an institution-approved test account. The operator completes the first GIS sign-in and required Student ID form, reloads and signs in again, then checks that the same Student and history are retained. Test rejection of an out-of-domain account, sign out and confirm a protected page requires authentication. Record only date, staging origin, tested SHA and outcomes.
+- Verify the approved sender domain in the Resend dashboard, set its restricted API key and a verified sender, and configure the staging origin as `APP_BASE_URL`. Request a staff reset only for an approved staging recipient. Confirm delivery, open the link, reset, verify the old session and used link are rejected, then sign in with the replacement password. Record delivery metadata and outcomes without copying the reset link.
+- Keep request body logging off and use the owner-reviewed deployment and [recovery procedure](DEPLOYMENT_AND_RECOVERY.md) before enabling providers on a shared database.
+
+[Google Identity token verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)
+[Resend domain verification](https://resend.com/docs/dashboard/domains/introduction)

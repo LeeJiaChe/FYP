@@ -83,3 +83,5 @@ sequenceDiagram
 
 ARRIVED Trips remain historical; active BOARDING/DEPARTED service is not
 silently cancelled by a fleet status toggle.
+
+Staff access uses application credentials and version-checked sessions. Legacy retained Bus/Route columns do not participate in these operations. For deployed tracking, one persistent Socket.io process schedules simulated GPS and emits minimal Trip invalidations. Clients renew authorized subscription scope and refetch authoritative state after reconnect.

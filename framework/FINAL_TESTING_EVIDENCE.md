@@ -9,7 +9,7 @@
 | PostgreSQL integration | Real constraints, migrations, locks, atomic multi-row transitions, concurrent races and historical snapshots |
 | Browser E2E | Complete visible mutations across Student, Driver and Admin portals with deterministic seeded preconditions |
 | Production build | Next.js route/type compilation and deployable bundle generation |
-| GitHub Actions | Repeats all gates on Node 20, PostgreSQL 16 and Chromium from a clean checkout |
+| GitHub Actions | Executes the candidate on pinned Node 24, PostgreSQL 17 and Chromium from a clean checkout |
 
 ## Invariant-to-evidence map
 
@@ -64,3 +64,5 @@ The historical master job reached Chromium download and was cancelled near its
 20-minute job limit. A download stall was observed, but its underlying cause
 was unverified. The revised workflow uses bounded retries and a separate
 Chromium installation timeout.
+
+The accepted Round 1 baseline passed 271 unit/specification, 20 architecture, 78 integration and 12 browser tests at [f9e2c69](https://github.com/LeeJiaChe/FYP/actions/runs/45652187685). Round 2 commands, results and limitations are in the [Round 2 handoff](ROUND_2_FINAL_ACCEPTANCE.md).

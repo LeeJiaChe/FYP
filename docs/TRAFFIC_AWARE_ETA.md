@@ -88,7 +88,8 @@ The normal cost-protection model is:
 - a server-only API key;
 - 60-second client request intervals;
 - in-flight request coalescing;
-- failure-metadata retry throttling; and
+- failure-metadata retry throttling;
+- a process-wide budget of 30 outbound requests per 60-second window, with timetable fallback when exhausted; and
 - Google Cloud quotas, budget alerts, and usage monitoring.
 
 Normal teammate development, CI, and unit tests make zero paid Google calls;
@@ -121,6 +122,7 @@ Fallback reasons are:
 - `INVALID_ROUTE_DATA`: invalid local origin or TripStop coordinates.
 - `API_TIMEOUT`: the three-second request deadline elapsed.
 - `API_ERROR`: HTTP, network, invalid JSON, malformed metrics, or leg mismatch.
+- `API_RATE_LIMITED`: local process provider budget exhausted. Cloud quotas are still required across process restarts or replicas.
 - `NO_ROUTE`: Google returned a valid empty `routes` array.
 
 All fallbacks use timetable plus `Trip.delayMinutes`. A provider response uses a

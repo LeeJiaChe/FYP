@@ -5,6 +5,9 @@
 
 ```mermaid
 erDiagram
+  User ||--o{ ExternalAuthIdentity : links
+  User ||--o{ EmailVerificationToken : receives
+  User ||--o{ PasswordResetToken : receives
   User ||--o{ Booking : reserves
   User ||--o{ WaitlistEntry : queues
   User ||--o{ WalkInIntent : requests
@@ -15,6 +18,8 @@ erDiagram
   User ||--o{ TripStatusHistory : acts
 
   Stop ||--o{ RouteStop : appears_in
+  ServiceLine ||--o{ Route : groups
+  ServiceBlock |o--o{ Trip : groups
   Route ||--o{ RouteStop : orders
   Route ||--o{ Trip : schedules
   Bus ||--o{ Trip : supplies_snapshot
@@ -36,12 +41,12 @@ erDiagram
   TripStop ||--o{ WalkInJourney : boarding_or_dropoff
 
   TripSeat ||--o{ Booking : guarantees
-  Booking ||--|{ ReservedSeatSegment : claims
+  Booking ||--o{ ReservedSeatSegment : claims
   TripSeat ||--o{ ReservedSeatSegment : occupied_on
   TripSegment ||--o{ ReservedSeatSegment : reserved_capacity
 
   WalkInIntent ||--o| WalkInJourney : becomes_when_admitted
-  WalkInJourney ||--|{ StandingSegmentClaim : claims
+  WalkInJourney ||--o{ StandingSegmentClaim : claims
   TripSegment ||--o{ StandingSegmentClaim : standing_capacity
 
   Booking ||--o| Penalty : incurs_at_most_one
@@ -64,3 +69,5 @@ The removed `Seat`, `SeatStatus`, `DeviceStatusLog`, and `DeviceSignal` models
 are intentionally absent. Several same-Trip composite foreign keys and partial
 indexes are implemented in migration SQL even where Mermaid cannot express
 them.
+
+Historical legacy assignment columns on the shared database are outside the Prisma model. The [approved reconciliation](../docs/DEPLOYMENT_AND_RECOVERY.md) preserves their values and keys. Trip is the Bus and Driver assignment authority.

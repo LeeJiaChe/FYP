@@ -77,3 +77,7 @@ row to suspend an editor already holding the Trip row, then observes a waiting
 reservation. The reservation evaluates the changed departure. Other tests
 exercise single and bulk creation on one ServiceBlock alongside editing and
 waitlist cancellation ahead of capacity release.
+
+## Round 2 regression evidence
+
+The original lock and assignment strategies remain in place. Additional PostgreSQL checks prove one winner during simultaneous Student onboarding and conflicting legacy linkage. Concurrent reset consumption still revokes the existing session once. PostgreSQL 17 rehearsal checks both the Trip row and advisory lock through an unprivileged application login. See the [Round 2 runbook and results](ROUND_2_FINAL_ACCEPTANCE.md).

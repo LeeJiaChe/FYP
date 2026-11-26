@@ -14,11 +14,17 @@ flowchart LR
     Ingest[Authenticated location ingestion]
   end
 
-  DB[(PostgreSQL 16\nDurable source of truth)]
+  DB[(PostgreSQL 17\nDurable source of truth)]
+  Edge[HTTPS ingress]
+  GIS[Google GIS optional provider]
+  Mail[Resend optional provider]
   RT[Standalone Socket.io process\nAuthenticated rooms + scheduled triggers]
   Sim[GPS simulator\nSIMULATED source]
 
-  Browser -->|HTTPS fetch/mutation| HTTP
+  Browser -->|HTTPS fetch/mutation| Edge
+  Edge --> HTTP
+  Browser -->|Student sign-in| GIS
+  Features -->|Staff reset message| Mail
   HTTP --> Features
   Features -->|Prisma transactions/queries| DB
   Features -->|post-commit bounded invalidation| RT
@@ -54,3 +60,5 @@ flowchart LR
 This second diagram is an academic explanation of integration inside one
 application. It does not create separate runtimes, databases, repositories, or
 exclusive implementation-ownership claims.
+
+The release deployment procedure includes production origin verification, separate runtime and migration roles, service readiness, short-lived socket renewal and one scheduler owner. See [deployment and recovery](../docs/DEPLOYMENT_AND_RECOVERY.md).

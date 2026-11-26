@@ -55,3 +55,9 @@ sessions. Browser CI omits traces and screenshots that could capture fixture
 credentials. The pinned Playwright patch, Next.js and Zod updates address the
 direct advisories found during recovery. Separate review remains necessary for
 the transitive audit findings and for the shared PostgreSQL runtime privileges.
+
+## Round 2 release controls
+
+Canonical Student email is enforced separately from the explicitly approved Google Workspace hosted domain. Legacy linkage and onboarding are constrained by subject and email uniqueness and serializable transactions. JWTs carry minimal identity and role data and protected requests revalidate the database session version. Login failures share a public response and use bcrypt for rejected lookups. Public demo passwords require a verified disposable database. Production mutations compare their browser Origin to the configured application origin. Dedicated ingress address headers require explicit ingress trust. Process-local rate limits must be backed by ingress limits for scaled deployments.
+
+Socket.io validates signed Trip subscriptions, enforces expiry for a live connection and reauthorizes on reconnect. Trip invalidations send no passenger record. See [Round 2 findings](ROUND_2_FINAL_ACCEPTANCE.md) and [deployment controls](../docs/DEPLOYMENT_AND_RECOVERY.md).

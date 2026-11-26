@@ -6,9 +6,9 @@ equivalent secure-context setup. Record browser version, date and outcome.
 
 ## Environment and startup
 
-- [ ] PostgreSQL 16 is reachable; migrations and seed complete successfully.
-- [ ] `.env` contains distinct non-demo secrets and the correct local URLs.
-- [ ] `npm run dev` starts Next.js and `npm run realtime` reports healthy startup.
+- [ ] PostgreSQL 17 tools are selected and the credential-free disposable demo runner completes migration and seed.
+- [ ] The runner prints a private loopback URL and generates distinct fixture secrets.
+- [ ] `npm run demo:fixture` starts Next.js and one Socket.io scheduler.
 - [ ] `/health` on the realtime service responds and the application remains usable if Socket.io is stopped.
 
 ## Camera and fallback — current Chromium secure context
@@ -34,7 +34,7 @@ No successful hardware-camera result is claimed until these items are checked.
 
 ## Demo integrity
 
-- [ ] Reset/reseed immediately before rehearsal and confirm documented accounts.
+- [ ] Start a fresh disposable fixture immediately before rehearsal and confirm documented accounts.
 - [ ] The catalogue shows ten directional source-based Routes, no retired ring/block placeholders, and no synthetic Trip time is called official.
 - [ ] GPS surfaces state **Simulated GPS / Prototype** and show freshness/no-data honestly.
 - [ ] Walk-in Pass states that boarding is not guaranteed.
@@ -45,3 +45,5 @@ The decoder is designed for current Chromium/Edge and Firefox-compatible camera
 APIs, but only browsers actually checked above may be claimed in the viva.
 Safari camera behavior, formal WCAG conformance and large-scale load testing are
 outside the verified evidence.
+
+Controlled institutional login and transactional mail use the [provider acceptance procedure](../docs/AUTHENTICATION_SETUP.md).

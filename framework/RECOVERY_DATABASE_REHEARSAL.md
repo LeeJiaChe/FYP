@@ -1,5 +1,7 @@
 # Round 1 database rehearsal and proposed shared rollout
 
+For the November Round 2 results, PostgreSQL 17 parity and version-controlled operations, see [Round 2 acceptance](ROUND_2_FINAL_ACCEPTANCE.md) and the [current deployment runbook](../docs/DEPLOYMENT_AND_RECOVERY.md).
+
 The shared project is read-only during this round. The commands under Shared rollout require separate architectural authorization and an operator-controlled window.
 
 ## Shared baseline observed read-only

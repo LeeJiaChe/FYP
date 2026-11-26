@@ -171,6 +171,8 @@ RUN_SCHEDULED_JOBS="false"
 > Normal teammate development `.env` MUST keep `RUN_SCHEDULED_JOBS="false"`. This ensures the Socket.IO service and invalidation `/emit` bridge start normally while disabling duplicate background cron jobs (no-show reconciliation, location retention) and duplicate GPS simulator writes against the shared Supabase database.
 > Only **ONE** designated machine (the demo or central operator) should set `RUN_SCHEDULED_JOBS="true"`.
 
+See the [deployment and recovery runbook](docs/DEPLOYMENT_AND_RECOVERY.md) for a disposable interactive demo, PostgreSQL 17 parity and release gates.
+
 Run destructive verification in a separate checkout without local dotenv
 credential files. The runners provision their own private PostgreSQL cluster
 and require explicit acknowledgement. See the [disposable test setup](./tests/integration/README.md).

@@ -1,7 +1,7 @@
 # Disposable PostgreSQL verification
 
 Use a clean, credential-free Linux or WSL checkout with the Node version in
-`.nvmrc`, PostgreSQL 16 server binaries, `psql`, and `pg_config`. The fixture
+`.nvmrc`, PostgreSQL 17 server binaries, `psql`, and `pg_config`. The fixture
 commands reject checkout dotenv files and run children with an allowlisted
 environment. They never use an operator-provided database URL.
 
@@ -10,7 +10,7 @@ npm ci
 npx --no-install prisma generate
 npx --no-install playwright install chromium
 TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION npm run test:integration
-TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION npm run test:rehearsal
+TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION FYP_REQUIRE_POSTGRES_17=true npm run test:rehearsal
 TEST_DATABASE_CONFIRM=FYP_BUS_INTEGRATION npm run test:e2e
 ```
 
@@ -28,10 +28,7 @@ operate on another PostgreSQL cluster.
 Integration uses `prisma migrate deploy` on a fresh database. The browser
 runner deploys and atomically seeds a separate fresh database. `npm run db:seed`
 requires proof from an active provisioned fixture. Running it with normal
-development settings refuses before the first write. Browser tests select a
-fresh loopback port, verify the database before starting Next.js, and reject
-server reuse. Demo Student login and QR controls are enabled only in the browser
-child environment. Schedulers, external providers, and email preview are off.
+development settings refuses before the first write. Browser tests select two fresh loopback ports and verify the database before starting Next.js and the actual Socket.io server. They reject server reuse. Demo Student login and QR controls are isolated to the verified fixture. Schedulers, external providers, and email preview are off. The separately invoked interactive demo enables one scheduler for its own private database.
 
 GitHub CI publishes diagnostic HTML on browser failure. CI traces and
 screenshots are disabled because they can retain session cookies or encoded

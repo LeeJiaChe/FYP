@@ -89,3 +89,28 @@ sequenceDiagram
   end
   API->>DB: durable result notification; COMMIT
 ```
+
+## Institutional Student identity before passenger operations
+
+```mermaid
+sequenceDiagram
+  participant B as Student browser
+  participant G as Google Identity Services
+  participant N as Next.js identity boundary
+  participant P as PostgreSQL
+  B->>G: Choose approved institutional account
+  G-->>B: Signed ID token
+  B->>N: Same-origin token submission
+  N->>N: Verify signature, issuer, audience, expiry, verified-email suffix and approved hd
+  N->>P: Resolve stable Google sub or eligible legacy email in a transaction
+  alt Existing matching Student
+    P-->>N: Return Student session identity
+  else First-time Student
+    N-->>B: Short-lived HttpOnly onboarding state
+    B->>N: Submit Student ID and name
+    N->>P: Create Student and identity atomically
+  end
+  N-->>B: HttpOnly application session
+  B->>N: Logout
+  N->>P: Revoke session version
+```
