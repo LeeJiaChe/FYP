@@ -18,10 +18,16 @@ test("student core flow fits 320 px and keeps seat selection keyboard operable",
   await page.getByLabel("From").selectOption({ label: stops[0] });
   await page.getByRole("combobox", { name: /Where are you going/ }).selectOption({ label: stops.at(-1) });
   await page.getByLabel("Date").selectOption({ index: 1 });
-  await page.getByRole("button", { name: "Check seats" }).first().click();
-  await expect(page.getByRole("dialog", { name: "Choose your seat" })).toBeVisible();
+  const checkSeats = page.getByRole("button", { name: "Check seats" }).first();
+  await checkSeats.click();
+  const dialog = page.getByRole("dialog", { name: "Choose your seat" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close dialog" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.locator(":focus")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(checkSeats).toBeFocused();
 });
 
 test("student mobile chrome is invariant and tab changes reset the internal scroll viewport", async ({ page }) => {
@@ -86,3 +92,38 @@ test("student mobile chrome is invariant and tab changes reset the internal scro
     expect(hasHorizontalOverflow).toBe(false);
   }
 });
+
+for (const role of ["admin", "driver"]) {
+  test(`${role} navigation and layout fit mobile, tablet and desktop widths`, async ({ page }) => {
+    await page.goto("/login");
+    await page.getByLabel("Email", { exact: true }).fill(role === "admin" ? "admin1@admin.tarc.edu.my" : "driver1@tarumt.edu.my");
+    await page.getByLabel("Password").fill(role === "admin" ? "admin1" : "password123");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL(new RegExp(`/${role}$`));
+    expect((await page.request.get("/api/health")).ok()).toBeTruthy();
+
+    for (const width of [320, 375, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 864 });
+      if (role === "admin") {
+        const menu = page.getByRole("button", { name: "Administration menu", exact: true });
+        if (await menu.isVisible()) {
+          await menu.click();
+          const nav = page.getByRole("navigation", { name: "Administration sections" });
+          await expect(nav).toBeVisible();
+          await page.keyboard.press("Escape");
+          await expect(menu).toBeFocused();
+        } else {
+          await expect(page.getByRole("navigation", { name: "Administration sections" })).toBeVisible();
+        }
+      } else {
+        const nav = page.getByRole("navigation", { name: "Driver workspace" });
+        await expect(nav).toBeVisible();
+        const timetable = nav.getByRole("button", { name: "Timetable" });
+        await timetable.focus();
+        await page.keyboard.press("Enter");
+        await expect(timetable).toHaveAttribute("aria-current", "page");
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${width}px`).toBe(true);
+    }
+  });
+}

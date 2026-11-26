@@ -71,7 +71,7 @@ async function checkUpgradeRuntime() {
     await prisma.$transaction(async (transaction) => {
       const trip = await transaction.$queryRaw`SELECT id FROM "Trip" WHERE id = 'upgrade-trip' FOR UPDATE`;
       assert.ok(Array.isArray(trip) && trip.length === 1);
-      await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('fixture-runtime'))`;
+      await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('fixture-runtime'))`;
     });
     const staff = await authenticateWithPassword({
       identifier: "driver@example.test", password: "synthetic",
@@ -107,7 +107,7 @@ async function checkUpgradeRuntime() {
     const route = await createRoute({ userId: "upgrade-admin", role: "ADMIN" }, {
       name: "Synthetic New Route", lineId: line.id, direction: "INBOUND",
       stops: stops.map((stop, index) => ({
-        stopId: stop.id, position: index, travelDurationToNextMinutes: index === stops.length - 1 ? null : 10,
+        stopId: stop.id, travelDurationToNextMinutes: index === stops.length - 1 ? null : 10,
       })),
     });
     assert.ok(route.id);

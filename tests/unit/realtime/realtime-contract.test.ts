@@ -99,9 +99,7 @@ describe("realtime contracts", () => {
   });
 });
 
-it("expires a live subscription and rejects reuse of the expired token", async () => {
-  const { EventEmitter } = await import("node:events");
-  const { once } = EventEmitter;
+it("expires a live subscription and rejects reuse of the expired token", { timeout: 8_000 }, async () => {
   const { io } = await import("socket.io-client");
   const service = createRealtimeService({ serviceSecret: secret, corsOrigins: [] });
   const server = service.server as unknown as import("node:http").Server;
@@ -112,16 +110,21 @@ it("expires a live subscription and rejects reuse of the expired token", async (
     algorithm: "HS256", expiresIn: 2, issuer: "fyp-nextjs", audience: "fyp-realtime",
   });
   const client = io(`http://127.0.0.1:${address.port}`, { auth: { token }, autoConnect: false, reconnection: false });
-  const guard = { signal: AbortSignal.timeout(6_000) };
   try {
-    const connected = once(client, "connect", guard);
-    const disconnected = once(client, "disconnect", guard);
+    const connected = new Promise<void>((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("connect_error", reject);
+    });
+    const disconnected = new Promise<string>((resolve) => client.once("disconnect", resolve));
     client.connect();
     await connected;
-    assert.equal((await disconnected)[0], "io server disconnect");
-    const rejected = once(client, "connect_error", guard);
+    assert.equal(await disconnected, "io server disconnect");
+    const rejected = new Promise<Error>((resolve, reject) => {
+      client.once("connect_error", resolve);
+      client.once("connect", () => reject(new Error("Expired credentials reconnected")));
+    });
     client.connect();
-    const [error] = await rejected;
+    const error = await rejected;
     assert.match(error.message, /Unauthorized realtime subscription/);
   } finally {
     client.disconnect();
