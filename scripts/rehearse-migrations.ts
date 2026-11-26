@@ -1,14 +1,21 @@
 import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
-import { UPGRADE_DATABASE } from "../src/shared/db/disposable-fixture";
+import { RESTORE_DATABASE, UPGRADE_DATABASE } from "../src/shared/db/disposable-fixture";
 import { runFixtureCommand, withDisposablePostgres } from "./disposable-postgres";
 import { verifyTestDatabaseEnvironment } from "./verify-test-database";
 
 const prismaCli = "node_modules/prisma/build/index.js";
 const history = 'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL';
+const completedChecksums = `SELECT migration_name || ':' || checksum FROM "_prisma_migrations"
+  WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name`;
+const legacyConstraints = `SELECT conname || ':' || pg_get_constraintdef(oid) FROM pg_constraint
+  WHERE conname IN ('Route_defaultDriverId_fkey', 'Bus_assigned_driver_id_fkey') ORDER BY conname`;
+const reconciliation = readFileSync("prisma/operations/reconcile-legacy-route.sql", "utf8");
+const runtimeGrants = readFileSync("prisma/operations/provision-runtime-grants.sql", "utf8");
 const protection = `SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace
   AND relname IN ('EmailVerificationToken', 'PasswordResetToken', 'ExternalAuthIdentity') AND relrowsecurity`;
 const preserved = `SELECT jsonb_build_object(
@@ -27,6 +34,13 @@ const preserved = `SELECT jsonb_build_object(
 const migrations = readdirSync("prisma/migrations", { withFileTypes: true })
   .filter((entry) => entry.isDirectory()).map(({ name }) => name).sort();
 
+function expectedChecksums(count: number) {
+  return migrations.slice(0, count).map((migration) => {
+    const sql = readFileSync(path.join("prisma/migrations", migration, "migration.sql"));
+    return `${migration}:${createHash("sha256").update(sql).digest("hex")}`;
+  }).join("\n");
+}
+
 function compareSchema(environment: NodeJS.ProcessEnv, expectedExit: number) {
   const diff = spawnSync(process.execPath, [prismaCli, "migrate", "diff",
     "--from-schema-datasource", "prisma/schema.prisma", "--to-schema-datamodel",
@@ -38,12 +52,27 @@ function compareSchema(environment: NodeJS.ProcessEnv, expectedExit: number) {
 
 async function checkUpgradeRuntime() {
   await verifyTestDatabaseEnvironment(process.env, UPGRADE_DATABASE);
+  const runtimeUrl = process.env.FYP_RUNTIME_DATABASE_URL;
+  assert.ok(runtimeUrl);
+  process.env.DATABASE_URL = runtimeUrl;
   const { prisma } = await import("../src/shared/db/prisma.server");
   const { authenticateWithPassword } = await import("../src/features/identity/application/password-login");
   const { passwordLoginStore } = await import("../src/features/identity/infrastructure/password-login.prisma.server");
   const { staffPasswordResetStore } = await import("../src/features/identity/infrastructure/staff-password-reset.prisma.server");
   const { canStudentIdentityAuthenticate } = await import("../src/features/identity/domain/email-verification");
   try {
+    const [privileges] = await prisma.$queryRaw<Array<{ safe: boolean }>>`
+      SELECT current_user = 'fyp_runtime_probe' AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls)
+        AND NOT has_schema_privilege(current_user, 'public', 'CREATE')
+        AND NOT has_table_privilege(current_user, 'public."_prisma_migrations"', 'SELECT')
+        AS safe FROM pg_roles WHERE rolname = current_user
+    `;
+    assert.equal(privileges?.safe, true);
+    await prisma.$transaction(async (transaction) => {
+      const trip = await transaction.$queryRaw`SELECT id FROM "Trip" WHERE id = 'upgrade-trip' FOR UPDATE`;
+      assert.ok(Array.isArray(trip) && trip.length === 1);
+      await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('fixture-runtime'))`;
+    });
     const staff = await authenticateWithPassword({
       identifier: "driver@example.test", password: "synthetic",
       demoStudentPasswordLoginEnabled: false, store: passwordLoginStore,
@@ -72,14 +101,25 @@ async function checkUpgradeRuntime() {
     const verification = { userId: student.id, tokenHash: "b".repeat(64), expiresAt: token.expiresAt };
     await prisma.emailVerificationToken.create({ data: verification });
     await assert.rejects(prisma.emailVerificationToken.create({ data: verification }), { code: "P2002" });
-    console.log("Upgrade runtime assertions passed for staff login, session assurance, Google identity and token uniqueness.");
+    const { createRoute } = await import("../src/features/fleet/application/manage-topology");
+    const line = await prisma.serviceLine.findFirstOrThrow({ orderBy: { id: "asc" } });
+    const stops = await prisma.stop.findMany({ orderBy: { id: "asc" } });
+    const route = await createRoute({ userId: "upgrade-admin", role: "ADMIN" }, {
+      name: "Synthetic New Route", lineId: line.id, direction: "INBOUND",
+      stops: stops.map((stop, index) => ({
+        stopId: stop.id, position: index, travelDurationToNextMinutes: index === stops.length - 1 ? null : 10,
+      })),
+    });
+    assert.ok(route.id);
+    console.log("Narrow runtime verified: staff login, assurance, identity/token uniqueness, transaction locks and Route creation.");
   } finally {
     await prisma.$disconnect();
   }
 }
 
 async function rehearse() {
-  await withDisposablePostgres(async ({ environment, sql }) => {
+  await withDisposablePostgres(async ({ version, environment, sql, dumpPublic }) => {
+    if (process.env.FYP_REQUIRE_POSTGRES_17 === "true") assert.match(version, /^17\./);
     assert.equal(migrations.length, 9);
     const clean = environment();
     await verifyTestDatabaseEnvironment(clean);
@@ -96,6 +136,8 @@ async function rehearse() {
     assert.equal(sql('SELECT count(*) FROM "Trip"'), "13");
     assert.equal(sql(protection), "3");
     assert.equal(sql(history), "9");
+    assert.equal(sql(completedChecksums), expectedChecksums(9));
+    sql(reconciliation);
     const fixtureState = `SELECT md5(jsonb_build_array(
       (SELECT jsonb_agg(t ORDER BY id) FROM "Trip" t),
       (SELECT jsonb_agg(b ORDER BY id) FROM "Booking" b),
@@ -128,8 +170,21 @@ async function rehearse() {
     }
     const query = (sqlText: string) => sql(sqlText, UPGRADE_DATABASE);
     assert.equal(query(history), "7");
+    assert.equal(query(completedChecksums), expectedChecksums(7));
     query(readFileSync("tests/fixtures/seven-migration-upgrade.sql", "utf8"));
     const before = query(preserved);
+    const constraints = query(legacyConstraints);
+    const restore = environment(RESTORE_DATABASE);
+    await verifyTestDatabaseEnvironment(restore, RESTORE_DATABASE);
+    sql(dumpPublic(UPGRADE_DATABASE), RESTORE_DATABASE);
+    assert.equal(sql(completedChecksums, RESTORE_DATABASE), expectedChecksums(7));
+    assert.equal(sql(preserved, RESTORE_DATABASE), before);
+    assert.equal(sql(legacyConstraints, RESTORE_DATABASE), constraints);
+    runFixtureCommand(process.execPath, [prismaCli, "migrate", "deploy"], restore);
+    sql(reconciliation, RESTORE_DATABASE);
+    assert.equal(sql(completedChecksums, RESTORE_DATABASE), expectedChecksums(9));
+    assert.equal(sql(preserved, RESTORE_DATABASE), before);
+    console.log("Synthetic seven-migration dump restored and upgraded in a separate verified database.");
     // Deliberately fail late in the first pending migration on this disposable target.
     query('CREATE TABLE "PasswordResetToken" (fixture_conflict integer)');
     const forcedFailure = spawnSync(process.execPath, [prismaCli, "migrate", "deploy"], {
@@ -164,13 +219,22 @@ async function rehearse() {
     assert.equal(query(history), "9");
     runFixtureCommand(process.execPath, [prismaCli, "migrate", "status"], upgrade);
 
-    // Rehearsal-only preservation proposal. Shared DDL requires separate approval.
-    query('ALTER TABLE "Route" ALTER COLUMN "defaultDriverId" DROP NOT NULL');
+    assert.equal(query(completedChecksums), expectedChecksums(9));
+    query(reconciliation);
+    query(reconciliation);
+    assert.equal(query(legacyConstraints), constraints);
     assert.equal(query(preserved), before);
     assert.equal(compareSchema(upgrade, 2), drift);
-    runFixtureCommand(process.execPath, ["--conditions=react-server", "--import", "tsx", "scripts/rehearse-migrations.ts", "--check-upgrade-runtime"], upgrade);
-    query(`INSERT INTO "Route" (id,name,"lineId",direction,"updatedAt")
-      SELECT 'upgrade-new-route','Synthetic New Route',id,'INBOUND',now() FROM "ServiceLine" ORDER BY id LIMIT 1`);
+    const runtimePassword = randomBytes(32).toString("hex");
+    query(`CREATE ROLE fyp_app_runtime NOLOGIN;
+      CREATE ROLE fyp_runtime_probe LOGIN PASSWORD '${runtimePassword}' IN ROLE fyp_app_runtime;`);
+    query(runtimeGrants);
+    const runtimeUrl = new URL(upgrade.DATABASE_URL!);
+    runtimeUrl.username = "fyp_runtime_probe";
+    runtimeUrl.password = runtimePassword;
+    runFixtureCommand(process.execPath, ["--conditions=react-server", "--import", "tsx", "scripts/rehearse-migrations.ts", "--check-upgrade-runtime"], {
+      ...upgrade, FYP_RUNTIME_DATABASE_URL: runtimeUrl.toString(),
+    });
     assert.equal(query(`CREATE ROLE fyp_fixture_api_role NOLOGIN;
       GRANT USAGE ON SCHEMA public TO fyp_fixture_api_role;
       GRANT SELECT ON "EmailVerificationToken", "PasswordResetToken", "ExternalAuthIdentity" TO fyp_fixture_api_role;
@@ -179,7 +243,7 @@ async function rehearse() {
         (SELECT count(*) FROM "PasswordResetToken") +
         (SELECT count(*) FROM "ExternalAuthIdentity");`).split("\n").at(-1), "0");
     assert.equal(query('SELECT count(*) FROM "Route" WHERE "defaultDriverId" IS NULL'), "1");
-    assert.equal(query('SELECT count(*) FROM "Route" WHERE "defaultDriverId" IS NOT NULL'), "1");
+    assert.equal(query('SELECT count(*) FROM "Route" WHERE "defaultDriverId" IS NOT NULL'), "10");
     assert.equal(query('SELECT count(*) FROM "Bus" WHERE assigned_driver_id IS NOT NULL'), "1");
     console.log("Upgrade: 7 → 9, repeat deploy was a no-op, historical rows and both legacy values preserved; old Route constraint no longer blocks a new Trip-authority route.");
   });

@@ -5,7 +5,8 @@ export const FIXTURE_CONFIRMATION = "FYP_BUS_INTEGRATION";
 export const FIXTURE_ROLE = "fyp_fixture";
 export const FIXTURE_DATABASE = "fyp_bus_test";
 export const UPGRADE_DATABASE = "fyp_upgrade_test";
-export type FixtureDatabase = typeof FIXTURE_DATABASE | typeof UPGRADE_DATABASE;
+export const RESTORE_DATABASE = "fyp_restore_test";
+export type FixtureDatabase = typeof FIXTURE_DATABASE | typeof UPGRADE_DATABASE | typeof RESTORE_DATABASE;
 type Environment = Readonly<Record<string, string | undefined>>;
 
 export function fixtureUrl(root: string, password: string, database: FixtureDatabase) {

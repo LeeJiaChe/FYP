@@ -8,6 +8,7 @@ import {
   FIXTURE_DATABASE,
   FIXTURE_ROLE,
   UPGRADE_DATABASE,
+  RESTORE_DATABASE,
   fixtureUrl,
   type FixtureDatabase,
 } from "../src/shared/db/disposable-fixture";
@@ -41,6 +42,7 @@ export function runFixtureCommand(
 export async function withDisposablePostgres<T>(work: (fixture: {
   environment: (database?: FixtureDatabase) => NodeJS.ProcessEnv;
   sql: (statement: string, database?: FixtureDatabase) => string;
+  dumpPublic: (database: FixtureDatabase) => string;
   version: string;
 }) => Promise<T>): Promise<T> {
   const dotenvFiles = [".env", ".env.local", "prisma/.env",
@@ -62,11 +64,16 @@ export async function withDisposablePostgres<T>(work: (fixture: {
   const pg = (binary: string, args: string[], options?: { quiet?: boolean; input?: string }, env = inherited) =>
     runFixtureCommand(path.join(binaryDir, binary), args, env, options);
 
-  function psql(statement: string, database: string) {
-    return pg("psql", ["-X", "-w", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate", "-At"], { quiet: true, input: statement }, {
+  function connection(database: string) {
+    return {
       ...inherited, PGHOST: socket, PGPORT: "5432", PGUSER: FIXTURE_ROLE,
       PGPASSWORD: password, PGDATABASE: database, PGCONNECT_TIMEOUT: "3",
-    }).trim();
+    };
+  }
+
+  function psql(statement: string, database: string) {
+    return pg("psql", ["-X", "-w", "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate", "-At"],
+      { quiet: true, input: statement }, connection(database)).trim();
   }
 
   let started = false;
@@ -79,7 +86,7 @@ export async function withDisposablePostgres<T>(work: (fixture: {
     pg("pg_ctl", ["start", "-D", data, "-w", "-t", "20", "-l", path.join(root, "postgres.log"),
       "-o", `-c listen_addresses='' -c unix_socket_directories=${socket} -c unix_socket_permissions=0700 -p 5432`], { quiet: true });
     started = true;
-    for (const database of [FIXTURE_DATABASE, UPGRADE_DATABASE]) {
+    for (const database of [FIXTURE_DATABASE, UPGRADE_DATABASE, RESTORE_DATABASE]) {
       psql(`CREATE DATABASE "${database}"`, "postgres");
       psql(`CREATE SCHEMA fyp_fixture_guard;
         CREATE TABLE fyp_fixture_guard.provisioning (nonce text PRIMARY KEY);
@@ -91,6 +98,9 @@ export async function withDisposablePostgres<T>(work: (fixture: {
     return await work({
       version,
       sql: (statement, database = FIXTURE_DATABASE) => psql(statement, database),
+      dumpPublic: (database) =>
+        pg("pg_dump", ["-w", "--schema=public", "--no-owner", "--no-privileges"],
+          { quiet: true }, connection(database)),
       environment(database = FIXTURE_DATABASE) {
         const url = fixtureUrl(root, password, database);
         return {

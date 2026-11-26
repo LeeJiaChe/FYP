@@ -7,12 +7,16 @@ INSERT INTO "Bus" (id, "plateNumber", "seatedCapacity", "standingCapacity")
 VALUES ('upgrade-bus', 'UPGRADE-1', 2, 1);
 INSERT INTO "Route" (id, name, "lineId", direction, "updatedAt")
 SELECT 'upgrade-route', 'Synthetic Upgrade Route', id, 'OUTBOUND', now() FROM "ServiceLine" ORDER BY id LIMIT 1;
+INSERT INTO "Route" (id, name, "lineId", direction, "updatedAt")
+SELECT 'upgrade-route-' || n, 'Synthetic Upgrade Route ' || n, line.id, 'OUTBOUND', now()
+FROM generate_series(2, 10) n
+CROSS JOIN LATERAL (SELECT id FROM "ServiceLine" ORDER BY id LIMIT 1) line;
 ALTER TABLE "Bus" ADD COLUMN assigned_driver_id text
     CONSTRAINT "Bus_assigned_driver_id_fkey" REFERENCES "User"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 ALTER TABLE "Route" ADD COLUMN "defaultDriverId" text
     CONSTRAINT "Route_defaultDriverId_fkey" REFERENCES "User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
 UPDATE "Bus" SET assigned_driver_id = 'upgrade-driver' WHERE id = 'upgrade-bus';
-UPDATE "Route" SET "defaultDriverId" = 'upgrade-driver' WHERE id = 'upgrade-route';
+UPDATE "Route" SET "defaultDriverId" = 'upgrade-driver' WHERE id LIKE 'upgrade-route%';
 ALTER TABLE "Route" ALTER COLUMN "defaultDriverId" SET NOT NULL;
 
 INSERT INTO "Stop" (id, code, name, latitude, longitude, "updatedAt")

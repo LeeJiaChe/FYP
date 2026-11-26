@@ -8,6 +8,7 @@ on:
       - develop
       - architecture-v2
       - fix/recovery-r1-r3-core-stabilization
+      - release/recovery-r4-r6-final-acceptance
 
 permissions:
   contents: read
@@ -27,12 +28,15 @@ jobs:
       QR_SECRET: build-only-qr-value-distinct-at-least-32-characters
       REALTIME_SERVICE_SECRET: build-only-realtime-value-at-least-32-characters
       REALTIME_URL: http://127.0.0.1:1
+      APP_BASE_URL: https://fixture.example.test
       RUN_SCHEDULED_JOBS: "false"
       NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -40,8 +44,12 @@ jobs:
       - name: Install locked dependencies and PostgreSQL tooling
         run: |
           npm ci
+          curl --fail --silent --show-error --retry 3 https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$RUNNER_TEMP/pgdg.asc"
+          sudo install -m 0644 "$RUNNER_TEMP/pgdg.asc" /usr/share/keyrings/fyp-pgdg.asc
+          echo 'deb [signed-by=/usr/share/keyrings/fyp-pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/fyp-pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-16 libpq-dev
+          sudo apt-get install -y postgresql-17 postgresql-client-17
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
 
       - name: Generate and validate Prisma
         run: |
@@ -59,7 +67,10 @@ jobs:
       - run: npm run test:rehearsal
         env:
           TEST_DATABASE_CONFIRM: FYP_BUS_INTEGRATION
+          FYP_REQUIRE_POSTGRES_17: "true"
       - run: npm run build
+      - run: npm audit --audit-level=high
+      - run: git diff --check HEAD^ HEAD
 
       - name: Install pinned Chromium with bounded retries
         timeout-minutes: 9
@@ -79,7 +90,7 @@ jobs:
 
       - name: Upload failed browser reports from synthetic fixtures
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: playwright-report
           path: playwright-report/
