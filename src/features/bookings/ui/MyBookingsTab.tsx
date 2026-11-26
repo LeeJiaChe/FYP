@@ -14,6 +14,8 @@ interface Props {
   myBookings: any[];
   waitlistEntries: any[];
   walkInIntents: any[];
+  bookingsStatus: "loading" | "ready" | "error";
+  walkInsStatus: "loading" | "ready" | "error";
   onRefresh: () => void;
   onBrowseTrips: () => void;
   onOpenQR: (booking: any) => void;
@@ -45,6 +47,8 @@ export default function MyBookingsTab(props: Props) {
     myBookings.length === 0 &&
     waitlistEntries.length === 0 &&
     walkInIntents.length === 0;
+  const loading = props.bookingsStatus === "loading" || props.walkInsStatus === "loading";
+  const failed = props.bookingsStatus === "error" || props.walkInsStatus === "error";
 
   function bookingRow(booking: any, focal = false) {
     const historical = classifyStudentJourney(booking, now) === "PAST";
@@ -80,8 +84,10 @@ export default function MyBookingsTab(props: Props) {
   return (
     <div className="journeys-view animate-fade-in">
       <header><div><p className="eyebrow">Passenger journeys</p><h1 className="section-title">My journeys</h1><p className="section-subtitle">Reserved seats, waitlist requests and non-guaranteed walk-in intentions.</p></div><button onClick={props.onRefresh} className="btn-ghost"><RefreshCw aria-hidden className="size-4" /> Refresh</button></header>
+      {loading && <p role="status">Loading journeys…</p>}
+      {failed && <p role="alert">Some journey details are unavailable. Use Refresh to try again.</p>}
       {empty ? (
-        <div className="journey-empty"><Ticket aria-hidden className="size-8" /><strong>No journeys yet</strong><button onClick={props.onBrowseTrips} className="btn-primary">Book a shuttle</button></div>
+        !loading && !failed && <div className="journey-empty"><Ticket aria-hidden className="size-8" /><strong>No journeys yet</strong><button onClick={props.onBrowseTrips} className="btn-primary">Book a shuttle</button></div>
       ) : (
         <div className="journey-sections">
           {upcoming.length > 0 && <section><h2>{activeBoarded.length > 0 ? "Current / upcoming" : "Upcoming"} <span>{upcoming.length}</span></h2><div>{upcoming.map((booking, index) => bookingRow(booking, index === 0))}</div></section>}
@@ -90,7 +96,26 @@ export default function MyBookingsTab(props: Props) {
               <h2>Waitlist / Walk-in <span>{waitlistEntries.length + walkInIntents.length}</span></h2>
               <div>
                 {walkInIntents.map((intent) => <article key={intent.id} className="journey-row alternative is-waitlist"><div className="journey-main"><span className="journey-status is-waitlist">Walk-in · {intent.status.replaceAll("_", " ")}</span><h3>{intent.boardingStopName} → {intent.dropOffStopName}</h3><p>{intent.trip.routeName}</p><small className="warning-copy">Boarding not guaranteed. Standing capacity is checked when the Driver verifies the pass.</small></div><div className="journey-actions">{intent.status === "PENDING" && <button onClick={() => props.onOpenWalkInQR(intent)} className="btn-primary"><QrCode aria-hidden className="size-4" /> Walk-in Pass</button>}{intent.journey?.status === "BOARDED" && !intent.journey.actualAlightedAt && <button onClick={() => props.onOpenAlightingQR("WALK_IN", { ...intent, id: intent.journey.id })} className="btn-primary"><DoorOpen aria-hidden className="size-4" /> Exit Pass</button>}</div></article>)}
-                {waitlistEntries.map((entry) => <article key={entry.id} className="journey-row alternative is-waitlist"><div className="journey-main"><span className="journey-status is-waitlist">Waitlist · {entry.status.replaceAll("_", " ")}</span><h3>{entry.boardingStopName} → {entry.dropOffStopName}</h3><p>{entry.trip.routeName} · queued {formatMytDateTime(entry.queuedAt)} MYT</p><small className="warning-copy">Waiting for a journey-specific seat. This is not a confirmed reservation.</small></div>{entry.status === "WAITING" && <div className="journey-actions"><button onClick={() => props.onLeaveWaitlist(entry.id)} className="btn-ghost danger">Leave waitlist</button></div>}</article>)}
+                {waitlistEntries.map((entry) => (
+                  <article key={entry.id} className="journey-row alternative is-waitlist">
+                    <div className="journey-main">
+                      <span className="journey-status is-waitlist">Waitlist · {entry.status.replaceAll("_", " ")}</span>
+                      <h3>{entry.boardingStopName} → {entry.dropOffStopName}</h3>
+                      <p>{entry.trip.routeName} · queued {formatMytDateTime(entry.queuedAt)} MYT</p>
+                      {entry.status === "WAITING" && (
+                        <>
+                          <p role="status">Queue position: #{entry.queuePosition} for this trip</p>
+                          <small className="warning-copy">Seats go to the earliest request they can serve for the complete journey.</small>
+                        </>
+                      )}
+                    </div>
+                    {entry.status === "WAITING" && (
+                      <div className="journey-actions">
+                        <button onClick={() => props.onLeaveWaitlist(entry.id)} className="btn-ghost danger">Leave waitlist</button>
+                      </div>
+                    )}
+                  </article>
+                ))}
               </div>
             </section>
           )}

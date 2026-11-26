@@ -23,7 +23,7 @@ function readableDate(value: string) {
   return formatMytDate(`${value}T00:00:00+08:00`);
 }
 
-function eligibilityMessage(reason?: string, opensAt?: string) {
+export function eligibilityMessage(reason?: string, opensAt?: string) {
   if (reason === "BOOKING_NOT_OPEN") return opensAt ? `Booking opens ${formatMytDate(opensAt)} at ${formatMytTime(opensAt)} MYT.` : "Booking has not opened yet.";
   if (reason === "BOOKING_CLOSED") return "Booking closed when boarding began at this stop.";
   if (reason === "TRIP_CANCELLED") return "This Trip was cancelled.";
@@ -78,12 +78,12 @@ export default function TripsTab({
   }, [fromStop, toStop, trips]);
 
   const availableDates = useMemo(
-    () => Array.from(new Set(matchingTrips.map((trip) => dateKey(trip.departureTime)))).sort(),
+    () => Array.from(new Set(matchingTrips.map((trip) => dateKey(trip.boardingStop.plannedDeparture)))).sort(),
     [matchingTrips],
   );
 
   const departures = matchingTrips
-    .filter((trip) => !travelDate || dateKey(trip.departureTime) === travelDate)
+    .filter((trip) => !travelDate || dateKey(trip.boardingStop.plannedDeparture) === travelDate)
     .sort((a, b) => new Date(a.boardingStop?.plannedDeparture ?? a.departureTime).getTime() - new Date(b.boardingStop?.plannedDeparture ?? b.departureTime).getTime());
 
   useEffect(() => {

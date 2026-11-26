@@ -8,12 +8,12 @@ import { handleRoute } from "@/shared/http/handle-route.server";
 
 export async function PATCH(
   request: Request,
-  context: RouteContext<"/api/bookings/[id]/cancel">,
+  { params }: { params: Promise<{ id: string }> },
 ) {
   return handleRoute(request, async () => {
     const user = await getUserFromToken();
     if (!user) throw unauthenticated();
-    const { id } = await context.params;
+    const { id } = await params;
     const result = await cancelReservedBooking(
       { userId: user.userId, role: user.role },
       bookingIdSchema.parse(id),

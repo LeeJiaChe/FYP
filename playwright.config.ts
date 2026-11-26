@@ -40,6 +40,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "node --import tsx scripts/start-fixture-app.ts",
+    env: { TRUST_FYP_CLIENT_IP: "true" },
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

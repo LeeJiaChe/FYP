@@ -65,6 +65,7 @@ async function loadJourney(
   selection: JourneySelection,
   now: Date,
   policy: ProductPolicy,
+  enforceEligibility = true,
 ) {
   const [student, trip] = await Promise.all([
     transaction.user.findUnique({
@@ -101,6 +102,7 @@ async function loadJourney(
 
   try {
     const segments = deriveJourneySegments(boarding, dropOff, trip.tripSegments);
+    if (!enforceEligibility) return { student, trip, boarding, dropOff, segments };
     assertReservationEligibility(
       {
         tripStatus: trip.status,
@@ -211,21 +213,34 @@ export async function findJourneyAvailabilityRecord(
       selection,
       now,
       policy,
+      false,
     );
-    const seats = await availableTripSeats(
-      transaction,
-      selection.tripId,
-      journey.segments.map((segment) => segment.id),
-    );
+    const seatMap = await transaction.tripSeat.findMany({
+      where: { tripId: selection.tripId },
+      select: {
+        id: true,
+        seatNumber: true,
+        reservedSeatSegments: {
+          where: { tripSegmentId: { in: journey.segments.map((segment) => segment.id) } },
+          select: { tripSegmentId: true },
+          take: 1,
+        },
+      },
+      orderBy: { seatNumber: "asc" },
+    });
     return {
       tripId: selection.tripId,
       tripStatus: journey.trip.status,
       studentCredit: journey.student.creditScore,
       boardingTripStop: journey.boarding,
       dropOffTripStop: journey.dropOff,
-      seats,
+      seatMap: seatMap.map(({ id, seatNumber, reservedSeatSegments }) => ({
+        id,
+        seatNumber,
+        status: reservedSeatSegments.length ? "RESERVED" as const : "AVAILABLE" as const,
+      })),
     };
-  });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 
 export async function createReservedBookingRecord(
@@ -523,11 +538,12 @@ export async function cancelWaitlistEntryRecord(
       data: { status: "CANCELLED" },
     });
     if (updated.count !== 1) throw new BookingPersistenceError("BOOKING_NOT_FOUND");
+    return entry.tripId;
   });
 }
 
 export async function listStudentReservationRecords(studentId: string) {
-  const [bookings, waitlist] = await Promise.all([
+  const [bookings, waitlist, positions] = await prisma.$transaction([
     prisma.booking.findMany({
       where: { studentId },
       include: {
@@ -553,6 +569,24 @@ export async function listStudentReservationRecords(studentId: string) {
       },
       orderBy: [{ queuedAt: "asc" }, { id: "asc" }],
     }),
-  ]);
-  return { bookings, waitlist };
+    prisma.$queryRaw<Array<{ id: string; position: number }>>`
+      SELECT own."id", (
+        SELECT COUNT(*)::int + 1
+        FROM "WaitlistEntry" earlier
+        WHERE earlier."tripId" = own."tripId"
+          AND earlier."status" = 'WAITING'
+          AND (earlier."queuedAt", earlier."id") < (own."queuedAt", own."id")
+      ) AS position
+      FROM "WaitlistEntry" own
+      WHERE own."studentId" = ${studentId} AND own."status" = 'WAITING'
+    `,
+  ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  const positionById = new Map(positions.map(({ id, position }) => [id, position]));
+  return {
+    bookings,
+    waitlist: waitlist.map((entry) => ({
+      ...entry,
+      queuePosition: positionById.get(entry.id) ?? null,
+    })),
+  };
 }

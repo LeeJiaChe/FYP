@@ -12,7 +12,7 @@ import SeatGrid, { SeatItem } from "@/components/SeatGrid";
 import { DynamicQRModal, type DynamicPassDescriptor } from "@/features/boarding/ui";
 import { PenaltyAppealModal, PenaltiesTab } from "@/features/penalties/ui";
 import StudentHome from "@/components/student/StudentHome";
-import TripsTab from "@/features/bookings/ui/TripsTab";
+import TripsTab, { eligibilityMessage } from "@/features/bookings/ui/TripsTab";
 import MyBookingsTab from "@/features/bookings/ui/MyBookingsTab";
 import { TrackBusTab } from "@/features/location/ui";
 import { useCurrentUser } from "@/features/identity/ui";
@@ -25,8 +25,17 @@ import { useOperationalClock } from "@/shared/ui/useOperationalClock";
 import { AlertCircle, Bus, CheckCircle2, Home, Navigation, Ticket, UserRound } from "lucide-react";
 
 type StudentView = "home" | "book" | "journeys" | "track" | "account";
+type TripInvalidationHandler = Parameters<typeof useTripRealtime>[1];
 
-export default function StudentPortal({ initialUser, initialTime, initialView = "home" }: { initialUser: CurrentUser; initialTime: string; initialView?: StudentView }) {
+function StudentTripSubscription({ tripId, onInvalidate }: {
+  tripId: string;
+  onInvalidate: TripInvalidationHandler;
+}) {
+  useTripRealtime(tripId, onInvalidate);
+  return null;
+}
+
+export default function StudentPortal({ initialUser, initialTime, initialView = "home", demoMode }: { initialUser: CurrentUser; initialTime: string; initialView?: StudentView; demoMode: boolean }) {
   const operationalNow = useOperationalClock();
   const [activeTab, setActiveTab] = useState<StudentView>(initialView);
   const scrollViewportRef = useRef<HTMLElement>(null);
@@ -43,8 +52,10 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
     dropOffTripStopId: string;
     boardingStopName: string;
     dropOffStopName: string;
+    boardingPlannedDeparture: string;
   } | null>(null);
   const [tripSeats, setTripSeats] = useState<SeatItem[]>([]);
+  const availabilityRequest = useRef(0);
   const [selectedEligibility, setSelectedEligibility] = useState<any>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -55,8 +66,10 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
   // My Bookings state
   const [myBookings, setMyBookings] = useState<any[]>([]);
   const [myWaitlist, setMyWaitlist] = useState<any[]>([]);
+  const reservationsRequest = useRef(0);
   const [myWalkIns, setMyWalkIns] = useState<any[]>([]);
   const [bookingsStatus, setBookingsStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [walkInsStatus, setWalkInsStatus] = useState<"loading" | "ready" | "error">("loading");
   const [activePass, setActivePass] = useState<DynamicPassDescriptor | null>(null);
 
   // Tracked trip for real-time location
@@ -95,23 +108,30 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [selectedTrip]);
 
-  const subscribedTripId = selectedTrip?.id ??
-    myBookings.find((booking) => booking.status === "CONFIRMED")?.tripId ??
-    myWaitlist.find((entry) => entry.status === "WAITING")?.tripId ?? null;
+  const subscribedTripIds = new Set<string>([
+    ...myBookings.filter((booking) => booking.status === "CONFIRMED").map((booking) => booking.trip.id),
+    ...myWaitlist.filter((entry) => entry.status === "WAITING").map((entry) => entry.trip.id),
+  ]);
+  if (selectedTrip) subscribedTripIds.add(selectedTrip.id);
 
-  useTripRealtime(subscribedTripId, (event) => {
+  function handleTripInvalidation(tripId: string, ...invalidation: Parameters<TripInvalidationHandler>) {
+    const [event, reason] = invalidation;
     if (event === "location.changed") return;
-    if (event === "connect" && selectedTrip) return;
+    if (event === "trip.changed" || event === "connect" || reason === "NO_SHOW_RECONCILED") {
+      void fetchUser();
+      void fetchPenalties();
+      void fetchTrips();
+    }
     void fetchBookings();
-    if (selectedTrip && selectedJourney) {
+    if (selectedTrip?.id === tripId && selectedJourney) {
       void openSeatBookingModal(
-        selectedTrip.id,
+        tripId,
         selectedJourney.boardingTripStopId,
         selectedJourney.dropOffTripStopId,
         true,
       );
     }
-  });
+  }
 
   async function fetchRoutes() {
     try {
@@ -124,10 +144,13 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
   }
 
   async function fetchBookings() {
+    const request = ++reservationsRequest.current;
     try {
       const res = await fetch("/api/bookings/mine");
+      if (request !== reservationsRequest.current) return;
       if (res.ok) {
         const data = await res.json();
+        if (request !== reservationsRequest.current) return;
         setMyBookings(data.bookings || []);
         setMyWaitlist(data.waitlist || []);
         setBookingsStatus("ready");
@@ -135,6 +158,7 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
         setBookingsStatus("error");
       }
     } catch (err: any) {
+      if (request !== reservationsRequest.current) return;
       setBookingsStatus("error");
       toast.error(err.message || "An error occurred");
     }
@@ -146,8 +170,12 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
       if (response.ok) {
         const data = await response.json();
         setMyWalkIns(data.intents || []);
+        setWalkInsStatus("ready");
+      } else {
+        setWalkInsStatus("error");
       }
     } catch (error: any) {
+      setWalkInsStatus("error");
       toast.error(error.message || "Unable to load Walk-in Passes");
     }
   }
@@ -209,6 +237,7 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
       setBookingError(null);
       setSelectedSeatId(null);
     }
+    const request = ++availabilityRequest.current;
     try {
       const params = new URLSearchParams({
         tripId,
@@ -217,21 +246,24 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
       });
       const res = await fetch(`/api/bookings/availability?${params}`);
       const data = await res.json();
+      if (request !== availabilityRequest.current) return;
       if (res.ok) {
         const trip = trips.find((candidate) => candidate.id === tripId);
         if (!refresh) {
           setSelectedTrip(trip);
           setSelectedJourney(data.availability.journey);
         }
-        const seats = data.availability.seats as Array<{ id: string; seatNumber: number }>;
-        if (refresh) setSelectedSeatId((id) => seats.some((seat) => seat.id === id) ? id : null);
-        setSelectedEligibility(data.availability.bookingEligibility);
-        setTripSeats(
-          seats.map((seat) => ({
-            ...seat,
-            status: "AVAILABLE" as const,
-          })),
-        );
+        const seats = data.availability.seatMap as SeatItem[];
+        const eligibility = data.availability.bookingEligibility;
+        if (refresh) {
+          setSelectedSeatId((id) =>
+            eligibility.canReserve && seats.some((seat) => seat.id === id && seat.status === "AVAILABLE")
+              ? id
+              : null,
+          );
+        }
+        setSelectedEligibility(eligibility);
+        setTripSeats(seats);
       } else {
         toast.error(typeof data.error === "string" ? data.error : data.error?.message || "Unable to check journey seats");
       }
@@ -377,6 +409,7 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
   const activeBookingsCount = myBookings.filter(
     (b) => b.status === "CONFIRMED"
   ).length + myWaitlist.filter((entry) => entry.status === "WAITING").length;
+  const availableSeatCount = tripSeats.filter((seat) => seat.status === "AVAILABLE").length;
   const isRestricted =
     (user?.creditScore ?? productPolicy.initialCredit) <
     productPolicy.bookingRestrictionBelowCredit;
@@ -449,6 +482,8 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
             myBookings={myBookings}
             waitlistEntries={myWaitlist}
             walkInIntents={myWalkIns}
+            bookingsStatus={bookingsStatus}
+            walkInsStatus={walkInsStatus}
             onRefresh={() => { void fetchBookings(); void fetchWalkIns(); }}
             onBrowseTrips={() => setActiveTab("book")}
             onOpenQR={openReservedPass}
@@ -492,6 +527,14 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
         ))}
       </nav>
 
+      {[...subscribedTripIds].map((tripId) => (
+        <StudentTripSubscription
+          key={tripId}
+          tripId={tripId}
+          onInvalidate={(event, reason) => handleTripInvalidation(tripId, event, reason)}
+        />
+      ))}
+
       {/* SEAT SELECTION MODAL */}
       {selectedTrip && (
         <Modal isOpen onClose={() => setSelectedTrip(null)} title="Choose your seat" maxWidth="2xl">
@@ -500,7 +543,7 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
               <p className="eyebrow">{selectedTrip.routeName}</p>
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>
               Bus: {selectedTrip.busPlateNumber} • Departs:{" "}
-              {formatMytTime(selectedTrip.departureTime)} MYT
+              {formatMytTime(selectedJourney?.boardingPlannedDeparture ?? selectedTrip.departureTime)} MYT
               </p>
               {selectedJourney && (
               <h3>
@@ -521,8 +564,14 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
               selectedSeatId={selectedSeatId}
               onSelectSeat={(seatId) => setSelectedSeatId(seatId)}
               mode="student"
+              interactive={selectedEligibility?.canReserve === true}
             />
-            {tripSeats.length === 0 && (
+            {(selectedEligibility?.canReserve || selectedEligibility?.reason === "FULL") && (
+              <p role="status" className="mt-4 text-xs">
+                {availableSeatCount} of {tripSeats.length} seats available
+              </p>
+            )}
+            {availableSeatCount === 0 && (
               <p className="mt-4 text-xs font-semibold text-[var(--warning)]">
                 No single seat is free across this complete journey.
               </p>
@@ -530,9 +579,11 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
 
             <div className="seat-confirmation-bar">
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {selectedSeatId
-                  ? "Seat selected. Your seat is guaranteed after booking confirmation."
-                  : "Please select an available seat"}
+                {!selectedEligibility?.canReserve
+                  ? eligibilityMessage(selectedEligibility?.reason, selectedEligibility?.opensAt)
+                  : selectedSeatId
+                    ? "Seat selected. Your seat is guaranteed after booking confirmation."
+                    : availableSeatCount > 0 ? "Please select an available seat" : null}
               </span>
 
               <div className="flex flex-wrap gap-2">
@@ -544,10 +595,9 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
                   Cancel
                 </button>
 
-                {tripSeats.filter((s) => s.status === "AVAILABLE").length >
-                0 ? (
+                {availableSeatCount > 0 ? (
                   <button
-                    disabled={!selectedSeatId || bookingLoading}
+                    disabled={!selectedEligibility?.canReserve || !selectedSeatId || bookingLoading}
                     onClick={handleConfirmBooking}
                     className="btn-primary text-xs"
                   >
@@ -580,6 +630,7 @@ export default function StudentPortal({ initialUser, initialTime, initialView = 
       {/* DYNAMIC QR MODAL */}
       {activePass && (
         <DynamicQRModal
+          demoMode={demoMode}
           pass={activePass}
           onClose={() => setActivePass(null)}
         />

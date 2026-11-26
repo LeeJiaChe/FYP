@@ -7,9 +7,15 @@ test("student core flow fits 320 px and keeps seat selection keyboard operable",
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("navigation", { name: "Student mobile navigation" })).toBeVisible();
-  await expect.poll(() => page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-  )).toBe(false);
+  await expect.poll(() => page.evaluate(() => {
+    const { clientWidth, scrollWidth } = document.documentElement;
+    if (scrollWidth <= clientWidth) return null;
+    const elements = [...document.body.querySelectorAll("*")]
+      .filter((element) => element.getBoundingClientRect().right > clientWidth + .5)
+      .slice(0, 12)
+      .map((element) => element.getAttribute("class") || element.tagName);
+    return { clientWidth, scrollWidth, elements };
+  })).toBeNull();
   await page.getByRole("button", { name: "Book", exact: true }).click();
   const response = await page.request.get("/api/routes");
   const { routes } = await response.json();

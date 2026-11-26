@@ -46,7 +46,7 @@ function mapPersistenceFailure(error: BookingPersistenceError): never {
     case "SEAT_NOT_ON_TRIP":
       throw validationError("Selected seat does not belong to this Trip");
     case "RESTRICTED":
-      throw forbidden("Reserved booking is restricted for this student account");
+      throw forbidden("Your passenger credit is below the minimum required to reserve a seat");
     case "NOT_BOOKABLE":
       throw conflict("Trip is not open for reserved booking");
     case "TOO_EARLY":
@@ -90,6 +90,9 @@ export async function findJourneyAvailability(
   const result = await translate(() =>
     findJourneyAvailabilityRecord(actor.userId, selection, clock.now(), policy),
   );
+  const seats = result.seatMap
+    .filter((seat) => seat.status === "AVAILABLE")
+    .map(({ id, seatNumber }) => ({ id, seatNumber }));
   return {
     tripId: result.tripId,
     journey: {
@@ -99,8 +102,9 @@ export async function findJourneyAvailability(
       dropOffTripStopId: result.dropOffTripStop.id,
       dropOffStopName: result.dropOffTripStop.stopName,
     },
-    seats: result.seats,
-    hasAvailableSeat: result.seats.length > 0,
+    seats,
+    seatMap: result.seatMap,
+    hasAvailableSeat: seats.length > 0,
     bookingEligibility: resolveStudentBookingEligibility(
       {
         tripStatus: result.tripStatus,
@@ -113,7 +117,7 @@ export async function findJourneyAvailability(
       },
       policy,
       {
-        hasAvailableSeat: result.seats.length > 0,
+        hasAvailableSeat: seats.length > 0,
         canCreateWalkInIntent: isWalkInIssuanceEligible(
           clock.now(),
           result.tripStatus,
@@ -188,8 +192,8 @@ export async function cancelJourneyWaitlistEntry(
   entryId: string,
 ) {
   requireStudent(actor);
-  await translate(() => cancelWaitlistEntryRecord(actor.userId, entryId));
-  return { id: entryId, status: "CANCELLED" as const };
+  const tripId = await translate(() => cancelWaitlistEntryRecord(actor.userId, entryId));
+  return { id: entryId, status: "CANCELLED" as const, tripId };
 }
 
 export async function listMyReservations(actor: BookingActor) {
@@ -226,6 +230,7 @@ export async function listMyReservations(actor: BookingActor) {
       id: entry.id,
       status: entry.status,
       queuedAt: entry.queuedAt,
+      queuePosition: entry.queuePosition,
       boardingTripStopId: entry.boardingTripStopId,
       boardingStopName: entry.boardingTripStop.stopName,
       dropOffTripStopId: entry.dropOffTripStopId,

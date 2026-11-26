@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  cancelJourneyWaitlistEntry as cancelJourneyWaitlistEntryUseCase,
   cancelReservedBooking as cancelReservedBookingUseCase,
   createReservedBooking as createReservedBookingUseCase,
   joinJourneyWaitlist as joinJourneyWaitlistUseCase,
@@ -15,7 +16,6 @@ export {
   waitlistEntryIdSchema,
 } from "./contracts/booking.schemas";
 export {
-  cancelJourneyWaitlistEntry,
   findJourneyAvailability,
   listMyReservations,
 } from "./application/reservations";
@@ -43,6 +43,18 @@ export async function joinJourneyWaitlist(
   const entry = await joinJourneyWaitlistUseCase(...args);
   await notifyRealtime(`trip:${entry.tripId}`, "occupancy.changed", {
     entityId: entry.tripId,
+    changedAt: new Date().toISOString(),
+    reason: "WAITLIST_CHANGED",
+  });
+  return entry;
+}
+
+export async function cancelJourneyWaitlistEntry(
+  ...args: Parameters<typeof cancelJourneyWaitlistEntryUseCase>
+) {
+  const { tripId, ...entry } = await cancelJourneyWaitlistEntryUseCase(...args);
+  await notifyRealtime(`trip:${tripId}`, "occupancy.changed", {
+    entityId: tripId,
     changedAt: new Date().toISOString(),
     reason: "WAITLIST_CHANGED",
   });

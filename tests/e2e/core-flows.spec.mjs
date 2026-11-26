@@ -72,7 +72,7 @@ test("fresh seed exposes the ten canonical directional routes without retired pl
   expect(location?.source).toBe("SIMULATED");
 });
 
-test("student creates a reserved journey and opens its Reserved Pass", async ({ browser }) => {
+test("student reserves a journey and the driver verifies its QR pass exactly once", async ({ browser }) => {
   const page = await browser.newPage();
   await login(page, "student6@student.tarc.edu.my");
   await openJourney(page, "TAR UMT → Wangsa Maju Section 2");
@@ -90,12 +90,30 @@ test("student creates a reserved journey and opens its Reserved Pass", async ({ 
   await expect(driver.getByText("TAR UMT → Wangsa Maju Section 2", { exact: true }).first()).toBeVisible();
   await driver.getByRole("button", { name: "Start boarding" }).click();
   await expect(driver.getByRole("heading", { name: /Current stop: TAR UMT Gate 7 \/ East Campus/ })).toBeVisible();
-  await driver.close();
 
+  const tokenResponse = page.waitForResponse((response) => response.url().endsWith("/qr-token"));
   await page.getByRole("button", { name: /Reserved Pass/ }).click();
+  const { token } = await (await tokenResponse).json();
   await expect(page.getByRole("dialog", { name: /Reserved Boarding Pass/ })).toBeVisible();
   await expect(page.getByText("Reserved Boarding", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy demo token" })).toBeVisible();
+  await expect.poll(() => page.getByRole("img", { name: "Reserved Boarding QR code" })
+    .evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+
+  await driver.getByRole("button", { name: "Scan boarding pass" }).click();
+  const scanner = driver.getByRole("dialog", { name: "Boarding Pass Scanner" });
+  const submitToken = async () => {
+    await scanner.getByText("Development / Demo fallback: paste pass token").click();
+    await scanner.getByLabel("Development token fallback").fill(token);
+    await scanner.getByRole("button", { name: "Validate fallback token" }).click();
+  };
+  await submitToken();
+  await expect(scanner.getByText("Boarding recorded", { exact: true })).toBeVisible();
+  await scanner.getByRole("button", { name: "Continue scanning" }).click();
+  await submitToken();
+  await expect(scanner.getByText("Already boarded", { exact: true })).toBeVisible();
+  await expect(scanner.getByText("Boarding recorded", { exact: true })).toHaveCount(0);
+  await driver.close();
   await page.close();
 });
 
@@ -103,9 +121,13 @@ test("student joins a deterministic full-journey waitlist through the UI", async
   await login(page, "student7@student.tarc.edu.my");
   await openJourney(page, "TAR UMT → PV10/PV12/PV13 corridor");
   await expect(page.getByText("No single seat is free across this complete journey.")).toBeVisible();
+  const seatMap = page.getByRole("group", { name: "Shuttle seat map" });
+  await expect(seatMap.getByRole("button", { name: "Seat 1, Reserved" })).toBeDisabled();
+  await expect(seatMap.getByRole("button", { name: /Seat \d+, Available/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Join Waitlist" }).click();
   await expect(page.getByText("Waitlist · WAITING")).toBeVisible();
   await expect(page.getByRole("article").filter({ hasText: "TAR UMT → PV10/PV12/PV13 corridor" })).toBeVisible();
+  await expect(page.getByText(/Queue position: #\d+ for this trip/)).toBeVisible();
 });
 
 test("student creates a non-guaranteed Walk-in Pass through the UI", async ({ page }) => {
@@ -198,9 +220,17 @@ test("admin schedules a valid Trip and sees its generated snapshot projection", 
 test("persisted GPS remains explicitly simulated and never timetable-derived", async ({ page }) => {
   await login(page, "student1@student.tarc.edu.my");
   await page.getByRole("button", { name: "Track", exact: true }).click();
-  await selectOptionContaining(page.getByLabel("Select Trip to Track"), /Wangsa Maju Section 2 → TAR UMT.*· Live/);
+  const select = page.getByLabel("Select Trip to Track");
+  const trackTrip = select.locator("option").filter({ hasText: /Wangsa Maju Section 2 → TAR UMT.*· Live/ });
+  const tripId = await trackTrip.getAttribute("value");
+  expect(tripId).toBeTruthy();
+  const subscription = page.waitForResponse((response) =>
+    response.url().endsWith("/api/realtime/subscription") &&
+    response.request().postDataJSON()?.tripId === tripId);
+  await select.selectOption(tripId);
   await expect(page.getByText("Simulated GPS / Prototype", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Latest sample", { exact: true })).toBeVisible();
+  expect((await subscription).status()).toBe(200);
 });
 
 test("only persistent Light and Dark appearance modes remain readable", async ({ page }) => {
@@ -212,6 +242,8 @@ test("only persistent Light and Dark appearance modes remain readable", async ({
   }));
   expect(darkColors.background).not.toBe(darkColors.foreground);
 
+  await expect(page.getByRole("region", { name: "Current or next journey arrival estimate" })
+    .getByText("Schedule Estimate", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Switch to Light Mode" }).click();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -222,9 +254,27 @@ test("only persistent Light and Dark appearance modes remain readable", async ({
   expect(lightColors.background).not.toBe(lightColors.foreground);
   expect(lightColors.background).not.toBe(darkColors.background);
   await expect(page.getByText(/System|Ocean|Forest|Sunset|Midnight/)).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Current or next journey arrival estimate" })
+    .getByText("Schedule Estimate", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "Switch to Dark Mode" }).click();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("region", { name: "Current or next journey arrival estimate" })
+    .getByText("Schedule Estimate", { exact: true }).first()).toBeVisible();
+});
+
+test("opening profile completion without a Google session shows a recovery link", async ({ page, baseURL }) => {
+  const failedRequests = [];
+  page.on("response", (response) => {
+    if (response.status() >= 400 && new URL(response.url()).origin === baseURL) {
+      failedRequests.push(response.url());
+    }
+  });
+
+  await page.goto("/register/complete");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Student onboarding has expired");
+  await expect(page.getByRole("link", { name: "Continue with Google" })).toHaveAttribute("href", "/register");
+  expect(failedRequests).toEqual([]);
 });
 
 test("public email recovery yields the same response for known and unknown fixture accounts with mail disabled", async ({ request, baseURL }) => {

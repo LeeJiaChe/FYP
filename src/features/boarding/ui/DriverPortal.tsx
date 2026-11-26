@@ -119,8 +119,10 @@ function errorMessage(data: unknown): string {
 
 export default function DriverPortal({
   initialUser,
+  demoMode,
 }: {
   initialUser: CurrentUser;
+  demoMode: boolean;
 }) {
   const { user, loading: userLoading } = useCurrentUser(initialUser);
   const { trips, loadingTrips, fetchTrips } = useTrips(undefined, user?.id);
@@ -821,6 +823,7 @@ export default function DriverPortal({
 
       {scannerMode && activeTripId && (
         <QRScannerModal
+          demoMode={demoMode}
           tripId={activeTripId}
           routeName={manifest?.trip.routeName}
           currentStopName={manifest?.currentStop?.name ?? undefined}

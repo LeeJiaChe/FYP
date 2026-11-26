@@ -100,6 +100,7 @@ export async function verifyScannedPass(input: {
   mode: "BOARDING" | "ALIGHTING";
   token: string;
 }): Promise<PassVerificationResult> {
+  const { fetcher } = input;
   const endpoint =
     input.mode === "BOARDING"
       ? `/api/trips/${input.tripId}/scan`
@@ -108,7 +109,7 @@ export async function verifyScannedPass(input: {
     input.mode === "BOARDING"
       ? { token: input.token }
       : { mode: "QR", token: input.token };
-  const response = await input.fetcher(endpoint, {
+  const response = await fetcher(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

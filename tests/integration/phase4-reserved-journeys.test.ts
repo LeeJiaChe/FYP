@@ -7,6 +7,7 @@ import {
   createReservedBooking,
   findJourneyAvailability,
   joinJourneyWaitlist,
+  listMyReservations,
 } from "../../src/features/bookings/application/reservations";
 import { scheduleTrip } from "../../src/features/trips/application/schedule-trip";
 import { ApplicationError } from "../../src/shared/application/application-error";
@@ -196,6 +197,27 @@ after(async () => {
 });
 
 describe("Phase 4 PostgreSQL reserved journey allocation", () => {
+  it("projects the same physical seat as reserved only for overlapping journeys, without occupant data", async () => {
+    const scenario = await createScenario(1);
+    const [holder, observer] = await Promise.all([
+      createStudent("Seat Map Holder"),
+      createStudent("Seat Map Observer"),
+    ]);
+    await reserve(holder, scenario, 0, 0, 1);
+    const at = clock(new Date(scenario.departure.getTime() - 60 * 60 * 1_000));
+    const availability = (from: number, to: number) => findJourneyAvailability(actor(observer), {
+      tripId: scenario.tripId,
+      boardingTripStopId: scenario.stopIds[from]!,
+      dropOffTripStopId: scenario.stopIds[to]!,
+    }, at);
+    const [overlapping, adjacent] = await Promise.all([availability(0, 2), availability(1, 2)]);
+    const seat = { id: scenario.seatIds[0], seatNumber: 1 };
+    assert.deepEqual(overlapping.seatMap, [{ ...seat, status: "RESERVED" }]);
+    assert.deepEqual(overlapping.seats, []);
+    assert.deepEqual(adjacent.seatMap, [{ ...seat, status: "AVAILABLE" }]);
+    assert.deepEqual(adjacent.seats, [seat]);
+  });
+
   it("allows adjacent journeys to reuse one TripSeat", async () => {
     const scenario = await createScenario(1);
     const [first, second] = await Promise.all([
@@ -246,6 +268,10 @@ describe("Phase 4 PostgreSQL reserved journey allocation", () => {
     );
     assert.equal(result.hasAvailableSeat, false);
     assert.deepEqual(result.seats, []);
+    assert.deepEqual(result.seatMap.map(({ seatNumber, status }) => ({ seatNumber, status })), [
+      { seatNumber: 1, status: "RESERVED" },
+      { seatNumber: 2, status: "RESERVED" },
+    ]);
   });
 
   it("confirms exactly one concurrent attempt for the final same seat", async () => {
@@ -335,6 +361,8 @@ describe("Phase 4 PostgreSQL reserved journey allocation", () => {
     const releaseBC = await reserve(users[2]!, scenario, 1, 1, 2);
     const oldest = await join(users[3]!, scenario, 0, 2, -50 * 60 * 1_000);
     const later = await join(users[4]!, scenario, 0, 1, -45 * 60 * 1_000);
+    assert.equal((await listMyReservations(actor(users[3]!))).waitlist[0]?.queuePosition, 1);
+    assert.equal((await listMyReservations(actor(users[4]!))).waitlist[0]?.queuePosition, 2);
 
     await cancelReservedBooking(
       actor(users[1]!),
@@ -349,6 +377,8 @@ describe("Phase 4 PostgreSQL reserved journey allocation", () => {
     assert.equal(oldestAfterSkip.queuedAt.getTime(), oldest.queuedAt.getTime());
     assert.equal(laterAfterPromotion.status, "PROMOTED");
     assert.ok(laterAfterPromotion.promotedBookingId);
+    assert.equal((await listMyReservations(actor(users[3]!))).waitlist[0]?.queuePosition, 1);
+    assert.equal((await listMyReservations(actor(users[4]!))).waitlist[0]?.queuePosition, null);
 
     await cancelReservedBooking(
       actor(users[2]!),

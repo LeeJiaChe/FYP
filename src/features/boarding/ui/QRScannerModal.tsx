@@ -12,6 +12,7 @@ import {
 
 interface QRScannerModalProps {
   tripId: string;
+  demoMode: boolean;
   routeName?: string;
   currentStopName?: string;
   mode?: "BOARDING" | "ALIGHTING";
@@ -21,6 +22,7 @@ interface QRScannerModalProps {
 
 export default function QRScannerModal({
   tripId,
+  demoMode,
   routeName,
   currentStopName,
   mode = "BOARDING",
@@ -40,7 +42,7 @@ export default function QRScannerModal({
   const reduceMotion = useReducedMotion();
 
   async function handleScan(tokenToVerify?: string) {
-    const token = tokenToVerify?.trim() || tokenInput.trim();
+    const token = tokenToVerify?.trim() || (demoMode ? tokenInput.trim() : "");
     if (!token || scanningRef.current || acceptedRef.current) return;
     scanningRef.current = true;
     setLoading(true);
@@ -64,11 +66,12 @@ export default function QRScannerModal({
           );
         }
       } else {
+        const alreadyRecorded = data.outcome === "ALREADY_BOARDED" || data.outcome === "ALREADY_ALIGHTED";
         acceptedRef.current = true;
         cameraRef.current?.stop();
-        setCameraStatus("Pass decoded and accepted.");
+        setCameraStatus(alreadyRecorded ? "This pass was already used." : "Pass decoded and accepted.");
         setResult(data);
-        onSuccess();
+        if (!alreadyRecorded) onSuccess();
       }
     } catch {
       setError("Network error validating the pass");
@@ -103,10 +106,10 @@ export default function QRScannerModal({
         const name = cameraError instanceof DOMException ? cameraError.name : "";
         setCameraStatus(
           name === "NotAllowedError"
-            ? "Camera permission was denied. Allow camera access and reopen the scanner, or use the labelled development/demo fallback."
+            ? "Camera permission was denied. Allow camera access and reopen the scanner."
             : name === "NotFoundError"
-              ? "No usable camera was found. Connect a camera or use the labelled development/demo fallback."
-              : "Camera QR scanning is unavailable in this browser or context. Use the labelled development/demo fallback.",
+              ? "No usable camera was found. Connect a camera and reopen the scanner."
+              : "Camera QR scanning is unavailable in this browser or context.",
         );
       }
     }
@@ -133,6 +136,10 @@ export default function QRScannerModal({
     setCameraSession((session) => session + 1);
   }
 
+  const duplicateLabel = result?.outcome === "ALREADY_BOARDED"
+    ? "Already boarded"
+    : result?.outcome === "ALREADY_ALIGHTED" ? "Already alighted" : null;
+
   return (
     <Modal
       isOpen
@@ -154,9 +161,18 @@ export default function QRScannerModal({
         <p className="scanner-status" role="status"><Camera aria-hidden className="size-4" />{cameraStatus}</p>
 
         {error && <motion.div initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="scan-result error" role="alert"><AlertCircle aria-hidden /><div><strong>Pass not accepted</strong><p>{error}</p></div></motion.div>}
-        {result && <motion.div initial={reduceMotion ? false : { opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }} transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 26 }} className="scan-result success" role="status"><CheckCircle2 aria-hidden /><div><span>{mode === "BOARDING" ? "Boarding recorded" : "Alighting recorded"}</span><strong>{result.passengerName || result.outcome || "Pass accepted"}</strong>{result.passengerName && result.outcome && <p>{result.outcome}</p>}</div><button type="button" onClick={continueScanning} className="btn-primary">Continue scanning</button></motion.div>}
+        {result && (
+          <motion.div initial={reduceMotion ? false : { opacity: 0, scale: .97 }} animate={{ opacity: 1, scale: 1 }} transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 320, damping: 26 }} className={duplicateLabel ? "scan-result error" : "scan-result success"} role="status">
+            {duplicateLabel ? <AlertCircle aria-hidden /> : <CheckCircle2 aria-hidden />}
+            <div>
+              <strong>{duplicateLabel ?? (mode === "BOARDING" ? "Boarding recorded" : "Alighting recorded")}</strong>
+              {result.passengerName && <p>{result.passengerName}</p>}
+            </div>
+            <button type="button" onClick={continueScanning} className="btn-primary">Continue scanning</button>
+          </motion.div>
+        )}
 
-        {!result && <details className="scanner-fallback">
+        {demoMode && !result && <details className="scanner-fallback">
           <summary>Development / Demo fallback: paste pass token</summary>
           <div className="space-y-3 mt-3">
             <textarea rows={3} aria-label="Development token fallback" placeholder="Paste the short-lived signed token copied from the displayed demo pass" value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} className="input-field font-mono" />

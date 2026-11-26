@@ -7,7 +7,7 @@ type TripEvent = "occupancy.changed" | "location.changed" | "trip.changed";
 
 export function useTripRealtime(
   tripId: string | null,
-  onInvalidate: (event: TripEvent | "connect") => void,
+  onInvalidate: (event: TripEvent | "connect", reason?: string) => void,
 ) {
   const invalidate = useEffectEvent(onInvalidate);
 
@@ -35,7 +35,8 @@ export function useTripRealtime(
     });
 
     socket.on("connect", () => invalidate("connect"));
-    socket.on("occupancy.changed", () => invalidate("occupancy.changed"));
+    socket.on("occupancy.changed", (payload?: { reason?: string }) =>
+      invalidate("occupancy.changed", payload?.reason));
     socket.on("trip.changed", () => invalidate("trip.changed"));
     socket.on("location.changed", () => invalidate("location.changed"));
     socket.on("disconnect", (reason) => {

@@ -303,7 +303,9 @@ describe("Phase 6 PostgreSQL no-show reconciliation", () => {
     await reserve(allowed, scenario, 0, 1, 0);
     await assert.rejects(
       reserve(restricted, scenario, 1, 2, 1),
-      (error) => error instanceof ApplicationError && error.code === "FORBIDDEN",
+      (error) => error instanceof ApplicationError &&
+        error.code === "FORBIDDEN" &&
+        error.message.includes("passenger credit is below the minimum"),
     );
     assert.equal(isBookingRestricted(40, productPolicy), false);
     assert.equal(isBookingRestricted(39, productPolicy), true);

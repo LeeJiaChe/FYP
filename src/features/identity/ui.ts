@@ -1,5 +1,6 @@
 "use client";
 
+export { CompleteStudentProfileForm } from "./ui/CompleteStudentProfileForm";
 export { default as DriversTab } from "./ui/DriversTab";
 export { GoogleStudentButton } from "./ui/GoogleStudentButton";
 export { ResetPasswordForm } from "./ui/ResetPasswordForm";

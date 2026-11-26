@@ -29,15 +29,29 @@ describe("institutional authentication architecture", () => {
 
   it("gates all three Quick Login buttons behind the public demo flag", async () => {
     const page = await source("app/login/page.tsx");
+    const gate = await source("src/features/identity/infrastructure/demo-auth.server.ts");
     const login = await source("app/login/LoginForm.tsx");
-    assert.match(page, /NEXT_PUBLIC_DEMO_MODE/);
-    assert.match(page, /await isFixtureDemoAuthEnabled/);
-    assert.match(page, /NODE_ENV !== "production"/);
+    assert.match(page, /demoMode=\{await isFixtureDemoUiEnabled\(\)\}/);
+    assert.match(gate, /NEXT_PUBLIC_DEMO_MODE/);
+    assert.match(gate, /await isFixtureDemoAuthEnabled/);
+    assert.match(gate, /NODE_ENV !== "production"/);
+    assert.match(gate, /await assertFixtureIdentity/);
     assert.match(login, /demoMode &&/);
     for (const label of ["Student 1", "Driver 1", "Admin Staff"]) {
       assert.match(login, new RegExp(label));
     }
     assert.doesNotMatch(login, /Student\/driver password:/);
+  });
+
+  it("passes the same verified fixture gate to both QR demo controls", async () => {
+    for (const entry of ["app/driver/page.tsx", "app/student/page.tsx"]) {
+      assert.match(await source(entry), /demoMode=\{await isFixtureDemoUiEnabled\(\)\}/);
+    }
+    for (const view of ["DynamicQRModal", "QRScannerModal"]) {
+      const component = await source(`src/features/boarding/ui/${view}.tsx`);
+      assert.match(component, /demoMode &&/);
+      assert.doesNotMatch(component, /NEXT_PUBLIC_DEMO_MODE/);
+    }
   });
 
   it("preserves usable seed fixtures without fake Google identities", async () => {

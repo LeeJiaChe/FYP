@@ -18,10 +18,11 @@ export interface DynamicPassDescriptor {
 
 interface DynamicQRModalProps {
   pass: DynamicPassDescriptor;
+  demoMode: boolean;
   onClose: () => void;
 }
 
-export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
+export default function DynamicQRModal({ pass, demoMode, onClose }: DynamicQRModalProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [demoToken, setDemoToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -48,7 +49,7 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
         return;
       }
       setQrDataUrl(data.qrDataUrl);
-      setDemoToken(data.token);
+      setDemoToken(demoMode ? data.token : null);
       setCopied(false);
       setTimeLeft(data.expiresInSeconds ?? 60);
     } catch {
@@ -56,7 +57,7 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
     } finally {
       setLoading(false);
     }
-  }, [pass.endpoint, pass.requestBody]);
+  }, [demoMode, pass.endpoint, pass.requestBody]);
 
   useEffect(() => {
     const initialFetch = window.setTimeout(() => void fetchQRToken(), 0);
@@ -71,10 +72,6 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
       window.clearTimeout(initialFetch);
     };
   }, [fetchQRToken]);
-
-  const showDemoToken =
-    process.env.NODE_ENV !== "production" &&
-    process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
   async function copyDemoToken() {
     if (!demoToken) return;
@@ -106,8 +103,8 @@ export default function DynamicQRModal({ pass, onClose }: DynamicQRModalProps) {
           ) : qrDataUrl ? (
             <div className="pass-qr"><Image unoptimized width={240} height={240} src={qrDataUrl} alt={`${pass.purpose} QR code`} className="size-60" /></div>
           ) : null}
-          <div className="pass-expiry"><Clock aria-hidden className="size-4" /><span>Refreshes in</span><strong className="tabular-nums">{timeLeft}s</strong><button onClick={() => void fetchQRToken()} disabled={loading}>Refresh now</button></div>
-          {showDemoToken && demoToken && (
+          <div className="pass-expiry"><Clock aria-hidden className="size-4" /><span>Expires in</span><strong className="tabular-nums">{timeLeft}s</strong><button onClick={() => void fetchQRToken()} disabled={loading}>Refresh now</button></div>
+          {demoMode && demoToken && (
             <div className="demo-token">
               <p>
                 Development / Demo fallback only. Normal boarding uses the camera QR scanner.

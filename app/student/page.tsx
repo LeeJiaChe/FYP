@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import StudentPortal from "@/features/bookings/ui/StudentPortal";
+import { isFixtureDemoUiEnabled } from "@/features/identity/infrastructure/demo-auth.server";
 import { getCurrentUser } from "@/lib/auth";
 
 export default async function StudentPage({
@@ -18,6 +19,7 @@ export default async function StudentPage({
 
   return (
     <StudentPortal
+      demoMode={await isFixtureDemoUiEnabled()}
       initialTime={new Date().toISOString()}
       initialView={initialView}
       initialUser={{
